@@ -50,23 +50,36 @@ interface GatewayConfigResponse {
 
 async function fetchProvidersFromApp(
 	appUrl: string,
+	{ maxRetries = 5, initialDelayMs = 2000 } = {},
 ): Promise<(string | { name: string; displayName?: string })[]> {
-	try {
-		const res = await globalThis.fetch(
-			`${appUrl}/api/auth/agent/gateway-config`,
-		);
-		if (!res.ok) {
-			process.stderr.write(
-				`[gateway] Failed to fetch config from ${appUrl}: ${res.status}\n`,
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		try {
+			const res = await globalThis.fetch(
+				`${appUrl}/api/auth/agent/gateway-config`,
 			);
-			return [];
+			if (!res.ok) {
+				process.stderr.write(
+					`[gateway] Failed to fetch config from ${appUrl}: ${res.status}\n`,
+				);
+				return [];
+			}
+			const data = (await res.json()) as GatewayConfigResponse;
+			return data.providers ?? [];
+		} catch {
+			if (attempt < maxRetries) {
+				const delay = initialDelayMs * 2 ** attempt;
+				process.stderr.write(
+					`[gateway] App not reachable at ${appUrl}, retrying in ${delay}ms (${attempt + 1}/${maxRetries})...\n`,
+				);
+				await new Promise((r) => setTimeout(r, delay));
+			} else {
+				process.stderr.write(
+					`[gateway] Could not reach ${appUrl} after ${maxRetries + 1} attempts. Starting without providers.\n`,
+				);
+			}
 		}
-		const data = (await res.json()) as GatewayConfigResponse;
-		return data.providers ?? [];
-	} catch (err) {
-		process.stderr.write(`[gateway] Could not reach ${appUrl}: ${err}\n`);
-		return [];
 	}
+	return [];
 }
 
 async function main() {

@@ -51,7 +51,7 @@ import { platform } from "node:os";
 import { signAgentJWT } from "../crypto";
 import { createMemoryStorage } from "../mcp-storage-memory";
 import type { MCPAgentStorage } from "../mcp-tools";
-import { createAgentMCPTools } from "../mcp-tools";
+import { createAgentMCPTools, getAgentAuthInstructions } from "../mcp-tools";
 import type { ProviderManager } from "./provider-manager";
 import { createProviderManager } from "./provider-manager";
 import type { ProviderInput } from "./providers";
@@ -192,10 +192,16 @@ export async function createGatewayServer(
 				: undefined,
 	});
 
-	const server = new McpServer({
-		name: serverName,
-		version: "1.0.0",
-	});
+	const hasGateway = gatewayTools.length > 0;
+	const server = new McpServer(
+		{
+			name: serverName,
+			version: "1.0.0",
+		},
+		{
+			instructions: getAgentAuthInstructions(hasGateway),
+		},
+	);
 
 	for (const tool of tools) {
 		const zodShape: Record<string, ReturnType<typeof z.string>> = {};
@@ -214,8 +220,12 @@ export async function createGatewayServer(
 
 		server.tool(
 			"list_gateway_tools",
-			"List all available tools from connected MCP providers. " +
-				"Call this BEFORE connect_agent to discover tools and pick scopes.",
+			"Discover what third-party tools and integrations are available. " +
+				"Call when the user asks: what can you do, what tools do you have, " +
+				"show me available integrations, list capabilities, what services are connected, " +
+				"or before connecting to know what scopes to request. " +
+				"Returns tools from providers like GitHub, Slack, Google Drive, etc. " +
+				"No authentication required — call this anytime.",
 			{},
 			async () => {
 				const byProvider: Record<
@@ -241,11 +251,13 @@ export async function createGatewayServer(
 					lines.push("");
 				}
 				lines.push(
-					"Usage:\n" +
-						"1. Pass tool names as scopes to connect_agent.\n" +
-						"   Example: scopes=['github.create_issue']\n" +
-						"2. Call them via call_gateway_tool.\n" +
-						"   Example: call_gateway_tool(agentId: '...', tool: 'github.create_issue', args: '{\"title\": \"...\"}')",
+					"HOW TO USE:\n" +
+						"Step 1: Pick the tools you need from the list above.\n" +
+						"Step 2: Call connect_agent with those tool names as scopes.\n" +
+						"        Example: connect_agent(url='https://myapp.com', name='Issue Bot', scopes=['github.create_issue', 'github.list_pull_requests'])\n" +
+						"Step 3: After the user approves, call call_gateway_tool to execute them.\n" +
+						"        Example: call_gateway_tool(agentId='abc123', tool='github.create_issue', args='{\"title\": \"Fix bug\", \"body\": \"Details...\"}')\n\n" +
+						"IMPORTANT: You must have the tool in your scopes to call it. Request only what you need.",
 				);
 
 				return {
@@ -256,20 +268,28 @@ export async function createGatewayServer(
 
 		server.tool(
 			"call_gateway_tool",
-			"Call a tool from a connected MCP provider. " +
-				"Use list_gateway_tools to see available tools. " +
-				"Requires a valid agentId with matching scope.",
+			"Run a third-party tool through the gateway. " +
+				"Call when the user asks you to: create an issue, list pull requests, " +
+				"send a message, search repos, read files, or any action on a connected service " +
+				"(GitHub, Slack, Google Drive, etc.). " +
+				"REQUIRES: (1) An Agent ID from connect_agent. " +
+				"(2) The tool must be in your granted scopes. " +
+				"Use list_gateway_tools to discover available tools first.",
 			{
-				agentId: z.string().describe("Your Agent ID (from connect_agent)"),
+				agentId: z
+					.string()
+					.describe("Your Agent ID (from connect_agent)"),
 				tool: z
 					.string()
 					.describe(
-						"Tool name in provider.tool format (e.g. github.create_issue)",
+						"Tool to call in provider.tool format (e.g. 'github.create_issue', 'github.list_pull_requests')",
 					),
 				args: z
 					.string()
 					.optional()
-					.describe("JSON-encoded arguments to pass to the tool"),
+					.describe(
+						'JSON object of arguments for the tool (e.g. \'{"owner":"org","repo":"app","title":"Bug fix"}\')',
+					),
 			},
 			async (params) => {
 				const {

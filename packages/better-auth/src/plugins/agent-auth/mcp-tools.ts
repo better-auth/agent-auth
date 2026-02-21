@@ -150,6 +150,73 @@ async function tryRegisterAgent(
 }
 
 /**
+ * MCP server instructions for Agent Auth.
+ *
+ * Pass this to `new McpServer(info, { instructions })` so clients
+ * (Cursor, Claude Desktop, etc.) know how to drive the tools.
+ *
+ * @param hasGateway - true if the server includes gateway tools
+ */
+export function getAgentAuthInstructions(hasGateway = false): string {
+	const lines: string[] = [
+		"You are connected to an Agent Auth MCP server that lets you authenticate and act on behalf of users.",
+		"",
+		"## When to use these tools",
+		"",
+		"Use these tools whenever the user asks you to:",
+		"- Connect, sign in, log in, authenticate, hire an agent, or access an app",
+		"- Perform actions on third-party services (create issues, list PRs, send messages, etc.)",
+		"- Fetch data or call APIs on a connected app",
+		"- Check connection status, list agents, disconnect, or log out",
+		"",
+		"## Quick-start workflow",
+		"",
+	];
+
+	if (hasGateway) {
+		lines.push(
+			"1. **Discover** — call `list_gateway_tools` to see available third-party tools (GitHub, Slack, etc.).",
+			"2. **Connect** — call `connect_agent` with the app URL, a task-specific name, and the scopes you need.",
+			"   - The user may need to approve in their browser. Tell them and wait.",
+			"   - You will receive an **Agent ID**. SAVE IT.",
+			"3. **Use the Agent ID everywhere** — pass it as `agentId` to every subsequent tool call.",
+			"4. **Re-use, don't re-create** — if you already have an Agent ID, pass it to `connect_agent` to reuse your session.",
+			"",
+			"## Calling third-party tools",
+			"",
+			"- Call `call_gateway_tool` with your Agent ID, the tool name (e.g. `github.create_issue`), and a JSON args string.",
+			"- The tool must be in the scopes you requested during `connect_agent`.",
+			"- If you need a tool you didn't request, call `connect_agent` again with additional scopes.",
+		);
+	} else {
+		lines.push(
+			"1. **Connect** — call `connect_agent` with the app URL, a task-specific name, and the scopes you need.",
+			"   - The user may need to approve in their browser. Tell them and wait.",
+			"   - You will receive an **Agent ID**. SAVE IT.",
+			"2. **Use the Agent ID everywhere** — pass it as `agentId` to every subsequent tool call.",
+			"3. **Re-use, don't re-create** — if you already have an Agent ID, pass it to `connect_agent` to reuse your session.",
+		);
+	}
+
+	lines.push(
+		"",
+		"## Calling the app's own API",
+		"",
+		"- Use `agent_request` to make authenticated HTTP requests to the app's endpoints.",
+		"- Example: `agent_request(agentId, path='/api/data', method='GET')`",
+		"",
+		"## Rules",
+		"",
+		"- NEVER invent an Agent ID. Only use one returned by `connect_agent`.",
+		"- Request the MINIMUM scopes needed for the user's task.",
+		"- Use descriptive agent names that reflect the task (e.g. 'PR Review Agent'), not generic ones.",
+		"- Call `disconnect_agent` when you are done with a task to clean up.",
+	);
+
+	return lines.join("\n");
+}
+
+/**
  * Create MCP tool definitions for agent management.
  * Register these in your MCP server via `server.registerTool()`.
  */
@@ -195,29 +262,38 @@ export function createAgentMCPTools(
 	const tools: MCPToolDefinition[] = [
 		{
 			name: "connect_agent",
-			description: getAuthHeaders
-				? "Connect to an app as an agent. Returns an Agent ID that you MUST save and pass back as agentId on every subsequent connect_agent call in this conversation."
-				: "Connect to an app as an agent via device authorization. Returns an Agent ID that you MUST save and pass back as agentId on every subsequent connect_agent call in this conversation.",
+			description:
+				"Authenticate and connect to an app as an AI agent. " +
+				"Call this when the user asks you to: connect, sign in, log in, authenticate, " +
+				"access an app, hire an agent, act on their behalf, use a service, " +
+				"or perform any task that requires authorization (e.g. creating issues, " +
+				"reading pull requests, sending messages, managing files). " +
+				"Returns an Agent ID you MUST save and reuse for all subsequent calls. " +
+				"RULES: (1) Call ONCE per conversation. (2) SAVE the Agent ID. " +
+				"(3) Pass it as agentId if re-calling. (4) If user approval is needed, tell them and wait." +
+				(getAuthHeaders ? "" : " Uses device authorization (browser approval)."),
 			inputSchema: {
-				url: z.string().describe("App URL (e.g. https://app-x.com)"),
+				url: z.string().describe("App URL (e.g. https://myapp.com)"),
 				name: z
 					.string()
 					.describe(
-						"Descriptive name for this agent based on its current task (e.g. 'Code Review Agent', 'Report Generator'). Do not use generic names.",
+						"Short task-based name (e.g. 'PR Review Agent', 'Issue Creator'). NOT generic names like 'Cursor Agent'.",
 					),
 				scopes: z
 					.array(z.string())
 					.optional()
 					.describe(
-						"Scopes to request. Use specific tool names from list_gateway_tools " +
-							"(e.g. 'github.create_issue', 'github.search_repositories'). " +
-							"Only request the tools needed for the current task.",
+						"Permissions to request. Use tool names from list_gateway_tools in provider.tool format " +
+							"(e.g. ['github.create_issue', 'github.list_pull_requests']). " +
+							"Request ONLY what you need for the user's current task.",
 					),
 				agentId: z
 					.string()
 					.optional()
 					.describe(
-						"IMPORTANT: If you already received an Agent ID from a previous connect_agent call in this conversation, you MUST pass it here to reuse your identity. Only omit this on your very first connection.",
+						"Pass your Agent ID here if you already received one in this conversation. " +
+							"This reuses your existing identity instead of creating a new one. " +
+							"ONLY omit this on your very first connect_agent call.",
 					),
 			},
 			handler: async (input) => {
@@ -248,29 +324,7 @@ export function createAgentMCPTools(
 					// agentId invalid or stale — fall through to create fresh
 				}
 
-				// Dedup: check if we already have a healthy connection to this URL
-				const allConnections = await storage.listConnections();
-				for (const conn of allConnections) {
-					if (conn.appUrl !== url) continue;
-					const full = await storage.getConnection(conn.agentId);
-					if (!full) continue;
-					const healthy = await isConnectionHealthy(conn.agentId, full);
-					if (!healthy) continue;
-
-					const hasAllScopes = scopes.every((s) => full.scopes.includes(s));
-					if (hasAllScopes) {
-						return {
-							content: [
-								{
-									type: "text" as const,
-									text: `Reusing existing connection. Agent ID: ${conn.agentId}. Name: "${full.name}". URL: ${full.appUrl}. Scopes: ${full.scopes.join(", ") || "none"}. Use this Agent ID for all subsequent requests.`,
-								},
-							],
-						};
-					}
-				}
-
-				// No reusable connection — create a fresh identity
+				// Fresh identity — each conversation gets its own agent
 				const keypair = await generateAgentKeypair();
 
 				// Direct auth mode (cookie/token in env)
@@ -517,7 +571,10 @@ export function createAgentMCPTools(
 		},
 		{
 			name: "list_agents",
-			description: "List all agent connections.",
+			description:
+				"Show all active agent connections. Call when the user asks: " +
+				"what agents are running, show my connections, which apps am I connected to, " +
+				"or what sessions are active. Returns Agent IDs, app URLs, names, and scopes.",
 			inputSchema: {},
 			handler: async () => {
 				const connections = await storage.listConnections();
@@ -542,7 +599,10 @@ export function createAgentMCPTools(
 		},
 		{
 			name: "disconnect_agent",
-			description: "Revoke and remove an agent connection by agent ID.",
+			description:
+				"Disconnect, sign out, log out, or revoke an agent. " +
+				"Call when the user says: disconnect, stop, log out, sign out, done, " +
+				"revoke access, or remove agent. The agent will no longer be able to authenticate.",
 			inputSchema: {
 				agentId: z
 					.string()
@@ -593,7 +653,10 @@ export function createAgentMCPTools(
 		},
 		{
 			name: "agent_status",
-			description: "Check if an agent connection is healthy.",
+			description:
+				"Check if an agent connection is still alive and authenticated. " +
+				"Call when the user asks: is the agent working, check connection, am I still connected, " +
+				"or is my session active. Returns agent details and user info if healthy.",
 			inputSchema: {
 				agentId: z.string().describe("Agent ID to check (from connect_agent)"),
 			},
@@ -651,12 +714,21 @@ export function createAgentMCPTools(
 		{
 			name: "agent_request",
 			description:
-				"Make an authenticated request to a connected app as the agent. Signs a fresh JWT automatically.",
+				"Make an authenticated HTTP request to the app's own API endpoints. " +
+				"Use when the user asks you to: fetch data, call an API, get information from the app, " +
+				"submit data, or interact with the app's backend. " +
+				"NOT for third-party tools (GitHub, Slack, etc.) — use call_gateway_tool for those. " +
+				"Automatically signs the request with the agent's identity.",
 			inputSchema: {
-				agentId: z.string().describe("Agent ID (from connect_agent)"),
-				path: z.string().describe("API path (e.g. /api/reports/Q4)"),
+				agentId: z.string().describe("Your Agent ID (from connect_agent)"),
+				path: z
+					.string()
+					.describe("API path on the app (e.g. /api/reports/Q4)"),
 				method: z.string().optional().describe("HTTP method (default: GET)"),
-				body: z.string().optional().describe("Request body as JSON string"),
+				body: z
+					.string()
+					.optional()
+					.describe("Request body as JSON string (for POST/PUT)"),
 			},
 			handler: async (input) => {
 				const agentId = input.agentId as string;
@@ -716,7 +788,10 @@ export function createAgentMCPTools(
 		tools.push({
 			name: "connect_agent_complete",
 			description:
-				"Complete the agent connection after the user has approved in their browser. Call this after connect_agent if the automatic polling timed out.",
+				"Finish a pending connection after the user approved in their browser. " +
+				"Call when the user says: I approved it, I clicked allow, I authorized it, " +
+				"or the connection timed out but I approved. " +
+				"ONLY needed if connect_agent timed out waiting. Do NOT call if connect_agent already succeeded.",
 			inputSchema: {
 				url: z.string().describe("App URL (same one used in connect_agent)"),
 			},
