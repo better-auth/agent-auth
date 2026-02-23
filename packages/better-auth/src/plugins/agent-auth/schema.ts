@@ -126,17 +126,35 @@ export const agentSchema = () =>
 					required: true,
 					input: false,
 				},
-				/**
-				 * When the agent was last updated.
-				 */
-				updatedAt: {
-					type: "date",
-					required: true,
-					input: false,
-				},
+			/**
+			 * Running total of input tokens consumed by this agent.
+			 */
+			totalInputTokens: {
+				type: "number",
+				required: false,
+				input: false,
+				defaultValue: 0,
+			},
+			/**
+			 * Running total of output tokens consumed by this agent.
+			 */
+			totalOutputTokens: {
+				type: "number",
+				required: false,
+				input: false,
+				defaultValue: 0,
+			},
+			/**
+			 * When the agent was last updated.
+			 */
+			updatedAt: {
+				type: "date",
+				required: true,
+				input: false,
 			},
 		},
-		agentActivity: {
+	},
+	agentActivity: {
 			fields: {
 				/**
 				 * The agent that performed the action.
@@ -198,17 +216,33 @@ export const agentSchema = () =>
 					required: false,
 					input: false,
 				},
-				/**
-				 * When the action occurred.
-				 */
-				createdAt: {
-					type: "date",
-					required: true,
-					input: false,
-				},
+			/**
+			 * Number of input tokens consumed by this request.
+			 */
+			inputTokens: {
+				type: "number",
+				required: false,
+				input: false,
+			},
+			/**
+			 * Number of output tokens produced by this request.
+			 */
+			outputTokens: {
+				type: "number",
+				required: false,
+				input: false,
+			},
+			/**
+			 * When the action occurred.
+			 */
+			createdAt: {
+				type: "date",
+				required: true,
+				input: false,
 			},
 		},
-		mcpProvider: {
+	},
+	mcpProvider: {
 			fields: {
 				/**
 				 * Short unique name for the provider (e.g. "google-drive", "slack").

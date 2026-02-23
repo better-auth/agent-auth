@@ -10,4 +10,8 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 	INVALID_PUBLIC_KEY: "Invalid public key format.",
 	AGENT_NAME_REQUIRED: "Agent name is required.",
 	INVALID_SCOPES: "Scopes must be an array of strings.",
+	UNKNOWN_SCOPES: "One or more requested scopes are not recognized.",
+	AGENT_LIMIT_REACHED: "Maximum number of active agents reached.",
+	TOKEN_BUDGET_EXCEEDED: "Agent has exceeded its token budget.",
+	USER_TOKEN_BUDGET_EXCEEDED: "User has exceeded their total token budget across all agents.",
 });

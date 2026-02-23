@@ -343,6 +343,32 @@ export function createAgentClient(options: AgentClientOptions) {
 			return res.json();
 		},
 
+		/**
+		 * Log activity (e.g. gateway tool calls) with optional token usage.
+		 * Calls POST /api/auth/agent/log-activity.
+		 */
+		async logActivity(entry: {
+			method: string;
+			path: string;
+			status?: number;
+			inputTokens?: number;
+			outputTokens?: number;
+		}): Promise<boolean> {
+			const auth = await getAuthHeader();
+			const res = await globalThis.fetch(
+				`${base}/api/auth/agent/log-activity`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: auth,
+					},
+					body: JSON.stringify(entry),
+				},
+			);
+			return res.ok;
+		},
+
 		/** The base URL this client is configured for */
 		baseURL: base,
 

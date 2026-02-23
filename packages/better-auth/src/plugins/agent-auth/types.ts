@@ -53,6 +53,58 @@ export interface AgentAuthOptions {
 	 */
 	agentSessionTTL?: number;
 	/**
+	 * Validate that requested scopes exist before granting them.
+	 *
+	 * When `true`, scopes are checked against the union of all role
+	 * scopes defined in `roles`. Unrecognized scopes are rejected.
+	 *
+	 * **Warning:** Setting `true` without defining any `roles` means
+	 * the known-scopes set is empty and *every* scope will be rejected.
+	 * Either define `roles` or use a custom validation function.
+	 *
+	 * When a function, it receives the scopes array and should return
+	 * `true` if all scopes are valid, or throw/return `false` to reject.
+	 *
+	 * When `false` or omitted, any scope string is accepted.
+	 * @default false
+	 */
+	validateScopes?:
+		| boolean
+		| ((scopes: string[]) => boolean | Promise<boolean>);
+	/**
+	 * Maximum number of active agents a single user can have.
+	 * New agent creation is rejected once this limit is reached.
+	 *
+	 * Set to `0` to disable (unlimited agents).
+	 * @default 25
+	 */
+	maxAgentsPerUser?: number;
+	/**
+	 * Maximum total tokens (input + output) an agent can consume.
+	 * Once exceeded, authenticated requests are rejected and token
+	 * logging via `log-activity` returns an error.
+	 *
+	 * **Note:** Budgets are enforced on a best-effort basis. Under high
+	 * concurrency, multiple requests may pass the check before any single
+	 * increment is written, allowing brief overages. This is suitable for
+	 * advisory limits; do not rely on it for hard billing cutoffs.
+	 *
+	 * Set to `0` or omit to disable (unlimited tokens).
+	 * @default 0
+	 */
+	maxTokensPerAgent?: number;
+	/**
+	 * Maximum total tokens (input + output) across ALL agents owned
+	 * by a single user. Prevents circumventing per-agent limits by
+	 * creating multiple agents.
+	 *
+	 * **Note:** Same best-effort semantics as `maxTokensPerAgent`.
+	 *
+	 * Set to `0` or omit to disable (unlimited).
+	 * @default 0
+	 */
+	maxTokensPerUser?: number;
+	/**
 	 * Maximum absolute lifetime for agent sessions in seconds,
 	 * measured from `createdAt`. Even if the sliding TTL keeps
 	 * extending, the agent is rejected once this cap is reached.
@@ -136,6 +188,8 @@ export interface Agent {
 	kid: string | null;
 	lastUsedAt: Date | null;
 	expiresAt: Date | null;
+	totalInputTokens: number;
+	totalOutputTokens: number;
 	metadata: AgentMetadata | null;
 	createdAt: Date;
 	updatedAt: Date;
@@ -245,6 +299,9 @@ export type ResolvedAgentAuthOptions = Required<
 		| "jwtMaxAge"
 		| "agentSessionTTL"
 		| "agentMaxLifetime"
+		| "maxAgentsPerUser"
+		| "maxTokensPerAgent"
+		| "maxTokensPerUser"
 	>
 > &
 	AgentAuthOptions;

@@ -89,9 +89,47 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 				});
 			}
 
+			if (opts.maxAgentsPerUser > 0) {
+				const activeCount = await ctx.context.adapter.count({
+					model: AGENT_TABLE,
+					where: [
+						{ field: "userId", value: userId },
+						{ field: "status", value: "active" },
+					],
+				});
+				if (activeCount >= opts.maxAgentsPerUser) {
+					throw APIError.from("BAD_REQUEST", ERROR_CODES.AGENT_LIMIT_REACHED);
+				}
+			}
+
 			const resolvedRole = role ?? opts.defaultRole ?? null;
-			const resolvedScopes =
-				scopes ?? (resolvedRole && opts.roles?.[resolvedRole]) ?? [];
+			const roleScopes =
+				resolvedRole && opts.roles?.[resolvedRole]
+					? opts.roles[resolvedRole]
+					: [];
+			const resolvedScopes: string[] = scopes ?? roleScopes;
+
+		if (resolvedScopes.length > 0 && opts.validateScopes) {
+			if (typeof opts.validateScopes === "function") {
+				const valid = await opts.validateScopes(resolvedScopes);
+				if (!valid) {
+					throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
+				}
+			} else {
+				const knownScopes = new Set(
+					Object.values(opts.roles ?? {}).flat(),
+				);
+				const invalid = resolvedScopes.filter(
+					(s: string) => !knownScopes.has(s),
+				);
+				if (invalid.length > 0) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						`${ERROR_CODES.UNKNOWN_SCOPES} Unrecognized: ${invalid.join(", ")}.`,
+					);
+				}
+			}
+		}
 
 			const now = new Date();
 			const kid = (publicKey.kid as string) ?? null;

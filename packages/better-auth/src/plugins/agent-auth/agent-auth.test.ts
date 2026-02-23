@@ -118,15 +118,17 @@ describe("agent-auth", async () => {
 
 		expect(res.error).toBeNull();
 		expect(res.data).toBeDefined();
-		expect(Array.isArray(res.data)).toBe(true);
-		// We created 3 agents in the tests above
-		expect(res.data!.length).toBeGreaterThanOrEqual(3);
+		expect(Array.isArray(res.data!.agents)).toBe(true);
+		expect(typeof res.data!.total).toBe("number");
+		expect(res.data!.total).toBeGreaterThanOrEqual(3);
+		expect(res.data!.agents.length).toBeGreaterThanOrEqual(3);
 
-		const found = res.data!.find((a: { id: string }) => a.id === agentId);
+		const found = res.data!.agents.find(
+			(a: { id: string }) => a.id === agentId,
+		);
 		expect(found).toBeDefined();
 		expect(found?.name).toBe("Test Agent");
 		expect(found?.status).toBe("active");
-		// Verify scopes come back as a parsed array, not a JSON string
 		expect(Array.isArray(found?.scopes)).toBe(true);
 		expect(found?.scopes).toEqual(["email.send", "reports.read"]);
 	});
@@ -411,7 +413,8 @@ describe("agent-auth", async () => {
 		// Try to list -- should get empty
 		const listRes = await client.agent.list({}, { headers: otherHeaders });
 		expect(listRes.data).toBeDefined();
-		expect(listRes.data!.length).toBe(0);
+		expect(listRes.data!.agents.length).toBe(0);
+		expect(listRes.data!.total).toBe(0);
 
 		// Try to get the first user's agent -- should fail
 		const getRes = await client.agent.get(
@@ -431,7 +434,10 @@ describe("agent-auth", async () => {
 
 		expect(actRes.error).toBeNull();
 		expect(actRes.data).toBeDefined();
-		expect(Array.isArray(actRes.data)).toBe(true);
+		expect(Array.isArray(actRes.data!.activities)).toBe(true);
+		expect(typeof actRes.data!.total).toBe("number");
+		expect(actRes.data!.limit).toBe(50);
+		expect(actRes.data!.offset).toBe(0);
 	});
 
 	it("should reject activity query without session", async () => {
@@ -482,7 +488,7 @@ describe("agent-auth", async () => {
 			{ headers },
 		);
 		expect(actRes.data).toBeDefined();
-		const toolEntry = actRes.data!.find(
+		const toolEntry = actRes.data!.activities.find(
 			(e: { method: string }) => e.method === "TOOL",
 		);
 		expect(toolEntry).toBeDefined();
@@ -507,14 +513,14 @@ describe("agent-auth", async () => {
 	});
 
 	it("should filter activity by agentId", async () => {
-		// Query activity for a non-existent agent — should return empty
 		const actRes = await client.agent.activity(
 			{ query: { agentId: "nonexistent-id" } },
 			{ headers },
 		);
 		expect(actRes.error).toBeNull();
 		expect(actRes.data).toBeDefined();
-		expect(actRes.data!.length).toBe(0);
+		expect(actRes.data!.activities.length).toBe(0);
+		expect(actRes.data!.total).toBe(0);
 	});
 
 	// =========================================================================
@@ -871,5 +877,451 @@ describe("agent-auth", async () => {
 		const data = await res.json();
 		expect(data.agent.id).toBe(created.agentId);
 		expect(data.user.id).toBe(aapUser.id);
+	});
+
+	// =========================================================================
+	// LIST AGENTS — SORTING & FILTERING
+	// =========================================================================
+
+	it("should filter agents by status", async () => {
+		const activeRes = await client.agent.list(
+			{ query: { status: "active" } },
+			{ headers },
+		);
+		expect(activeRes.error).toBeNull();
+		for (const a of activeRes.data!.agents) {
+			expect(a.status).toBe("active");
+		}
+
+		const revokedRes = await client.agent.list(
+			{ query: { status: "revoked" } },
+			{ headers },
+		);
+		expect(revokedRes.error).toBeNull();
+		for (const a of revokedRes.data!.agents) {
+			expect(a.status).toBe("revoked");
+		}
+	});
+
+	it("should respect pagination limit and offset", async () => {
+		const page1 = await client.agent.list(
+			{ query: { limit: "2", offset: "0" } },
+			{ headers },
+		);
+		expect(page1.error).toBeNull();
+		expect(page1.data!.agents.length).toBeLessThanOrEqual(2);
+		expect(page1.data!.limit).toBe(2);
+		expect(page1.data!.offset).toBe(0);
+		expect(page1.data!.total).toBeGreaterThanOrEqual(2);
+
+		const page2 = await client.agent.list(
+			{ query: { limit: "2", offset: "2" } },
+			{ headers },
+		);
+		expect(page2.error).toBeNull();
+		expect(page2.data!.offset).toBe(2);
+		if (page1.data!.agents.length > 0 && page2.data!.agents.length > 0) {
+			expect(page1.data!.agents[0]!.id).not.toBe(page2.data!.agents[0]!.id);
+		}
+	});
+
+	it("should sort agents by name ascending", async () => {
+		const res = await client.agent.list(
+			{ query: { sortBy: "name", sortDirection: "asc" } },
+			{ headers },
+		);
+		expect(res.error).toBeNull();
+		const names = res.data!.agents.map((a: { name: string }) => a.name);
+		const sorted = [...names].sort((a, b) => a.localeCompare(b));
+		expect(names).toEqual(sorted);
+	});
+});
+
+// =============================================================================
+// VALIDATE SCOPES
+// =============================================================================
+
+describe("agent-auth validateScopes", async () => {
+	const {
+		client: vsClient,
+		signInWithTestUser: vsSignIn,
+	} = await getTestInstance(
+		{
+			plugins: [
+				agentAuth({
+					roles: {
+						reader: ["reports.read"],
+						writer: ["reports.read", "reports.write"],
+					},
+					validateScopes: true,
+				}),
+			],
+		},
+		{ clientOptions: { plugins: [agentAuthClient()] } },
+	);
+
+	const { headers: vsHeaders } = await vsSignIn();
+
+	it("should accept known scopes when validateScopes is true", async () => {
+		const kp = await generateAgentKeypair();
+		const res = await vsClient.agent.create(
+			{
+				name: "Valid Scopes Agent",
+				publicKey: kp.publicKey,
+				scopes: ["reports.read"],
+			},
+			{ headers: vsHeaders },
+		);
+		expect(res.error).toBeNull();
+		expect(res.data?.scopes).toEqual(["reports.read"]);
+	});
+
+	it("should reject unknown scopes when validateScopes is true", async () => {
+		const kp = await generateAgentKeypair();
+		const res = await vsClient.agent.create(
+			{
+				name: "Bad Scopes Agent",
+				publicKey: kp.publicKey,
+				scopes: ["reports.read", "nonexistent.scope"],
+			},
+			{ headers: vsHeaders },
+		);
+		expect(res.error).toBeDefined();
+		expect(res.error?.status).toBe(400);
+	});
+
+	it("should reject all scopes when validateScopes is true but no roles defined", async () => {
+		const {
+			client: noRolesClient,
+			signInWithTestUser: noRolesSignIn,
+		} = await getTestInstance(
+			{
+				plugins: [agentAuth({ validateScopes: true })],
+			},
+			{ clientOptions: { plugins: [agentAuthClient()] } },
+		);
+		const { headers: noRolesHeaders } = await noRolesSignIn();
+
+		const kp = await generateAgentKeypair();
+		const res = await noRolesClient.agent.create(
+			{
+				name: "No Roles Agent",
+				publicKey: kp.publicKey,
+				scopes: ["anything"],
+			},
+			{ headers: noRolesHeaders },
+		);
+		expect(res.error).toBeDefined();
+		expect(res.error?.status).toBe(400);
+	});
+
+	it("should use custom validation function", async () => {
+		const {
+			client: fnClient,
+			signInWithTestUser: fnSignIn,
+		} = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						validateScopes: (scopes) =>
+							scopes.every((s) => s.startsWith("custom.")),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClient()] } },
+		);
+		const { headers: fnHeaders } = await fnSignIn();
+
+		const kp1 = await generateAgentKeypair();
+		const okRes = await fnClient.agent.create(
+			{
+				name: "Custom OK",
+				publicKey: kp1.publicKey,
+				scopes: ["custom.read", "custom.write"],
+			},
+			{ headers: fnHeaders },
+		);
+		expect(okRes.error).toBeNull();
+
+		const kp2 = await generateAgentKeypair();
+		const failRes = await fnClient.agent.create(
+			{
+				name: "Custom Fail",
+				publicKey: kp2.publicKey,
+				scopes: ["custom.read", "bad.scope"],
+			},
+			{ headers: fnHeaders },
+		);
+		expect(failRes.error).toBeDefined();
+		expect(failRes.error?.status).toBe(400);
+	});
+});
+
+// =============================================================================
+// MAX AGENTS PER USER
+// =============================================================================
+
+describe("agent-auth maxAgentsPerUser", async () => {
+	const {
+		client: limClient,
+		signInWithTestUser: limSignIn,
+	} = await getTestInstance(
+		{
+			plugins: [agentAuth({ maxAgentsPerUser: 2 })],
+		},
+		{ clientOptions: { plugins: [agentAuthClient()] } },
+	);
+
+	const { headers: limHeaders } = await limSignIn();
+
+	it("should allow creating agents up to the limit", async () => {
+		const kp1 = await generateAgentKeypair();
+		const res1 = await limClient.agent.create(
+			{ name: "Limit Agent 1", publicKey: kp1.publicKey },
+			{ headers: limHeaders },
+		);
+		expect(res1.error).toBeNull();
+
+		const kp2 = await generateAgentKeypair();
+		const res2 = await limClient.agent.create(
+			{ name: "Limit Agent 2", publicKey: kp2.publicKey },
+			{ headers: limHeaders },
+		);
+		expect(res2.error).toBeNull();
+	});
+
+	it("should reject creation beyond the limit", async () => {
+		const kp3 = await generateAgentKeypair();
+		const res3 = await limClient.agent.create(
+			{ name: "Limit Agent 3", publicKey: kp3.publicKey },
+			{ headers: limHeaders },
+		);
+		expect(res3.error).toBeDefined();
+		expect(res3.error?.status).toBe(400);
+	});
+});
+
+// =============================================================================
+// TOKEN TRACKING & BUDGETS
+// =============================================================================
+
+describe("agent-auth token tracking", async () => {
+	const {
+		client: tokClient,
+		signInWithTestUser: tokSignIn,
+		customFetchImpl: tokFetch,
+	} = await getTestInstance(
+		{
+			plugins: [
+				agentAuth({
+					maxTokensPerAgent: 1000,
+					maxTokensPerUser: 2000,
+				}),
+			],
+		},
+		{ clientOptions: { plugins: [agentAuthClient()] } },
+	);
+
+	const { headers: tokHeaders } = await tokSignIn();
+
+	let tokAgentId: string;
+	let tokKeypair: Awaited<ReturnType<typeof generateAgentKeypair>>;
+
+	it("should create an agent for token tests", async () => {
+		tokKeypair = await generateAgentKeypair();
+		const res = await tokClient.agent.create(
+			{ name: "Token Agent", publicKey: tokKeypair.publicKey },
+			{ headers: tokHeaders },
+		);
+		expect(res.error).toBeNull();
+		tokAgentId = res.data!.agentId;
+	});
+
+	it("should track tokens via log-activity", async () => {
+		const jwt = await signAgentJWT({
+			agentId: tokAgentId,
+			privateKey: tokKeypair.privateKey,
+		});
+
+		const logRes = await tokFetch(
+			"http://localhost:3000/api/auth/agent/log-activity",
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${jwt}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					method: "TOOL",
+					path: "test.tool",
+					status: 200,
+					inputTokens: 100,
+					outputTokens: 50,
+				}),
+			},
+		);
+		expect(logRes.status).toBe(200);
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const agentRes = await tokClient.agent.get(
+			{ query: { agentId: tokAgentId } },
+			{ headers: tokHeaders },
+		);
+		expect(agentRes.data?.totalInputTokens).toBe(100);
+		expect(agentRes.data?.totalOutputTokens).toBe(50);
+	});
+
+	it("should show tokens in activity log", async () => {
+		const actRes = await tokClient.agent.activity(
+			{ query: { agentId: tokAgentId } },
+			{ headers: tokHeaders },
+		);
+		expect(actRes.error).toBeNull();
+		const toolEntry = actRes.data!.activities.find(
+			(e: { method: string; inputTokens: number | null }) =>
+				e.method === "TOOL" && e.inputTokens !== null,
+		);
+		expect(toolEntry).toBeDefined();
+		expect(toolEntry!.inputTokens).toBe(100);
+		expect(toolEntry!.outputTokens).toBe(50);
+	});
+
+	it("should not double-count tokens from after-hook", async () => {
+		const jwt = await signAgentJWT({
+			agentId: tokAgentId,
+			privateKey: tokKeypair.privateKey,
+		});
+
+		await tokFetch("http://localhost:3000/api/auth/agent/get-session", {
+			headers: { Authorization: `Bearer ${jwt}` },
+		});
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const agentRes = await tokClient.agent.get(
+			{ query: { agentId: tokAgentId } },
+			{ headers: tokHeaders },
+		);
+		// Totals unchanged — after-hook no longer increments tokens
+		expect(agentRes.data?.totalInputTokens).toBe(100);
+		expect(agentRes.data?.totalOutputTokens).toBe(50);
+	});
+
+	it("should reject log-activity when per-agent token budget is exceeded", async () => {
+		const jwt = await signAgentJWT({
+			agentId: tokAgentId,
+			privateKey: tokKeypair.privateKey,
+		});
+
+		const res = await tokFetch(
+			"http://localhost:3000/api/auth/agent/log-activity",
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${jwt}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					method: "TOOL",
+					path: "big.tool",
+					status: 200,
+					inputTokens: 900,
+					outputTokens: 100,
+				}),
+			},
+		);
+		expect(res.status).toBe(403);
+	});
+
+	it("should return token usage via getTokenUsage endpoint (single agent)", async () => {
+		const usageRes = await tokFetch(
+			`http://localhost:3000/api/auth/agent/token-usage?agentId=${tokAgentId}`,
+			{
+				headers: Object.fromEntries(tokHeaders.entries()),
+			},
+		);
+		expect(usageRes.status).toBe(200);
+		const data = await usageRes.json();
+		expect(data.agentId).toBe(tokAgentId);
+		expect(data.totalInputTokens).toBe(100);
+		expect(data.totalOutputTokens).toBe(50);
+		expect(data.totalTokens).toBe(150);
+		expect(data.budget).toBe(1000);
+		expect(data.budgetRemaining).toBe(850);
+		expect(Array.isArray(data.recentActivity)).toBe(true);
+	});
+
+	it("should return token usage via getTokenUsage endpoint (aggregate)", async () => {
+		const usageRes = await tokFetch(
+			"http://localhost:3000/api/auth/agent/token-usage",
+			{
+				headers: Object.fromEntries(tokHeaders.entries()),
+			},
+		);
+		expect(usageRes.status).toBe(200);
+		const data = await usageRes.json();
+		expect(typeof data.totalTokens).toBe("number");
+		expect(data.budgetPerAgent).toBe(1000);
+		expect(data.budgetPerUser).toBe(2000);
+		expect(typeof data.userBudgetRemaining).toBe("number");
+		expect(Array.isArray(data.agents)).toBe(true);
+	});
+
+	it("should enforce per-user token budget across agents", async () => {
+		// Create a second agent and fill it close to the user limit
+		const kp2 = await generateAgentKeypair();
+		const res2 = await tokClient.agent.create(
+			{ name: "Token Agent 2", publicKey: kp2.publicKey },
+			{ headers: tokHeaders },
+		);
+		expect(res2.error).toBeNull();
+		const agent2Id = res2.data!.agentId;
+
+		const jwt2 = await signAgentJWT({
+			agentId: agent2Id,
+			privateKey: kp2.privateKey,
+		});
+
+		// Log 900 tokens on agent 2 — agent 1 has 150, so user total = 1050
+		const logRes = await tokFetch(
+			"http://localhost:3000/api/auth/agent/log-activity",
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${jwt2}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					method: "TOOL",
+					path: "test.tool",
+					status: 200,
+					inputTokens: 500,
+					outputTokens: 400,
+				}),
+			},
+		);
+		expect(logRes.status).toBe(200);
+
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Now try to log enough to push user over 2000
+		const overRes = await tokFetch(
+			"http://localhost:3000/api/auth/agent/log-activity",
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${jwt2}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					method: "TOOL",
+					path: "huge.tool",
+					status: 200,
+					inputTokens: 500,
+					outputTokens: 500,
+				}),
+			},
+		);
+		expect(overRes.status).toBe(403);
 	});
 });

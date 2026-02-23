@@ -8,9 +8,11 @@ const STORAGE_DIR = path.join(os.homedir(), ".better-auth", "agents");
 const STORAGE_FILE = path.join(STORAGE_DIR, "keypair.json");
 const CONNECTIONS_FILE = path.join(STORAGE_DIR, "connections.json");
 
+type JWKRecord = Record<string, string | string[] | boolean | undefined>;
+
 interface StoredKeypair {
-	privateKey: Record<string, unknown>;
-	publicKey: Record<string, unknown>;
+	privateKey: JWKRecord;
+	publicKey: JWKRecord;
 	kid: string;
 	createdAt: string;
 }

@@ -13,6 +13,8 @@ export interface AgentActivity {
 	method: string;
 	path: string;
 	status: number | null;
+	inputTokens: number | null;
+	outputTokens: number | null;
 	ipAddress: string | null;
 	userAgent: string | null;
 	createdAt: Date;
@@ -71,15 +73,26 @@ export function getAgentActivity() {
 				where.push({ field: "agentId", value: agentId });
 			}
 
-			const activities = await ctx.context.adapter.findMany<AgentActivity>({
-				model: ACTIVITY_TABLE,
-				where,
+			const [activities, total] = await Promise.all([
+				ctx.context.adapter.findMany<AgentActivity>({
+					model: ACTIVITY_TABLE,
+					where,
+					limit,
+					offset,
+					sortBy: { field: "createdAt", direction: "desc" },
+				}),
+				ctx.context.adapter.count({
+					model: ACTIVITY_TABLE,
+					where,
+				}),
+			]);
+
+			return ctx.json({
+				activities,
+				total,
 				limit,
 				offset,
-				sortBy: { field: "createdAt", direction: "desc" },
 			});
-
-			return ctx.json(activities);
 		},
 	);
 }

@@ -73,6 +73,9 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		jwtMaxAge: options?.jwtMaxAge ?? 60,
 		agentSessionTTL: options?.agentSessionTTL ?? 3600,
 		agentMaxLifetime: options?.agentMaxLifetime ?? 86400,
+		maxAgentsPerUser: options?.maxAgentsPerUser ?? 25,
+		maxTokensPerAgent: options?.maxTokensPerAgent ?? 0,
+		maxTokensPerUser: options?.maxTokensPerUser ?? 0,
 	};
 
 	const schema = mergeSchema(agentSchema(), opts.schema);
@@ -181,6 +184,44 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								throw APIError.from(
 									"UNAUTHORIZED",
 									AGENT_AUTH_ERROR_CODES.AGENT_EXPIRED,
+								);
+							}
+						}
+
+						// Per-agent token budget check
+						if (opts.maxTokensPerAgent > 0) {
+							const used =
+								(agent.totalInputTokens ?? 0) +
+								(agent.totalOutputTokens ?? 0);
+							if (used >= opts.maxTokensPerAgent) {
+								throw APIError.from(
+									"FORBIDDEN",
+									AGENT_AUTH_ERROR_CODES.TOKEN_BUDGET_EXCEEDED,
+								);
+							}
+						}
+
+						// Per-user token budget check (sum across all agents)
+						if (opts.maxTokensPerUser > 0) {
+							const userAgents = await ctx.context.adapter.findMany<{
+								totalInputTokens: number;
+								totalOutputTokens: number;
+							}>({
+								model: AGENT_TABLE,
+								where: [
+									{ field: "userId", value: agent.userId },
+								],
+							});
+							let userTotal = 0;
+							for (const a of userAgents) {
+								userTotal +=
+									(a.totalInputTokens ?? 0) +
+									(a.totalOutputTokens ?? 0);
+							}
+							if (userTotal >= opts.maxTokensPerUser) {
+								throw APIError.from(
+									"FORBIDDEN",
+									AGENT_AUTH_ERROR_CODES.USER_TOKEN_BUDGET_EXCEEDED,
 								);
 							}
 						}
@@ -314,50 +355,55 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						const loggedPath =
 							ctx.headers?.get("x-agent-path") ?? ctx.path ?? "";
 
-						// Extract the first IP from x-forwarded-for (may contain a comma-separated chain)
-						const forwarded = ctx.headers?.get("x-forwarded-for");
-						const clientIp = forwarded
-							? (forwarded.split(",")[0]?.trim() ?? null)
-							: (ctx.headers?.get("x-real-ip") ?? null);
+					// Extract the first IP from x-forwarded-for (may contain a comma-separated chain)
+					const forwarded = ctx.headers?.get("x-forwarded-for");
+					const clientIp = forwarded
+						? (forwarded.split(",")[0]?.trim() ?? null)
+						: (ctx.headers?.get("x-real-ip") ?? null);
 
-						// Log activity with response status
-						ctx.context.runInBackground(
-							ctx.context.adapter
-								.create({
-									model: "agentActivity",
-									data: {
-										agentId: agentSession.agent.id,
-										userId: agentSession.user.id,
-										method: loggedMethod,
-										path: loggedPath,
-										status,
-										ipAddress: clientIp,
-										userAgent: ctx.headers?.get("user-agent") ?? null,
-										createdAt: new Date(),
-									},
-								})
-								.catch(() => {}),
-						);
+					// Log activity (method/path/status only).
+					// Token counts are tracked exclusively via POST /agent/log-activity
+					// to avoid double-counting when agents report tokens there.
+					ctx.context.runInBackground(
+						ctx.context.adapter
+							.create({
+								model: "agentActivity",
+								data: {
+									agentId: agentSession.agent.id,
+									userId: agentSession.user.id,
+									method: loggedMethod,
+									path: loggedPath,
+									status,
+									inputTokens: null,
+									outputTokens: null,
+									ipAddress: clientIp,
+									userAgent: ctx.headers?.get("user-agent") ?? null,
+									createdAt: new Date(),
+								},
+							})
+							.catch(() => {}),
+					);
 					}),
 				},
 			],
 		},
-		endpoints: {
-			createAgent: routes.createAgent,
-			listAgents: routes.listAgents,
-			getAgent: routes.getAgent,
-			updateAgent: routes.updateAgent,
-			revokeAgent: routes.revokeAgent,
-			rotateKey: routes.rotateKey,
-			getAgentSession: routes.getAgentSession,
-			getAgentActivity: routes.getAgentActivity,
-			logActivity: routes.logActivity,
-			cleanupAgents: routes.cleanupAgents,
-			registerProvider: routes.registerProvider,
-			listProviders: routes.listProviders,
-			deleteProvider: routes.deleteProvider,
-			gatewayConfig: routes.gatewayConfig,
-		},
+	endpoints: {
+		createAgent: routes.createAgent,
+		listAgents: routes.listAgents,
+		getAgent: routes.getAgent,
+		updateAgent: routes.updateAgent,
+		revokeAgent: routes.revokeAgent,
+		rotateKey: routes.rotateKey,
+		getAgentSession: routes.getAgentSession,
+		getAgentActivity: routes.getAgentActivity,
+		getTokenUsage: routes.getTokenUsage,
+		logActivity: routes.logActivity,
+		cleanupAgents: routes.cleanupAgents,
+		registerProvider: routes.registerProvider,
+		listProviders: routes.listProviders,
+		deleteProvider: routes.deleteProvider,
+		gatewayConfig: routes.gatewayConfig,
+	},
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,
 		options,

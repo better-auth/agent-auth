@@ -471,6 +471,7 @@ async function reportActivity(
 	agentId: string,
 	tool: string,
 	isError: boolean,
+	tokenUsage?: { inputTokens?: number; outputTokens?: number },
 ): Promise<void> {
 	const jwt = await signAgentJWT({
 		agentId,
@@ -487,6 +488,12 @@ async function reportActivity(
 			method: "TOOL",
 			path: tool,
 			status: isError ? 500 : 200,
+			...(tokenUsage?.inputTokens != null && {
+				inputTokens: tokenUsage.inputTokens,
+			}),
+			...(tokenUsage?.outputTokens != null && {
+				outputTokens: tokenUsage.outputTokens,
+			}),
 		}),
 	});
 }

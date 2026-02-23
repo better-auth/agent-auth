@@ -5,6 +5,7 @@ import { gatewayConfig } from "./gateway-config";
 import { getAgent } from "./get-agent";
 import { getAgentActivity } from "./get-agent-activity";
 import { getAgentSession } from "./get-agent-session";
+import { getTokenUsage } from "./get-token-usage";
 import { listAgents } from "./list-agents";
 import { logActivity } from "./log-activity";
 import {
@@ -26,7 +27,8 @@ export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
 		rotateKey: rotateKey(),
 		getAgentSession: getAgentSession(),
 		getAgentActivity: getAgentActivity(),
-		logActivity: logActivity(),
+		getTokenUsage: getTokenUsage(opts),
+		logActivity: logActivity(opts),
 		cleanupAgents: cleanupAgents(),
 		registerProvider: registerProvider(opts),
 		listProviders: listProviders(),
