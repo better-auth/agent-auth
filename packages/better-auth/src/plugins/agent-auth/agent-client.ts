@@ -2,7 +2,7 @@ import type { AgentJWK } from "./crypto";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
 import type { AgentSession } from "./types";
 
-export { generateAgentKeypair as generateKeypair } from "./crypto";
+export { generateAgentKeypair as generateKeypair, signAgentJWT } from "./crypto";
 
 /**
  * Open a URL in the user's default browser.

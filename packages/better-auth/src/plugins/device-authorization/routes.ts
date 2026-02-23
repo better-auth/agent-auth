@@ -671,6 +671,10 @@ export const deviceApprove = createAuthEndpoint(
 			userCode: z.string().meta({
 				description: "The user code to approve",
 			}),
+			scope: z.string().optional().meta({
+				description:
+					"User-edited scope string. When provided, overrides the originally requested scopes on the device code record.",
+			}),
 		}),
 		error: z.object({
 			error: z
@@ -722,7 +726,7 @@ export const deviceApprove = createAuthEndpoint(
 			});
 		}
 
-		const { userCode } = ctx.body;
+		const { userCode, scope: editedScope } = ctx.body;
 		const cleanUserCode = userCode.replace(/-/g, "");
 
 		const deviceCodeRecord = await ctx.context.adapter.findOne<DeviceCode>({
@@ -760,7 +764,6 @@ export const deviceApprove = createAuthEndpoint(
 			});
 		}
 
-		// Check if userId is set and matches the current user
 		if (
 			deviceCodeRecord.userId &&
 			deviceCodeRecord.userId !== session.user.id
@@ -772,7 +775,14 @@ export const deviceApprove = createAuthEndpoint(
 			});
 		}
 
-		// Update device code with approved status and user ID
+		const updateData: Record<string, unknown> = {
+			status: "approved",
+			userId: session.user.id,
+		};
+		if (editedScope !== undefined) {
+			updateData.scope = editedScope;
+		}
+
 		await ctx.context.adapter.update({
 			model: "deviceCode",
 			where: [
@@ -781,10 +791,7 @@ export const deviceApprove = createAuthEndpoint(
 					value: deviceCodeRecord.id,
 				},
 			],
-			update: {
-				status: "approved",
-				userId: session.user.id,
-			},
+			update: updateData,
 		});
 
 		return ctx.json({

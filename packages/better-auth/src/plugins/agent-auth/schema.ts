@@ -242,4 +242,76 @@ export const agentSchema = () =>
 				},
 			},
 		},
+		agentScopeRequest: {
+			fields: {
+				agentId: {
+					type: "string",
+					references: { model: "agent", field: "id", onDelete: "cascade" },
+					required: true,
+					input: false,
+					index: true,
+				},
+				userId: {
+					type: "string",
+					references: { model: "user", field: "id", onDelete: "cascade" },
+					required: true,
+					input: false,
+					index: true,
+				},
+				agentName: {
+					type: "string",
+					required: true,
+					input: false,
+				},
+				newName: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				existingScopes: {
+					type: "string",
+					required: false,
+					input: false,
+					transform: {
+						input(value: unknown) {
+							return JSON.stringify(value);
+						},
+						output(value: unknown) {
+							if (!value) return [];
+							return parseJSON<string[]>(value as string);
+						},
+					},
+				},
+				requestedScopes: {
+					type: "string",
+					required: false,
+					input: false,
+					transform: {
+						input(value: unknown) {
+							return JSON.stringify(value);
+						},
+						output(value: unknown) {
+							if (!value) return [];
+							return parseJSON<string[]>(value as string);
+						},
+					},
+				},
+				status: {
+					type: "string",
+					required: true,
+					input: false,
+					defaultValue: "pending",
+				},
+				createdAt: {
+					type: "date",
+					required: true,
+					input: false,
+				},
+				expiresAt: {
+					type: "date",
+					required: true,
+					input: false,
+				},
+			},
+		},
 	}) satisfies BetterAuthPluginDBSchema;

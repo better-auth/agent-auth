@@ -3,6 +3,7 @@ export * from "../utils/hide-metadata";
 export * from "./access";
 export * from "./admin";
 export * from "./agent-auth";
+export * from "./agent-gateway";
 export * from "./anonymous";
 export * from "./api-key";
 export * from "./bearer";
