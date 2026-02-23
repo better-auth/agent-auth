@@ -15,9 +15,11 @@ The Agent Auth plugin gives AI agent runtimes their own identity so they can act
 - [Agent session resolution](#agent-session-resolution) via a `before` hook
 - [Key rotation](#rotate-key) without downtime
 - [Revocation](#revoke-an-agent) with credential wipe
+- [Token budgets](#token-budgets) — per-agent, per-user, per-org, and per-workgroup limits
+- [Workgroups](#workgroups) — group agents within an organization with their own budgets
 - [Agent SDK](#agent-sdk) for agent runtimes
 - [MCP server](#mcp-server) for Cursor, Claude Desktop, and other AI tools
-- [MCP Gateway](#mcp-gateway) — proxy third-party MCP servers (GitHub, Slack, etc.) through agent scopes
+- [Agent Gateway](#agent-gateway) — proxy third-party MCP servers (GitHub, Slack, etc.) through agent scopes (separate plugin)
 - [Dynamic tool discovery](#the-complete-flow) — agents discover available tools and request only what they need
 - [Pluggable storage](#storage-options) — memory (default), file, or database
 - [AAP-compatible JWT claims](#aap-format) (IETF Agent Authorization Profile)
@@ -40,7 +42,24 @@ The Agent Auth plugin gives AI agent runtimes their own identity so they can act
                         writer: ["reports.read", "reports.write", "email.send"], // [!code highlight]
                     }, // [!code highlight]
                     defaultRole: "reader", // [!code highlight]
+                    maxTokensPerAgent: 100_000, // optional token budget // [!code highlight]
+                    maxTokensPerUser: 500_000,  // optional // [!code highlight]
                 }) // [!code highlight]
+            ]
+        })
+        ```
+
+        If you also want the [Agent Gateway](#agent-gateway) (MCP proxy for third-party tools), add it as a separate plugin:
+
+        ```ts title="auth.ts"
+        import { agentGateway } from "better-auth/plugins/agent-gateway" // [!code highlight]
+
+        export const auth = betterAuth({
+            plugins: [
+                agentAuth({ /* ... */ }),
+                agentGateway({ // [!code highlight]
+                    providers: [{ name: "github", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] }], // [!code highlight]
+                }), // [!code highlight]
             ]
         })
         ```
@@ -205,6 +224,10 @@ type createAgent = {
      */
     orgId?: string
     /**
+     * Workgroup ID within the org (if workgroup-scoped).
+     */
+    workgroupId?: string
+    /**
      * Optional metadata.
      */
     metadata?: Record<string, unknown>
@@ -245,6 +268,10 @@ type listAgents = {
      * Filter by organization ID.
      */
     orgId?: string
+    /**
+     * Filter by workgroup ID.
+     */
+    workgroupId?: string
 }
 ```
 </APIMethod>
@@ -382,6 +409,7 @@ The `agentSession` object contains:
         scopes: string[]
         role: string | null
         orgId: string | null
+        workgroupId: string | null
         createdAt: Date
         metadata: Record<string, unknown> | null
     },
@@ -452,7 +480,7 @@ Add the MCP server to your AI tool's configuration:
     "mcpServers": {
         "better-auth": {
             "command": "npx",
-            "args": ["better-auth-gateway"],
+            "args": ["better-auth", "agent"],
             "env": {
                 "BETTER_AUTH_URL": "http://localhost:3000"
             }
@@ -510,24 +538,28 @@ AI:  → calls agent_request(agentId: "abc123", path: "/api/reports/Q4")
      "200 OK — { ... report data ... }"
 ```
 
-## MCP Gateway
+## Agent Gateway
 
-The MCP Gateway lets your AI agents connect to **third-party MCP servers** (GitHub, Slack, Google Drive, etc.) through Better Auth's security model. Instead of giving the AI tool direct access to third-party APIs, the gateway acts as a proxy — agents must be authorized and can only use the tools they were approved for.
+The Agent Gateway is a **separate plugin** (`agentGateway`) that lets your AI agents connect to **third-party MCP servers** (GitHub, Slack, Google Drive, etc.) through Better Auth's security model. Instead of giving the AI tool direct access to third-party APIs, the gateway acts as a proxy — agents must be authorized and can only use the tools they were approved for.
+
+<Callout>
+The Agent Gateway requires the `agentAuth` plugin to be installed alongside it. It builds on top of agent identity, scopes, and session management.
+</Callout>
 
 ### How It Works
 
 ```
 AI Tool (Cursor, Claude Desktop)
     ↓ stdio
-MCP Gateway (better-auth-gateway)
+CLI Gateway (npx better-auth agent)
     ├── Agent tools (connect_agent, agent_request, ...)
     └── Provider tools (github.create_issue, slack.send_message, ...)
-            ↓ stdio
-        Third-party MCP servers (spawned as child processes)
+            ↓ stdio / sse
+        Third-party MCP servers
 ```
 
 The gateway:
-1. Spawns third-party MCP servers as child processes
+1. Connects to third-party MCP servers (via stdio or SSE)
 2. Discovers all their tools on startup
 3. Exposes them as **namespaced tools** (e.g. `github.create_issue`)
 4. Enforces **per-agent scope checks** — agents can only call tools they were approved for
@@ -536,11 +568,12 @@ The gateway:
 
 <Steps>
     <Step>
-        ### Configure providers in your plugin
+        ### Add the Agent Gateway plugin
 
         ```ts title="auth.ts"
         import { betterAuth } from "better-auth"
         import { agentAuth } from "better-auth/plugins"
+        import { agentGateway } from "better-auth/plugins/agent-gateway" // [!code highlight]
         import { deviceAuthorization } from "better-auth/plugins"
 
         export const auth = betterAuth({
@@ -550,14 +583,18 @@ The gateway:
                         reader: ["reports.read"],
                         writer: ["reports.read", "reports.write"],
                     },
-                    mcpProviders: ["github"], // [!code highlight]
                 }),
+                agentGateway({ // [!code highlight]
+                    providers: [ // [!code highlight]
+                        { name: "github", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] }, // [!code highlight]
+                    ], // [!code highlight]
+                }), // [!code highlight]
                 deviceAuthorization(),
             ]
         })
         ```
 
-        Known providers are resolved automatically. See [Supported Providers](#supported-providers) for the full list.
+        You can also register providers dynamically at runtime via the [Provider Management API](#provider-management).
     </Step>
     <Step>
         ### Configure the MCP client
@@ -569,7 +606,7 @@ The gateway:
             "mcpServers": {
                 "better-auth": {
                     "command": "npx",
-                    "args": ["better-auth-gateway"],
+                    "args": ["better-auth", "agent"],
                     "env": {
                         "BETTER_AUTH_URL": "http://localhost:3000",
                         "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..."
@@ -584,13 +621,54 @@ The gateway:
     <Step>
         ### Migrate the database
 
-        If you haven't already, run the migration to create the agent and device code tables:
+        If you haven't already, run the migration to create the agent, workgroup, and provider tables:
 
         ```package-install
         npx @better-auth/cli migrate
         ```
     </Step>
 </Steps>
+
+### Provider Management
+
+The gateway exposes REST endpoints for managing providers at runtime. By default, only admin users can register and delete providers.
+
+```ts
+// Register a new provider
+await fetch("/api/auth/agent/gateway/provider/register", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+        name: "slack",
+        displayName: "Slack",
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "@anthropic/slack-mcp"],
+        orgId: "org_123",         // optional — scope to an org
+        workgroupId: "wg_456",    // optional — scope to a workgroup
+    }),
+})
+
+// List providers (with optional org/workgroup filter)
+await fetch("/api/auth/agent/gateway/provider/list?orgId=org_123", { headers })
+
+// Delete (soft-delete) a provider
+await fetch("/api/auth/agent/gateway/provider/delete", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ name: "slack" }),
+})
+```
+
+Configure who can manage providers via `authorizeProviderManagement`:
+
+```ts
+agentGateway({
+    authorizeProviderManagement: async (user) => {
+        return user.role === "admin" || user.role === "org_owner"
+    },
+})
+```
 
 ### The Complete Flow
 
@@ -722,7 +800,7 @@ agentAuth({
 For advanced use cases, use `createGatewayServer` directly instead of the CLI:
 
 ```ts title="my-gateway.ts"
-import { createGatewayServer } from "better-auth/plugins/agent-auth/mcp-gateway"
+import { createGatewayServer } from "better-auth/plugins/agent-gateway"
 
 createGatewayServer({
     providers: ["github", "slack"],
@@ -850,6 +928,115 @@ The gateway handles cleanup automatically:
 Each conversation in Cursor/Claude Desktop shares a single MCP server process. The agent uses a unique `agentId` per conversation to maintain separate identities. Memory storage (the default) ensures a clean slate on every MCP restart.
 </Callout>
 
+## Token Budgets
+
+Agent Auth tracks token consumption per-agent (input and output tokens). You can set budgets at multiple levels to control spending:
+
+```ts title="auth.ts"
+agentAuth({
+    maxTokensPerAgent: 100_000,       // per individual agent
+    maxTokensPerUser: 500_000,        // across all of a user's agents
+    maxTokensPerOrg: 1_000_000,       // across all agents in an organization
+    maxTokensPerWorkgroup: 250_000,   // across all agents in a workgroup
+})
+```
+
+When an agent reports activity via `POST /agent/log-activity` with `inputTokens` and `outputTokens`, the plugin checks all applicable budgets. If any budget would be exceeded, the request is rejected with a `403 FORBIDDEN` error.
+
+| Budget | Scope | Error Code |
+|---|---|---|
+| `maxTokensPerAgent` | Single agent | `TOKEN_BUDGET_EXCEEDED` |
+| `maxTokensPerUser` | All agents owned by a user | `USER_TOKEN_BUDGET_EXCEEDED` |
+| `maxTokensPerOrg` | All agents in an organization | `ORG_TOKEN_BUDGET_EXCEEDED` |
+| `maxTokensPerWorkgroup` | All agents in a workgroup | `WORKGROUP_TOKEN_BUDGET_EXCEEDED` |
+
+Set any value to `0` (the default) to disable that budget level.
+
+### Token Usage API
+
+```ts
+// Get token usage for an agent
+const { data } = await authClient.agent.getTokenUsage({
+    query: { agentId: "agent-id" }
+}, { headers })
+// { agentTokens: { input, output, total }, userTokens: { input, output, total } }
+```
+
+## Workgroups
+
+Workgroups let you **group agents within an organization**. This is useful for enterprise setups where you want to organize agents by team, project, or department — each with its own token budget.
+
+### Create a Workgroup
+
+```ts
+await fetch("/api/auth/agent/workgroup/create", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+        name: "Finance Team",
+        orgId: "org_123",
+        description: "Agents for the finance department",
+        maxTokens: 500_000,  // optional per-workgroup budget (0 = unlimited)
+    }),
+})
+```
+
+### List Workgroups
+
+```ts
+const res = await fetch("/api/auth/agent/workgroup/list?orgId=org_123", { headers })
+const { workgroups } = await res.json()
+// [{ id, name, orgId, description, maxTokens, createdAt, updatedAt }]
+```
+
+### Update a Workgroup
+
+```ts
+await fetch("/api/auth/agent/workgroup/update", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+        workgroupId: "wg_456",
+        name: "Finance & Accounting",
+        maxTokens: 750_000,
+    }),
+})
+```
+
+### Delete a Workgroup
+
+```ts
+await fetch("/api/auth/agent/workgroup/delete", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ workgroupId: "wg_456" }),
+})
+```
+
+When a workgroup is deleted, agents in that workgroup have their `workgroupId` set to `null` (they remain active but unassigned).
+
+### Assigning Agents to Workgroups
+
+Pass `workgroupId` when creating an agent:
+
+```ts
+await authClient.agent.create({
+    name: "Budget Analyzer",
+    publicKey: agentPublicKey,
+    scopes: ["reports.read"],
+    orgId: "org_123",
+    workgroupId: "wg_456",
+}, { headers })
+```
+
+Filter agents by workgroup:
+
+```ts
+const { data } = await authClient.agent.list({
+    query: { orgId: "org_123", workgroupId: "wg_456" }
+}, { headers })
+```
+
 ## Roles and Scopes
 
 You can define named roles that map to a set of scopes:
@@ -888,11 +1075,20 @@ This adds AAP-standard claims like `aap_agent` to the JWT payload alongside the 
 | `allowedKeyAlgorithms` | `string[]` | `["Ed25519"]` | Allowed key algorithms |
 | `jwtFormat` | `"simple" \| "aap"` | `"simple"` | JWT claim format |
 | `jwtMaxAge` | `number` | `60` | Maximum JWT age in seconds |
-| `mcpProviders` | `(string \| MCPProviderConfig)[]` | `undefined` | MCP providers for the [gateway](#mcp-gateway). Pass known names (`"github"`) or full configs. |
+| `agentSessionTTL` | `number` | `3600` | Sliding session TTL in seconds (0 = no expiry) |
+| `agentMaxLifetime` | `number` | `86400` | Hard max agent session lifetime in seconds (0 = no cap) |
+| `maxAgentsPerUser` | `number` | `25` | Max active agents per user (0 = unlimited) |
+| `maxTokensPerAgent` | `number` | `0` | Max tokens per individual agent (0 = unlimited) |
+| `maxTokensPerUser` | `number` | `0` | Max tokens across all of a user's agents (0 = unlimited) |
+| `maxTokensPerOrg` | `number` | `0` | Max tokens across all agents in an org (0 = unlimited) |
+| `maxTokensPerWorkgroup` | `number` | `0` | Max tokens across all agents in a workgroup (0 = unlimited) |
+| `validateScopes` | `boolean \| (scopes: string[]) => Promise<boolean>` | `undefined` | Validate scopes on agent creation |
 
 ## Schema
 
-The plugin adds an `agent` table to the database.
+The plugin adds the following tables to the database.
+
+### Agent
 
 <DatabaseTable
     fields={[
@@ -900,14 +1096,73 @@ The plugin adds an `agent` table to the database.
         { name: "name", type: "string", description: "Friendly name for the agent" },
         { name: "userId", type: "string", description: "ID of the user who owns this agent", isForeignKey: true },
         { name: "orgId", type: "string", description: "Organization ID (optional)", isOptional: true },
+        { name: "workgroupId", type: "string", description: "Workgroup ID within the org (optional)", isForeignKey: true, isOptional: true },
         { name: "scopes", type: "string", description: "JSON array of scope strings" },
         { name: "role", type: "string", description: "Role name", isOptional: true },
         { name: "status", type: "string", description: "'active' or 'revoked'" },
         { name: "publicKey", type: "string", description: "Agent's Ed25519 public key as JWK JSON" },
         { name: "kid", type: "string", description: "Key ID from the JWK", isOptional: true },
         { name: "lastUsedAt", type: "date", description: "Last time the agent authenticated", isOptional: true },
+        { name: "totalInputTokens", type: "number", description: "Running total of input tokens consumed" },
+        { name: "totalOutputTokens", type: "number", description: "Running total of output tokens consumed" },
         { name: "metadata", type: "string", description: "JSON object of arbitrary metadata", isOptional: true },
         { name: "createdAt", type: "date", description: "When the agent was created" },
         { name: "updatedAt", type: "date", description: "When the agent was last modified" },
+    ]}
+/>
+
+### Agent Workgroup
+
+<DatabaseTable
+    fields={[
+        { name: "id", type: "string", description: "Unique workgroup identifier", isPrimaryKey: true },
+        { name: "name", type: "string", description: "Workgroup name" },
+        { name: "description", type: "string", description: "Optional description", isOptional: true },
+        { name: "orgId", type: "string", description: "Organization this workgroup belongs to" },
+        { name: "maxTokens", type: "number", description: "Token budget for this workgroup (0 = unlimited)" },
+        { name: "createdAt", type: "date", description: "When the workgroup was created" },
+        { name: "updatedAt", type: "date", description: "When the workgroup was last modified" },
+    ]}
+/>
+
+### Agent Activity
+
+<DatabaseTable
+    fields={[
+        { name: "id", type: "string", description: "Unique activity log entry", isPrimaryKey: true },
+        { name: "agentId", type: "string", description: "The agent that performed the action", isForeignKey: true },
+        { name: "userId", type: "string", description: "The user the agent acted on behalf of", isForeignKey: true },
+        { name: "method", type: "string", description: "HTTP method or 'TOOL'" },
+        { name: "path", type: "string", description: "Request path or tool name" },
+        { name: "status", type: "number", description: "HTTP status code", isOptional: true },
+        { name: "inputTokens", type: "number", description: "Input tokens consumed", isOptional: true },
+        { name: "outputTokens", type: "number", description: "Output tokens produced", isOptional: true },
+        { name: "ipAddress", type: "string", description: "Client IP address", isOptional: true },
+        { name: "userAgent", type: "string", description: "User-Agent header", isOptional: true },
+        { name: "createdAt", type: "date", description: "When the action occurred" },
+    ]}
+/>
+
+### MCP Provider (Agent Gateway)
+
+Added by the `agentGateway` plugin:
+
+<DatabaseTable
+    fields={[
+        { name: "id", type: "string", description: "Unique provider identifier", isPrimaryKey: true },
+        { name: "name", type: "string", description: "Short unique name (scope namespace)" },
+        { name: "orgId", type: "string", description: "Organization scope (null = global)", isOptional: true },
+        { name: "workgroupId", type: "string", description: "Workgroup scope (null = org-wide)", isOptional: true },
+        { name: "displayName", type: "string", description: "Human-readable display name" },
+        { name: "transport", type: "string", description: "'stdio' or 'sse'" },
+        { name: "command", type: "string", description: "For stdio: command to spawn", isOptional: true },
+        { name: "args", type: "string", description: "For stdio: JSON array of arguments", isOptional: true },
+        { name: "env", type: "string", description: "For stdio: JSON env vars", isOptional: true },
+        { name: "url", type: "string", description: "For SSE: remote MCP server URL", isOptional: true },
+        { name: "headers", type: "string", description: "For SSE: JSON HTTP headers", isOptional: true },
+        { name: "toolScopes", type: "string", description: "JSON scope-to-tools mapping", isOptional: true },
+        { name: "status", type: "string", description: "'active' or 'disabled'" },
+        { name: "createdAt", type: "date", description: "When the provider was registered" },
+        { name: "updatedAt", type: "date", description: "When the provider was last modified" },
     ]}
 />
