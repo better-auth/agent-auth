@@ -266,8 +266,54 @@ const revoke = new Command("revoke")
 	.argument("<agentId>", "Agent ID to remove")
 	.action(revokeAction);
 
+async function startMcpServer(options: { providers?: string; url?: string }) {
+	const { createGatewayServer } = await import("../lib/gateway-server.js");
+	const { createFileStorage } = await import(
+		"better-auth/plugins/agent-auth/mcp-storage-fs"
+	);
+	const { createMemoryStorage } = await import(
+		"better-auth/plugins/agent-auth/mcp-storage-memory"
+	);
+
+	const appUrl = options.url || process.env.BETTER_AUTH_URL;
+	const encryptionKey = process.env.BETTER_AUTH_ENCRYPTION_KEY ?? undefined;
+	const cookie = process.env.BETTER_AUTH_AGENT_COOKIE ?? undefined;
+	const token = process.env.BETTER_AUTH_AGENT_TOKEN ?? undefined;
+
+	const storage = encryptionKey
+		? createFileStorage({ encryptionKey })
+		: createMemoryStorage();
+
+	const hasAuthHeaders = !!(cookie || token);
+
+	await createGatewayServer({
+		storage,
+		appUrl: appUrl || undefined,
+		getAuthHeaders: hasAuthHeaders
+			? () => {
+					const headers: Record<string, string> = {};
+					if (cookie) headers.cookie = cookie;
+					if (token) headers.authorization = `Bearer ${token}`;
+					return headers;
+				}
+			: undefined,
+		serverName: "better-auth-agent",
+	});
+}
+
 export const agent = new Command("agent")
-	.description("Manage agent identity and connections")
+	.description(
+		"Manage agent identity and connections. Without a subcommand, starts the MCP gateway server on stdio.",
+	)
+	.option(
+		"--url <url>",
+		"App URL, optionally with query params for discovery (e.g. http://localhost:3000?referenceId=abc)",
+	)
+	.option(
+		"--providers <list>",
+		"Comma-separated MCP providers to enable (e.g. github,slack)",
+	)
+	.action(startMcpServer)
 	.addCommand(keygen)
 	.addCommand(connect)
 	.addCommand(list)

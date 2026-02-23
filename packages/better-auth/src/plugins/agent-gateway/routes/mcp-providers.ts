@@ -2,7 +2,7 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { getSessionFromCtx } from "../../../api";
-import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import { AGENT_GATEWAY_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { MCPProvider } from "../types";
 
 const PROVIDER_TABLE = "mcpProvider";
@@ -45,7 +45,7 @@ const providerBodySchema = z.object({
 
 export function registerProvider() {
 	return createAuthEndpoint(
-		"/agent/mcp-provider/register",
+		"/agent/gateway/provider/register",
 		{
 			method: "POST",
 			body: providerBodySchema,
@@ -58,7 +58,10 @@ export function registerProvider() {
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
+				throw APIError.from(
+					"UNAUTHORIZED",
+					ERROR_CODES.UNAUTHORIZED_SESSION,
+				);
 			}
 
 			const existing = await ctx.context.adapter.findOne<MCPProvider>({
@@ -86,7 +89,9 @@ export function registerProvider() {
 					args: ctx.body.args ? JSON.stringify(ctx.body.args) : null,
 					env: ctx.body.env ? JSON.stringify(ctx.body.env) : null,
 					url: ctx.body.url ?? null,
-					headers: ctx.body.headers ? JSON.stringify(ctx.body.headers) : null,
+					headers: ctx.body.headers
+						? JSON.stringify(ctx.body.headers)
+						: null,
 					toolScopes: ctx.body.toolScopes
 						? JSON.stringify(ctx.body.toolScopes)
 						: null,
@@ -109,7 +114,7 @@ export function registerProvider() {
 
 export function listProviders() {
 	return createAuthEndpoint(
-		"/agent/mcp-provider/list",
+		"/agent/gateway/provider/list",
 		{
 			method: "GET",
 			metadata: {
@@ -121,7 +126,10 @@ export function listProviders() {
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
+				throw APIError.from(
+					"UNAUTHORIZED",
+					ERROR_CODES.UNAUTHORIZED_SESSION,
+				);
 			}
 
 			const providers = await ctx.context.adapter.findMany<MCPProvider>({
@@ -145,11 +153,13 @@ export function listProviders() {
 
 export function deleteProvider() {
 	return createAuthEndpoint(
-		"/agent/mcp-provider/delete",
+		"/agent/gateway/provider/delete",
 		{
 			method: "POST",
 			body: z.object({
-				name: z.string().meta({ description: "Provider name to delete" }),
+				name: z
+					.string()
+					.meta({ description: "Provider name to delete" }),
 			}),
 			metadata: {
 				openapi: {
@@ -160,7 +170,10 @@ export function deleteProvider() {
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
+				throw APIError.from(
+					"UNAUTHORIZED",
+					ERROR_CODES.UNAUTHORIZED_SESSION,
+				);
 			}
 
 			const provider = await ctx.context.adapter.findOne<MCPProvider>({

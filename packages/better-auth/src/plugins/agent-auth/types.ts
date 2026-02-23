@@ -47,22 +47,6 @@ export interface AgentAuthOptions {
 	 */
 	agentSessionTTL?: number;
 	/**
-	 * MCP providers that agents can connect to through the gateway.
-	 *
-	 * Pass a string for known providers (e.g. "github", "slack"),
-	 * or a config object for custom MCP servers.
-	 *
-	 * @example
-	 * ```ts
-	 * mcpProviders: [
-	 *   "github",
-	 *   "slack",
-	 *   { name: "my-tool", command: "node", args: ["my-server.js"] },
-	 * ]
-	 * ```
-	 */
-	mcpProviders?: (string | MCPProviderConfig)[];
-	/**
 	 * Custom schema overrides for the agent table.
 	 */
 	schema?: InferOptionSchema<ReturnType<typeof agentSchema>>;

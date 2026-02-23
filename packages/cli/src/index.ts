@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { agent } from "./commands/agent";
+import { ai } from "./commands/ai";
 import { generate } from "./commands/generate";
 import { info } from "./commands/info";
 import { init } from "./commands/init";
@@ -31,6 +32,7 @@ async function main() {
 	}
 	program
 		.addCommand(agent)
+		.addCommand(ai)
 		.addCommand(init)
 		.addCommand(migrate)
 		.addCommand(generate)

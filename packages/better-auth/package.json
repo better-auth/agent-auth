@@ -36,9 +36,7 @@
   "files": [
     "dist"
   ],
-  "bin": {
-    "better-auth-gateway": "./dist/plugins/agent-auth/mcp-server.mjs"
-  },
+  "bin": {},
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
@@ -248,15 +246,10 @@
       "types": "./dist/plugins/agent-auth/mcp-storage-memory.d.mts",
       "default": "./dist/plugins/agent-auth/mcp-storage-memory.mjs"
     },
-    "./plugins/agent-auth/mcp-server": {
-      "dev-source": "./src/plugins/agent-auth/mcp-server.ts",
-      "types": "./dist/plugins/agent-auth/mcp-server.d.mts",
-      "default": "./dist/plugins/agent-auth/mcp-server.mjs"
-    },
-    "./plugins/agent-auth/mcp-gateway": {
-      "dev-source": "./src/plugins/agent-auth/gateway/index.ts",
-      "types": "./dist/plugins/agent-auth/gateway/index.d.mts",
-      "default": "./dist/plugins/agent-auth/gateway/index.mjs"
+    "./plugins/agent-gateway": {
+      "dev-source": "./src/plugins/agent-gateway/index.ts",
+      "types": "./dist/plugins/agent-gateway/index.d.mts",
+      "default": "./dist/plugins/agent-gateway/index.mjs"
     },
     "./plugins/anonymous": {
       "dev-source": "./src/plugins/anonymous/index.ts",
@@ -476,11 +469,8 @@
       "plugins/agent-auth/mcp-storage-memory": [
         "./dist/plugins/agent-auth/mcp-storage-memory.d.mts"
       ],
-      "plugins/agent-auth/mcp-server": [
-        "./dist/plugins/agent-auth/mcp-server.d.mts"
-      ],
-      "plugins/agent-auth/mcp-gateway": [
-        "./dist/plugins/agent-auth/gateway/index.d.mts"
+      "plugins/agent-gateway": [
+        "./dist/plugins/agent-gateway/index.d.mts"
       ],
       "plugins/anonymous": [
         "./dist/plugins/anonymous/index.d.mts"

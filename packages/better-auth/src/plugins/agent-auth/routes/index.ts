@@ -1,19 +1,16 @@
 import type { ResolvedAgentAuthOptions } from "../types";
+import { approveScope } from "./approve-scope";
 import { cleanupAgents } from "./cleanup-agents";
 import { createAgent } from "./create-agent";
-import { gatewayConfig } from "./gateway-config";
 import { getAgent } from "./get-agent";
 import { getAgentActivity } from "./get-agent-activity";
 import { getAgentSession } from "./get-agent-session";
 import { listAgents } from "./list-agents";
 import { logActivity } from "./log-activity";
-import {
-	deleteProvider,
-	listProviders,
-	registerProvider,
-} from "./mcp-providers";
+import { requestScope } from "./request-scope";
 import { revokeAgent } from "./revoke-agent";
 import { rotateKey } from "./rotate-key";
+import { scopeRequestStatus } from "./scope-request-status";
 import { updateAgent } from "./update-agent";
 
 export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
@@ -28,9 +25,8 @@ export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
 		getAgentActivity: getAgentActivity(),
 		logActivity: logActivity(),
 		cleanupAgents: cleanupAgents(),
-		registerProvider: registerProvider(),
-		listProviders: listProviders(),
-		deleteProvider: deleteProvider(),
-		gatewayConfig: gatewayConfig(opts),
+		requestScope: requestScope(),
+		scopeRequestStatus: scopeRequestStatus(),
+		approveScope: approveScope(),
 	};
 }

@@ -49,15 +49,12 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 			// Try cookie-based session first
 			const cookieSession = await getSessionFromCtx(ctx);
 
-			// Resolve the user ID — either from cookie session or Bearer token fallback
 			let userId: string;
+			let deviceApprovedScopes: string[] | null = null;
 
 			if (cookieSession) {
 				userId = cookieSession.user.id;
 			} else {
-				// Fallback: check Authorization header for a Bearer session token.
-				// This supports the device authorization flow where the agent script
-				// receives a session token from /device/token and needs to create itself.
 				const authHeader = ctx.headers?.get("authorization");
 				const token = authHeader?.replace(/^Bearer\s+/i, "");
 				if (!token || token === authHeader) {
@@ -68,6 +65,29 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 					throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 				}
 				userId = dbSession.user.id;
+
+				// Look up the device code to check if the user edited scopes during approval
+				try {
+					const deviceCodes = await ctx.context.adapter.findMany<{
+						scope: string | null;
+						status: string;
+					}>({
+						model: "deviceCode",
+						where: [
+							{ field: "userId", value: userId },
+							{ field: "status", value: "approved" },
+						],
+						sortBy: { field: "createdAt", direction: "desc" },
+						limit: 1,
+					});
+					if (deviceCodes.length > 0 && deviceCodes[0].scope) {
+						deviceApprovedScopes = deviceCodes[0].scope
+							.split(" ")
+							.filter(Boolean);
+					}
+				} catch {
+					// device code lookup is best-effort
+				}
 			}
 
 			const { name, publicKey, scopes, role, orgId, metadata } = ctx.body;
@@ -77,8 +97,16 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const resolvedRole = role ?? opts.defaultRole ?? null;
-			const resolvedScopes =
+			let resolvedScopes =
 				scopes ?? (resolvedRole && opts.roles?.[resolvedRole]) ?? [];
+
+			// If the user edited scopes during device approval, use their selection
+			if (
+				deviceApprovedScopes !== null &&
+				deviceApprovedScopes.length > 0
+			) {
+				resolvedScopes = deviceApprovedScopes;
+			}
 
 			const now = new Date();
 			const kid = (publicKey.kid as string) ?? null;

@@ -208,44 +208,36 @@ export const agentSchema = () =>
 				},
 			},
 		},
-		mcpProvider: {
+		agentScopeRequest: {
 			fields: {
-				/**
-				 * Short unique name for the provider (e.g. "google-drive", "slack").
-				 * Used as the namespace prefix for tool scopes.
-				 */
-				name: {
+				agentId: {
+					type: "string",
+					references: { model: "agent", field: "id", onDelete: "cascade" },
+					required: true,
+					input: false,
+					index: true,
+				},
+				userId: {
+					type: "string",
+					references: { model: "user", field: "id", onDelete: "cascade" },
+					required: true,
+					input: false,
+					index: true,
+				},
+				agentName: {
 					type: "string",
 					required: true,
-					unique: true,
+					input: false,
 				},
-				/**
-				 * Human-readable display name (e.g. "Google Drive").
-				 */
-				displayName: {
-					type: "string",
-					required: true,
-				},
-				/**
-				 * Transport type: "stdio" or "sse".
-				 */
-				transport: {
-					type: "string",
-					required: true,
-				},
-				/**
-				 * For stdio: the command to spawn (e.g. "npx").
-				 */
-				command: {
+				newName: {
 					type: "string",
 					required: false,
+					input: false,
 				},
-				/**
-				 * For stdio: JSON array of command arguments.
-				 */
-				args: {
+				existingScopes: {
 					type: "string",
 					required: false,
+					input: false,
 					transform: {
 						input(value: unknown) {
 							return JSON.stringify(value);
@@ -256,78 +248,32 @@ export const agentSchema = () =>
 						},
 					},
 				},
-				/**
-				 * For stdio: JSON object of environment variables (encrypted).
-				 * Contains credentials like API keys.
-				 */
-				env: {
+				requestedScopes: {
 					type: "string",
 					required: false,
+					input: false,
 					transform: {
 						input(value: unknown) {
 							return JSON.stringify(value);
 						},
 						output(value: unknown) {
-							if (!value) return null;
-							return parseJSON<Record<string, string>>(value as string);
+							if (!value) return [];
+							return parseJSON<string[]>(value as string);
 						},
 					},
 				},
-				/**
-				 * For SSE: the remote MCP server URL.
-				 */
-				url: {
-					type: "string",
-					required: false,
-				},
-				/**
-				 * For SSE: JSON object of HTTP headers (encrypted).
-				 * Contains auth headers for the remote server.
-				 */
-				headers: {
-					type: "string",
-					required: false,
-					transform: {
-						input(value: unknown) {
-							return JSON.stringify(value);
-						},
-						output(value: unknown) {
-							if (!value) return null;
-							return parseJSON<Record<string, string>>(value as string);
-						},
-					},
-				},
-				/**
-				 * JSON mapping of scope names to tool arrays.
-				 * e.g. { "read": ["list_files", "read_file"], "write": ["create_file"] }
-				 */
-				toolScopes: {
-					type: "string",
-					required: false,
-					transform: {
-						input(value: unknown) {
-							return JSON.stringify(value);
-						},
-						output(value: unknown) {
-							if (!value) return null;
-							return parseJSON<Record<string, string[]>>(value as string);
-						},
-					},
-				},
-				/**
-				 * Provider status.
-				 */
 				status: {
 					type: "string",
 					required: true,
-					defaultValue: "active",
+					input: false,
+					defaultValue: "pending",
 				},
 				createdAt: {
 					type: "date",
 					required: true,
 					input: false,
 				},
-				updatedAt: {
+				expiresAt: {
 					type: "date",
 					required: true,
 					input: false,
