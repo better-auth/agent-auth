@@ -13,6 +13,10 @@ export const agentAuthClient = () => {
 			"/agent/update": "POST",
 			"/agent/revoke": "POST",
 			"/agent/rotate-key": "POST",
+			"/agent/cleanup": "POST",
+			"/agent/log-activity": "POST",
+			"/agent/mcp-provider/register": "POST",
+			"/agent/mcp-provider/delete": "POST",
 		},
 		$ERROR_CODES: AGENT_AUTH_ERROR_CODES,
 	} satisfies BetterAuthClientPlugin;

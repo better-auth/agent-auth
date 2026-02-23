@@ -256,10 +256,11 @@ export const agentSchema = () =>
 						},
 					},
 				},
-				/**
-				 * For stdio: JSON object of environment variables (encrypted).
-				 * Contains credentials like API keys.
-				 */
+			/**
+			 * For stdio: JSON object of environment variables.
+			 * May contain credentials like API keys — consider
+			 * encrypting at the application layer if needed.
+			 */
 				env: {
 					type: "string",
 					required: false,
@@ -280,10 +281,11 @@ export const agentSchema = () =>
 					type: "string",
 					required: false,
 				},
-				/**
-				 * For SSE: JSON object of HTTP headers (encrypted).
-				 * Contains auth headers for the remote server.
-				 */
+			/**
+			 * For SSE: JSON object of HTTP headers.
+			 * May contain auth tokens — consider encrypting
+			 * at the application layer if needed.
+			 */
 				headers: {
 					type: "string",
 					required: false,

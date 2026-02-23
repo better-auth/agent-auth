@@ -31,41 +31,57 @@ async function requireProviderAdmin(
 	}
 }
 
-const providerBodySchema = z.object({
-	name: z
-		.string()
-		.min(1)
-		.meta({ description: "Unique provider name (scope namespace)" }),
-	displayName: z
-		.string()
-		.min(1)
-		.meta({ description: "Human-readable display name" }),
-	transport: z.enum(["stdio", "sse"]).meta({ description: "Transport type" }),
-	command: z
-		.string()
-		.meta({ description: "For stdio: command to spawn" })
-		.optional(),
-	args: z
-		.array(z.string())
-		.meta({ description: "For stdio: command arguments" })
-		.optional(),
-	env: z
-		.record(z.string(), z.string())
-		.meta({ description: "For stdio: environment variables" })
-		.optional(),
-	url: z
-		.string()
-		.meta({ description: "For SSE: remote MCP server URL" })
-		.optional(),
-	headers: z
-		.record(z.string(), z.string())
-		.meta({ description: "For SSE: HTTP headers" })
-		.optional(),
-	toolScopes: z
-		.record(z.string(), z.array(z.string()))
-		.meta({ description: "Scope-to-tools mapping" })
-		.optional(),
-});
+const providerBodySchema = z
+	.object({
+		name: z
+			.string()
+			.min(1)
+			.meta({ description: "Unique provider name (scope namespace)" }),
+		displayName: z
+			.string()
+			.min(1)
+			.meta({ description: "Human-readable display name" }),
+		transport: z
+			.enum(["stdio", "sse"])
+			.meta({ description: "Transport type" }),
+		command: z
+			.string()
+			.min(1)
+			.meta({ description: "For stdio: command to spawn" })
+			.optional(),
+		args: z
+			.array(z.string())
+			.meta({ description: "For stdio: command arguments" })
+			.optional(),
+		env: z
+			.record(z.string(), z.string())
+			.meta({ description: "For stdio: environment variables" })
+			.optional(),
+		url: z
+			.string()
+			.url()
+			.meta({ description: "For SSE: remote MCP server URL" })
+			.optional(),
+		headers: z
+			.record(z.string(), z.string())
+			.meta({ description: "For SSE: HTTP headers" })
+			.optional(),
+		toolScopes: z
+			.record(z.string(), z.array(z.string()))
+			.meta({ description: "Scope-to-tools mapping" })
+			.optional(),
+	})
+	.refine(
+		(data) => {
+			if (data.transport === "stdio") return !!data.command;
+			if (data.transport === "sse") return !!data.url;
+			return true;
+		},
+		{
+			message:
+				'stdio transport requires "command", sse transport requires "url"',
+		},
+	);
 
 export function registerProvider(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -134,7 +150,8 @@ export function registerProvider(opts: ResolvedAgentAuthOptions) {
 
 /**
  * Intentionally no admin guard — listing providers is read-only and
- * low-sensitivity (names + display names only, no secrets). Any
+ * low-sensitivity (no secrets like env vars or auth headers). Returns
+ * id, name, displayName, transport, status, and createdAt. Any
  * authenticated user can see which providers are available so they
  * can request the right scopes when creating agents.
  */
@@ -197,7 +214,10 @@ export function deleteProvider(opts: ResolvedAgentAuthOptions) {
 
 			const provider = await ctx.context.adapter.findOne<MCPProvider>({
 				model: PROVIDER_TABLE,
-				where: [{ field: "name", value: ctx.body.name }],
+				where: [
+					{ field: "name", value: ctx.body.name },
+					{ field: "status", value: "active" },
+				],
 			});
 
 			if (!provider) {
@@ -206,9 +226,15 @@ export function deleteProvider(opts: ResolvedAgentAuthOptions) {
 				});
 			}
 
-			await ctx.context.adapter.delete({
+			// Soft-delete so the gateway's ProviderManager can observe
+			// the status change and tear down live connections gracefully.
+			await ctx.context.adapter.update({
 				model: PROVIDER_TABLE,
 				where: [{ field: "id", value: provider.id }],
+				update: {
+					status: "disabled",
+					updatedAt: new Date(),
+				},
 			});
 
 			return ctx.json({ success: true });
