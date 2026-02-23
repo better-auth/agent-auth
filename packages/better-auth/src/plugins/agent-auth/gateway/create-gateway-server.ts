@@ -149,6 +149,7 @@ export async function createGatewayServer(
 	let gatewayTools: Array<{
 		name: string;
 		provider: string;
+		originalName: string;
 		description: string;
 		inputSchema: unknown;
 	}> = [];
@@ -465,7 +466,7 @@ function buildRevokeAll(storage: MCPAgentStorage) {
  * Uses the agent's keypair to sign a JWT so the app can verify the caller.
  */
 async function reportActivity(
-	connection: { appUrl: string; keypair: { privateKey: string } },
+	connection: { appUrl: string; keypair: { privateKey: Record<string, unknown> } },
 	agentId: string,
 	tool: string,
 	isError: boolean,

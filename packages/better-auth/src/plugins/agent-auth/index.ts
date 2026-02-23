@@ -316,7 +316,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						// Extract the first IP from x-forwarded-for (may contain a comma-separated chain)
 						const forwarded = ctx.headers?.get("x-forwarded-for");
 						const clientIp = forwarded
-							? forwarded.split(",")[0].trim()
+							? (forwarded.split(",")[0]?.trim() ?? null)
 							: (ctx.headers?.get("x-real-ip") ?? null);
 
 						// Log activity with response status

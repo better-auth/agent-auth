@@ -107,13 +107,49 @@ export function registerProvider(opts: ResolvedAgentAuthOptions) {
 				where: [{ field: "name", value: ctx.body.name }],
 			});
 
-			if (existing) {
+			const now = new Date();
+			const providerData = {
+				displayName: ctx.body.displayName,
+				transport: ctx.body.transport,
+				command: ctx.body.command ?? null,
+				args: ctx.body.args ? JSON.stringify(ctx.body.args) : null,
+				env: ctx.body.env ? JSON.stringify(ctx.body.env) : null,
+				url: ctx.body.url ?? null,
+				headers: ctx.body.headers
+					? JSON.stringify(ctx.body.headers)
+					: null,
+				toolScopes: ctx.body.toolScopes
+					? JSON.stringify(ctx.body.toolScopes)
+					: null,
+			};
+
+			if (existing && existing.status === "active") {
 				throw new APIError("BAD_REQUEST", {
 					message: `Provider "${ctx.body.name}" already exists.`,
 				});
 			}
 
-			const now = new Date();
+			if (existing) {
+				// Reactivate a previously disabled provider with new config
+				await ctx.context.adapter.update({
+					model: PROVIDER_TABLE,
+					where: [{ field: "id", value: existing.id }],
+					update: {
+						...providerData,
+						status: "active",
+						updatedAt: now,
+					},
+				});
+
+				return ctx.json({
+					id: existing.id,
+					name: existing.name,
+					displayName: ctx.body.displayName,
+					transport: ctx.body.transport,
+					status: "active" as const,
+				});
+			}
+
 			const provider = await ctx.context.adapter.create<
 				Record<string, unknown>,
 				MCPProvider
@@ -121,16 +157,7 @@ export function registerProvider(opts: ResolvedAgentAuthOptions) {
 				model: PROVIDER_TABLE,
 				data: {
 					name: ctx.body.name,
-					displayName: ctx.body.displayName,
-					transport: ctx.body.transport,
-					command: ctx.body.command ?? null,
-					args: ctx.body.args ? JSON.stringify(ctx.body.args) : null,
-					env: ctx.body.env ? JSON.stringify(ctx.body.env) : null,
-					url: ctx.body.url ?? null,
-					headers: ctx.body.headers ? JSON.stringify(ctx.body.headers) : null,
-					toolScopes: ctx.body.toolScopes
-						? JSON.stringify(ctx.body.toolScopes)
-						: null,
+					...providerData,
 					status: "active",
 					createdAt: now,
 					updatedAt: now,
@@ -201,7 +228,7 @@ export function deleteProvider(opts: ResolvedAgentAuthOptions) {
 			}),
 			metadata: {
 				openapi: {
-					description: "Delete an MCP provider. Requires admin role by default.",
+					description: "Disable an MCP provider (soft-delete). Requires admin role by default. Re-register with the same name to reactivate.",
 				},
 			},
 		},

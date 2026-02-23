@@ -5,7 +5,7 @@ import { agentAuthClient } from "./client";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
 
 describe("agent-auth", async () => {
-	const { client, auth, signInWithTestUser, signInWithUser, customFetchImpl } =
+	const { client, auth, db, signInWithTestUser, signInWithUser, customFetchImpl } =
 		await getTestInstance(
 			{
 				plugins: [
@@ -421,6 +421,403 @@ describe("agent-auth", async () => {
 		expect(getRes.error).toBeDefined();
 		expect(getRes.error?.status).toBe(404);
 	});
+
+	// =========================================================================
+	// ACTIVITY LOGGING
+	// =========================================================================
+
+	it("should return activity logs for a user's agents", async () => {
+		const actRes = await client.agent.activity({ query: {} }, { headers });
+
+		expect(actRes.error).toBeNull();
+		expect(actRes.data).toBeDefined();
+		expect(Array.isArray(actRes.data)).toBe(true);
+	});
+
+	it("should reject activity query without session", async () => {
+		const res = await client.agent.activity({ query: {} });
+		expect(res.error).toBeDefined();
+		expect(res.error?.status).toBe(401);
+	});
+
+	it("should log activity via log-activity endpoint (agent JWT)", async () => {
+		const freshKp = await generateAgentKeypair();
+		const freshCreate = await client.agent.create(
+			{
+				name: "Manual Log Agent",
+				publicKey: freshKp.publicKey,
+			},
+			{ headers },
+		);
+		const logAgentId = freshCreate.data!.agentId;
+
+		const jwt = await signAgentJWT({
+			agentId: logAgentId,
+			privateKey: freshKp.privateKey,
+		});
+
+		const logRes = await customFetchImpl(
+			"http://localhost:3000/api/auth/agent/log-activity",
+			{
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${jwt}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					method: "TOOL",
+					path: "github.create_issue",
+					status: 200,
+				}),
+			},
+		);
+
+		expect(logRes.status).toBe(200);
+
+		// Wait for background logging from the after-hook too
+		await new Promise((resolve) => setTimeout(resolve, 300));
+
+		const actRes = await client.agent.activity(
+			{ query: { agentId: logAgentId } },
+			{ headers },
+		);
+		expect(actRes.data).toBeDefined();
+		const toolEntry = actRes.data!.find(
+			(e: { method: string }) => e.method === "TOOL",
+		);
+		expect(toolEntry).toBeDefined();
+		expect(toolEntry!.path).toBe("github.create_issue");
+	});
+
+	it("should reject log-activity without agent JWT", async () => {
+		const res = await customFetchImpl(
+			"http://localhost:3000/api/auth/agent/log-activity",
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					method: "TOOL",
+					path: "github.list_repos",
+				}),
+			},
+		);
+
+		// No agent JWT → the before hook doesn't match → no agentSession → 401
+		expect(res.status).toBe(401);
+	});
+
+	it("should filter activity by agentId", async () => {
+		// Query activity for a non-existent agent — should return empty
+		const actRes = await client.agent.activity(
+			{ query: { agentId: "nonexistent-id" } },
+			{ headers },
+		);
+		expect(actRes.error).toBeNull();
+		expect(actRes.data).toBeDefined();
+		expect(actRes.data!.length).toBe(0);
+	});
+
+	// =========================================================================
+	// CLEANUP AGENTS
+	// =========================================================================
+
+	it("should cleanup expired agents", async () => {
+		// Create an agent with a very short TTL via the server API
+		const expKp = await generateAgentKeypair();
+		const created = await auth.api.createAgent({
+			headers,
+			body: {
+				name: "Expiring Agent",
+				publicKey: expKp.publicKey,
+				scopes: ["test.scope"],
+			},
+		});
+
+		// Manually expire it by setting expiresAt in the past
+		await db.update({
+			model: "agent",
+			where: [{ field: "id", value: created.agentId }],
+			update: { expiresAt: new Date("2020-01-01T00:00:00Z") },
+		});
+
+		const cleanupRes = await client.agent.cleanup({}, { headers });
+		expect(cleanupRes.error).toBeNull();
+		expect(cleanupRes.data?.revoked).toBeGreaterThanOrEqual(1);
+
+		// Verify the agent is now revoked
+		const getRes = await client.agent.get(
+			{ query: { agentId: created.agentId } },
+			{ headers },
+		);
+		expect(getRes.data?.status).toBe("revoked");
+	});
+
+	it("should reject cleanup without session", async () => {
+		const res = await client.agent.cleanup({});
+		expect(res.error).toBeDefined();
+		expect(res.error?.status).toBe(401);
+	});
+
+	// =========================================================================
+	// GATEWAY CONFIG
+	// =========================================================================
+
+	it("should return gateway config (public endpoint)", async () => {
+		const res = await client.agent.gatewayConfig({});
+		expect(res.error).toBeNull();
+		expect(res.data).toBeDefined();
+		expect(res.data?.providers).toBeDefined();
+		expect(Array.isArray(res.data?.providers)).toBe(true);
+	});
+
+	// =========================================================================
+	// PROVIDER MANAGEMENT
+	// =========================================================================
+
+	// Shared instance with authorizeProviderManagement: true for CRUD tests
+	const {
+		client: provClient,
+		signInWithTestUser: provSignIn,
+		customFetchImpl: provFetch,
+	} = await getTestInstance(
+		{ plugins: [agentAuth({ authorizeProviderManagement: true })] },
+		{ clientOptions: { plugins: [agentAuthClient()] } },
+	);
+	const { headers: provHeaders } = await provSignIn();
+
+	function provRegister(body: Record<string, unknown>) {
+		return provFetch(
+			"http://localhost:3000/api/auth/agent/mcp-provider/register",
+			{
+				method: "POST",
+				headers: {
+					...Object.fromEntries(provHeaders.entries()),
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			},
+		);
+	}
+
+	function provDelete(name: string) {
+		return provFetch(
+			"http://localhost:3000/api/auth/agent/mcp-provider/delete",
+			{
+				method: "POST",
+				headers: {
+					...Object.fromEntries(provHeaders.entries()),
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ name }),
+			},
+		);
+	}
+
+	// --- registerProvider ---
+
+	it("should register a stdio provider", async () => {
+		const res = await provRegister({
+			name: "stdio-prov",
+			displayName: "Stdio Provider",
+			transport: "stdio",
+			command: "echo",
+			args: ["hello"],
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.name).toBe("stdio-prov");
+		expect(data.transport).toBe("stdio");
+		expect(data.status).toBe("active");
+	});
+
+	it("should register an SSE provider", async () => {
+		const res = await provRegister({
+			name: "sse-prov",
+			displayName: "SSE Provider",
+			transport: "sse",
+			url: "https://mcp.example.com/sse",
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.name).toBe("sse-prov");
+		expect(data.transport).toBe("sse");
+		expect(data.status).toBe("active");
+	});
+
+	it("should reject duplicate active provider name", async () => {
+		const res = await provRegister({
+			name: "stdio-prov",
+			displayName: "Dup",
+			transport: "stdio",
+			command: "echo",
+		});
+		expect(res.status).toBe(400);
+	});
+
+	it("should reject stdio transport without command", async () => {
+		const res = await provRegister({
+			name: "bad-stdio",
+			displayName: "Bad Stdio",
+			transport: "stdio",
+		});
+		expect(res.status).toBe(400);
+	});
+
+	it("should reject sse transport without url", async () => {
+		const res = await provRegister({
+			name: "bad-sse",
+			displayName: "Bad SSE",
+			transport: "sse",
+		});
+		expect(res.status).toBe(400);
+	});
+
+	it("should reject provider registration without admin role (default guard)", async () => {
+		const res = await customFetchImpl(
+			"http://localhost:3000/api/auth/agent/mcp-provider/register",
+			{
+				method: "POST",
+				headers: {
+					...Object.fromEntries(headers.entries()),
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					name: "blocked",
+					displayName: "Blocked",
+					transport: "stdio",
+					command: "echo",
+				}),
+			},
+		);
+		expect(res.status).toBe(403);
+	});
+
+	// --- listProviders ---
+
+	it("should list only active providers", async () => {
+		const listRes = await provClient.agent.mcpProvider.list(
+			{},
+			{ headers: provHeaders },
+		);
+		expect(listRes.error).toBeNull();
+		const names = listRes.data?.providers?.map(
+			(p: { name: string }) => p.name,
+		);
+		expect(names).toContain("stdio-prov");
+		expect(names).toContain("sse-prov");
+	});
+
+	it("should not leak env/headers/command in list response", async () => {
+		const listRes = await provClient.agent.mcpProvider.list(
+			{},
+			{ headers: provHeaders },
+		);
+		const prov = listRes.data?.providers?.[0];
+		expect(prov).toBeDefined();
+		// Response should only contain safe fields
+		expect(prov).not.toHaveProperty("env");
+		expect(prov).not.toHaveProperty("headers");
+		expect(prov).not.toHaveProperty("command");
+		expect(prov).not.toHaveProperty("args");
+		expect(prov).not.toHaveProperty("url");
+	});
+
+	it("should reject list without session", async () => {
+		const res = await provClient.agent.mcpProvider.list({});
+		expect(res.error).toBeDefined();
+		expect(res.error?.status).toBe(401);
+	});
+
+	// --- deleteProvider ---
+
+	it("should soft-delete a provider (set status disabled)", async () => {
+		const res = await provDelete("stdio-prov");
+		expect(res.status).toBe(200);
+
+		// Should be gone from list
+		const listRes = await provClient.agent.mcpProvider.list(
+			{},
+			{ headers: provHeaders },
+		);
+		const names = listRes.data?.providers?.map(
+			(p: { name: string }) => p.name,
+		);
+		expect(names).not.toContain("stdio-prov");
+	});
+
+	it("should return 404 when deleting already-disabled provider", async () => {
+		const res = await provDelete("stdio-prov");
+		expect(res.status).toBe(404);
+	});
+
+	it("should return 404 when deleting nonexistent provider", async () => {
+		const res = await provDelete("does-not-exist");
+		expect(res.status).toBe(404);
+	});
+
+	it("should reject delete without admin role (default guard)", async () => {
+		const res = await customFetchImpl(
+			"http://localhost:3000/api/auth/agent/mcp-provider/delete",
+			{
+				method: "POST",
+				headers: {
+					...Object.fromEntries(headers.entries()),
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ name: "sse-prov" }),
+			},
+		);
+		expect(res.status).toBe(403);
+	});
+
+	// --- reactivation ---
+
+	it("should reactivate a disabled provider on re-register with same name", async () => {
+		// stdio-prov was soft-deleted above — re-register with new config
+		const res = await provRegister({
+			name: "stdio-prov",
+			displayName: "Stdio v2",
+			transport: "stdio",
+			command: "node",
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.displayName).toBe("Stdio v2");
+		expect(data.status).toBe("active");
+
+		// Should be back in list
+		const listRes = await provClient.agent.mcpProvider.list(
+			{},
+			{ headers: provHeaders },
+		);
+		const found = listRes.data?.providers?.find(
+			(p: { name: string; displayName: string }) => p.name === "stdio-prov",
+		);
+		expect(found).toBeDefined();
+		expect(found!.displayName).toBe("Stdio v2");
+	});
+
+	// =========================================================================
+	// KEY ALGORITHM ENFORCEMENT
+	// =========================================================================
+
+	it("should reject create with disallowed key algorithm", async () => {
+		const res = await client.agent.create(
+			{
+				name: "Wrong Alg Agent",
+				publicKey: { kty: "EC", crv: "P-256", x: "test" },
+			},
+			{ headers },
+		);
+
+		expect(res.data).toBeNull();
+		expect(res.error).toBeDefined();
+		expect(res.error?.status).toBe(400);
+	});
+
+	// =========================================================================
+	// AAP FORMAT
+	// =========================================================================
 
 	it("should work with AAP format JWT claims", async () => {
 		// Create a separate instance with AAP format
