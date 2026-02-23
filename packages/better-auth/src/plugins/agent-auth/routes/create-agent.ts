@@ -76,6 +76,16 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
 			}
 
+			// Enforce allowedKeyAlgorithms — validate kty and crv against the config
+			const kty = publicKey.kty as string;
+			const crv = (publicKey.crv as string) ?? null;
+			const keyAlg = crv ? `${crv}` : kty;
+			if (!opts.allowedKeyAlgorithms.includes(keyAlg)) {
+				throw new APIError("BAD_REQUEST", {
+					message: `Key algorithm "${keyAlg}" is not allowed. Accepted: ${opts.allowedKeyAlgorithms.join(", ")}`,
+				});
+			}
+
 			const resolvedRole = role ?? opts.defaultRole ?? null;
 			const resolvedScopes =
 				scopes ?? (resolvedRole && opts.roles?.[resolvedRole]) ?? [];

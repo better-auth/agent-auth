@@ -47,6 +47,38 @@ export interface AgentAuthOptions {
 	 */
 	agentSessionTTL?: number;
 	/**
+	 * Maximum absolute lifetime for agent sessions in seconds,
+	 * measured from `createdAt`. Even if the sliding TTL keeps
+	 * extending, the agent is rejected once this cap is reached.
+	 *
+	 * Set to `0` or omit to disable (no hard cap).
+	 * @default 86400 (24 hours)
+	 */
+	agentMaxLifetime?: number;
+	/**
+	 * Rate limiting configuration for agent endpoints.
+	 * Set to `false` to disable plugin-level rate limiting entirely.
+	 *
+	 * @default { window: 60, max: 60, createMax: 10, sensitiveMax: 5 }
+	 *
+	 * @example
+	 * ```ts
+	 * rateLimit: { window: 60, max: 100, createMax: 50 }
+	 * ```
+	 */
+	rateLimit?:
+		| {
+				/** Time window in seconds. @default 60 */
+				window?: number;
+				/** Max requests per window for general agent routes. @default 60 */
+				max?: number;
+				/** Max requests per window for agent creation. @default 10 */
+				createMax?: number;
+				/** Max requests per window for sensitive ops (key rotation, cleanup, provider management). @default 5 */
+				sensitiveMax?: number;
+		  }
+		| false;
+	/**
 	 * MCP providers that agents can connect to through the gateway.
 	 *
 	 * Pass a string for known providers (e.g. "github", "slack"),
@@ -62,6 +94,21 @@ export interface AgentAuthOptions {
 	 * ```
 	 */
 	mcpProviders?: (string | MCPProviderConfig)[];
+	/**
+	 * Guard for MCP provider management endpoints (register, delete).
+	 * Receives the user session and returns `true` to allow.
+	 *
+	 * Defaults to checking `user.role === "admin"`.
+	 * Set to `true` to allow any authenticated user.
+	 *
+	 * @example
+	 * ```ts
+	 * authorizeProviderManagement: (user) => user.role === "admin"
+	 * ```
+	 */
+	authorizeProviderManagement?:
+		| ((user: { id: string; role?: string | null; [key: string]: unknown }) => boolean | Promise<boolean>)
+		| true;
 	/**
 	 * Custom schema overrides for the agent table.
 	 */
@@ -131,7 +178,7 @@ export interface MCPProviderConfig {
 	name: string;
 	/** Human-readable label. Defaults to `name` if omitted. */
 	displayName?: string;
-	/** Transport type. Auto-detected: "stdio" if `command` is set, "sse" if `url` is set. */
+	/** Transport type. Required when using the registration API. For programmatic config, auto-detected from `command` (stdio) or `url` (sse). */
 	transport?: "stdio" | "sse";
 	/** Command to spawn the MCP server (e.g. "npx", "node"). */
 	command?: string;
@@ -184,7 +231,11 @@ export interface MCPProvider {
 export type ResolvedAgentAuthOptions = Required<
 	Pick<
 		AgentAuthOptions,
-		"allowedKeyAlgorithms" | "jwtFormat" | "jwtMaxAge" | "agentSessionTTL"
+		| "allowedKeyAlgorithms"
+		| "jwtFormat"
+		| "jwtMaxAge"
+		| "agentSessionTTL"
+		| "agentMaxLifetime"
 	>
 > &
 	AgentAuthOptions;

@@ -27,6 +27,43 @@ export { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 
 const AGENT_TABLE = "agent";
 
+function buildRateLimits(config: AgentAuthOptions["rateLimit"]) {
+	if (config === false) return [];
+	const rl = typeof config === "object" ? config : {};
+	const window = rl.window ?? 60;
+	const max = rl.max ?? 60;
+	const createMax = rl.createMax ?? 10;
+	const sensitiveMax = rl.sensitiveMax ?? 5;
+	return [
+		{
+			pathMatcher(path: string) {
+				return path === "/agent/create";
+			},
+			window,
+			max: createMax,
+		},
+		{
+			pathMatcher(path: string) {
+				return (
+					path === "/agent/rotate-key" ||
+					path === "/agent/cleanup" ||
+					path === "/agent/mcp-provider/register" ||
+					path === "/agent/mcp-provider/delete"
+				);
+			},
+			window,
+			max: sensitiveMax,
+		},
+		{
+			pathMatcher(path: string) {
+				return path.startsWith("/agent/");
+			},
+			window,
+			max,
+		},
+	];
+}
+
 export const agentAuth = (options?: AgentAuthOptions) => {
 	const opts: ResolvedAgentAuthOptions = {
 		...options,
@@ -34,6 +71,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		jwtFormat: options?.jwtFormat ?? "simple",
 		jwtMaxAge: options?.jwtMaxAge ?? 60,
 		agentSessionTTL: options?.agentSessionTTL ?? 3600,
+		agentMaxLifetime: options?.agentMaxLifetime ?? 86400,
 	};
 
 	const schema = mergeSchema(agentSchema(), opts.schema);
@@ -99,7 +137,6 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 
 						// TTL check — reject if the agent has expired
 						if (agent.expiresAt && new Date(agent.expiresAt) <= new Date()) {
-							// Auto-revoke the expired agent in the background
 							ctx.context.runInBackground(
 								ctx.context.adapter
 									.update({
@@ -120,8 +157,43 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							);
 						}
 
+						// Hard lifetime cap — reject if createdAt + maxLifetime has passed
+						if (opts.agentMaxLifetime > 0 && agent.createdAt) {
+							const maxExpiry =
+								new Date(agent.createdAt).getTime() +
+								opts.agentMaxLifetime * 1000;
+							if (Date.now() >= maxExpiry) {
+								ctx.context.runInBackground(
+									ctx.context.adapter
+										.update({
+											model: AGENT_TABLE,
+											where: [{ field: "id", value: agent.id }],
+											update: {
+												status: "revoked",
+												publicKey: "",
+												kid: null,
+												updatedAt: new Date(),
+											},
+										})
+										.catch(() => {}),
+								);
+								throw APIError.from(
+									"UNAUTHORIZED",
+									AGENT_AUTH_ERROR_CODES.AGENT_EXPIRED,
+								);
+							}
+						}
+
 						// Verify the JWT signature with the agent's stored public key
-						const publicKey = JSON.parse(agent.publicKey);
+						let publicKey: Record<string, unknown>;
+						try {
+							publicKey = JSON.parse(agent.publicKey);
+						} catch {
+							throw APIError.from(
+								"UNAUTHORIZED",
+								AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
+							);
+						}
 						const payload = await verifyAgentJWT({
 							jwt: bearer,
 							publicKey,
@@ -180,9 +252,16 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							lastUsedAt: now,
 						};
 						if (opts.agentSessionTTL > 0) {
-							heartbeatUpdate.expiresAt = new Date(
-								now.getTime() + opts.agentSessionTTL * 1000,
-							);
+							let newExpiry =
+								now.getTime() + opts.agentSessionTTL * 1000;
+							// Cap sliding TTL at the hard max lifetime
+							if (opts.agentMaxLifetime > 0 && agent.createdAt) {
+								const hardCap =
+									new Date(agent.createdAt).getTime() +
+									opts.agentMaxLifetime * 1000;
+								newExpiry = Math.min(newExpiry, hardCap);
+							}
+							heartbeatUpdate.expiresAt = new Date(newExpiry);
 						}
 						ctx.context.runInBackground(
 							ctx.context.adapter
@@ -215,10 +294,16 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						if (!agentSession) return;
 
 						// Derive HTTP status from the response
-						let status = 200;
+						let status: number | null = null;
 						const returned = (ctx.context as Record<string, unknown>).returned;
 						if (isAPIError(returned)) {
 							status = returned.statusCode;
+						} else if (
+							returned &&
+							typeof returned === "object" &&
+							"status" in returned
+						) {
+							status = (returned as { status: number }).status;
 						}
 
 						// Use x-agent-path/x-agent-method if present (set by verifyAgentRequest helper)
@@ -227,6 +312,12 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							ctx.headers?.get("x-agent-method") ?? ctx.method ?? "GET";
 						const loggedPath =
 							ctx.headers?.get("x-agent-path") ?? ctx.path ?? "";
+
+						// Extract the first IP from x-forwarded-for (may contain a comma-separated chain)
+						const forwarded = ctx.headers?.get("x-forwarded-for");
+						const clientIp = forwarded
+							? forwarded.split(",")[0].trim()
+							: (ctx.headers?.get("x-real-ip") ?? null);
 
 						// Log activity with response status
 						ctx.context.runInBackground(
@@ -239,10 +330,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 										method: loggedMethod,
 										path: loggedPath,
 										status,
-										ipAddress:
-											ctx.headers?.get("x-forwarded-for") ??
-											ctx.headers?.get("x-real-ip") ??
-											null,
+										ipAddress: clientIp,
 										userAgent: ctx.headers?.get("user-agent") ?? null,
 										createdAt: new Date(),
 									},
@@ -269,6 +357,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			deleteProvider: routes.deleteProvider,
 			gatewayConfig: routes.gatewayConfig,
 		},
+		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,
 		options,
 	} satisfies BetterAuthPlugin;

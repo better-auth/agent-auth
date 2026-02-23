@@ -3,9 +3,33 @@ import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { getSessionFromCtx } from "../../../api";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { MCPProvider } from "../types";
+import type { MCPProvider, ResolvedAgentAuthOptions } from "../types";
 
 const PROVIDER_TABLE = "mcpProvider";
+
+async function requireProviderAdmin(
+	_ctx: { headers?: Headers | null },
+	session: { user: { id: string; role?: string | null; [key: string]: unknown } },
+	opts: ResolvedAgentAuthOptions,
+) {
+	const guard = opts.authorizeProviderManagement;
+	if (guard === true) return;
+	if (typeof guard === "function") {
+		const allowed = await guard(session.user);
+		if (!allowed) {
+			throw new APIError("FORBIDDEN", {
+				message: "You do not have permission to manage MCP providers.",
+			});
+		}
+		return;
+	}
+	// Default: require admin role (matches better-auth's default user.role field)
+	if (session.user.role !== "admin") {
+		throw new APIError("FORBIDDEN", {
+			message: "Provider management requires admin role.",
+		});
+	}
+}
 
 const providerBodySchema = z.object({
 	name: z
@@ -43,7 +67,7 @@ const providerBodySchema = z.object({
 		.optional(),
 });
 
-export function registerProvider() {
+export function registerProvider(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/mcp-provider/register",
 		{
@@ -51,7 +75,7 @@ export function registerProvider() {
 			body: providerBodySchema,
 			metadata: {
 				openapi: {
-					description: "Register a new MCP provider.",
+					description: "Register a new MCP provider. Requires admin role by default.",
 				},
 			},
 		},
@@ -60,6 +84,7 @@ export function registerProvider() {
 			if (!session) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
+			await requireProviderAdmin(ctx, session, opts);
 
 			const existing = await ctx.context.adapter.findOne<MCPProvider>({
 				model: PROVIDER_TABLE,
@@ -107,6 +132,12 @@ export function registerProvider() {
 	);
 }
 
+/**
+ * Intentionally no admin guard — listing providers is read-only and
+ * low-sensitivity (names + display names only, no secrets). Any
+ * authenticated user can see which providers are available so they
+ * can request the right scopes when creating agents.
+ */
 export function listProviders() {
 	return createAuthEndpoint(
 		"/agent/mcp-provider/list",
@@ -143,7 +174,7 @@ export function listProviders() {
 	);
 }
 
-export function deleteProvider() {
+export function deleteProvider(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/mcp-provider/delete",
 		{
@@ -153,7 +184,7 @@ export function deleteProvider() {
 			}),
 			metadata: {
 				openapi: {
-					description: "Delete an MCP provider.",
+					description: "Delete an MCP provider. Requires admin role by default.",
 				},
 			},
 		},
@@ -162,6 +193,7 @@ export function deleteProvider() {
 			if (!session) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
+			await requireProviderAdmin(ctx, session, opts);
 
 			const provider = await ctx.context.adapter.findOne<MCPProvider>({
 				model: PROVIDER_TABLE,

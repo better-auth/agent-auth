@@ -28,9 +28,9 @@ export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
 		getAgentActivity: getAgentActivity(),
 		logActivity: logActivity(),
 		cleanupAgents: cleanupAgents(),
-		registerProvider: registerProvider(),
+		registerProvider: registerProvider(opts),
 		listProviders: listProviders(),
-		deleteProvider: deleteProvider(),
+		deleteProvider: deleteProvider(opts),
 		gatewayConfig: gatewayConfig(opts),
 	};
 }

@@ -1,12 +1,15 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import { APIError } from "@better-auth/core/error";
+import { getSessionFromCtx } from "../../../api";
+import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { Agent } from "../types";
 
 const AGENT_TABLE = "agent";
 
 /**
  * Batch-revoke agents whose expiresAt has passed.
- * Intended to be called by a cron job or admin trigger.
- * Returns the number of agents revoked.
+ * Requires an authenticated user session — only cleans up
+ * agents belonging to the calling user.
  */
 export function cleanupAgents() {
 	return createAuthEndpoint(
@@ -16,37 +19,46 @@ export function cleanupAgents() {
 			metadata: {
 				openapi: {
 					description:
-						"Revoke all agents whose session TTL has expired. Call from a cron job or admin panel.",
+						"Revoke all expired agents for the current user. Returns the count of agents revoked.",
+					responses: {
+						"200": { description: "Cleanup result" },
+					},
 				},
 			},
 		},
 		async (ctx) => {
+			const session = await getSessionFromCtx(ctx);
+			if (!session) {
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
+			}
+
 			const now = new Date();
 
 			const expired = await ctx.context.adapter.findMany<Agent>({
 				model: AGENT_TABLE,
 				where: [
+					{ field: "userId", value: session.user.id },
 					{ field: "status", value: "active" },
 					{ field: "expiresAt", value: now, operator: "lt" },
 				],
 			});
 
-			let revoked = 0;
-			for (const agent of expired) {
-				await ctx.context.adapter.update({
-					model: AGENT_TABLE,
-					where: [{ field: "id", value: agent.id }],
-					update: {
-						status: "revoked",
-						publicKey: "",
-						kid: null,
-						updatedAt: now,
-					},
-				});
-				revoked++;
-			}
+			await Promise.all(
+				expired.map((agent) =>
+					ctx.context.adapter.update({
+						model: AGENT_TABLE,
+						where: [{ field: "id", value: agent.id }],
+						update: {
+							status: "revoked",
+							publicKey: "",
+							kid: null,
+							updatedAt: now,
+						},
+					}),
+				),
+			);
 
-			return ctx.json({ revoked });
+			return ctx.json({ revoked: expired.length });
 		},
 	);
 }
