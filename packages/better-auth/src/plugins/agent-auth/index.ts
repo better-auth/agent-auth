@@ -191,8 +191,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						// Per-agent token budget check
 						if (opts.maxTokensPerAgent > 0) {
 							const used =
-								(agent.totalInputTokens ?? 0) +
-								(agent.totalOutputTokens ?? 0);
+								(agent.totalInputTokens ?? 0) + (agent.totalOutputTokens ?? 0);
 							if (used >= opts.maxTokensPerAgent) {
 								throw APIError.from(
 									"FORBIDDEN",
@@ -208,15 +207,12 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								totalOutputTokens: number;
 							}>({
 								model: AGENT_TABLE,
-								where: [
-									{ field: "userId", value: agent.userId },
-								],
+								where: [{ field: "userId", value: agent.userId }],
 							});
 							let userTotal = 0;
 							for (const a of userAgents) {
 								userTotal +=
-									(a.totalInputTokens ?? 0) +
-									(a.totalOutputTokens ?? 0);
+									(a.totalInputTokens ?? 0) + (a.totalOutputTokens ?? 0);
 							}
 							if (userTotal >= opts.maxTokensPerUser) {
 								throw APIError.from(
@@ -294,8 +290,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							lastUsedAt: now,
 						};
 						if (opts.agentSessionTTL > 0) {
-							let newExpiry =
-								now.getTime() + opts.agentSessionTTL * 1000;
+							let newExpiry = now.getTime() + opts.agentSessionTTL * 1000;
 							// Cap sliding TTL at the hard max lifetime
 							if (opts.agentMaxLifetime > 0 && agent.createdAt) {
 								const hardCap =
@@ -328,16 +323,22 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 				{
 					matcher: (ctx) => {
 						// Run after hook only for requests that went through agent auth
-						return !!(ctx.context as { agentSession?: AgentSession }).agentSession;
+						return !!(ctx.context as { agentSession?: AgentSession })
+							.agentSession;
 					},
 					handler: createAuthMiddleware(async (ctx) => {
-						const agentSession = (ctx.context as { agentSession?: AgentSession })
-							.agentSession;
+						const agentSession = (
+							ctx.context as { agentSession?: AgentSession }
+						).agentSession;
 						if (!agentSession) return;
 
 						// Derive HTTP status from the response
 						let status: number | null = null;
-						const returned = (ctx.context as { returned?: { status?: number; statusCode?: number } }).returned;
+						const returned = (
+							ctx.context as {
+								returned?: { status?: number; statusCode?: number };
+							}
+						).returned;
 						if (isAPIError(returned)) {
 							status = returned.statusCode;
 						} else if (
@@ -355,55 +356,55 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						const loggedPath =
 							ctx.headers?.get("x-agent-path") ?? ctx.path ?? "";
 
-					// Extract the first IP from x-forwarded-for (may contain a comma-separated chain)
-					const forwarded = ctx.headers?.get("x-forwarded-for");
-					const clientIp = forwarded
-						? (forwarded.split(",")[0]?.trim() ?? null)
-						: (ctx.headers?.get("x-real-ip") ?? null);
+						// Extract the first IP from x-forwarded-for (may contain a comma-separated chain)
+						const forwarded = ctx.headers?.get("x-forwarded-for");
+						const clientIp = forwarded
+							? (forwarded.split(",")[0]?.trim() ?? null)
+							: (ctx.headers?.get("x-real-ip") ?? null);
 
-					// Log activity (method/path/status only).
-					// Token counts are tracked exclusively via POST /agent/log-activity
-					// to avoid double-counting when agents report tokens there.
-					ctx.context.runInBackground(
-						ctx.context.adapter
-							.create({
-								model: "agentActivity",
-								data: {
-									agentId: agentSession.agent.id,
-									userId: agentSession.user.id,
-									method: loggedMethod,
-									path: loggedPath,
-									status,
-									inputTokens: null,
-									outputTokens: null,
-									ipAddress: clientIp,
-									userAgent: ctx.headers?.get("user-agent") ?? null,
-									createdAt: new Date(),
-								},
-							})
-							.catch(() => {}),
-					);
+						// Log activity (method/path/status only).
+						// Token counts are tracked exclusively via POST /agent/log-activity
+						// to avoid double-counting when agents report tokens there.
+						ctx.context.runInBackground(
+							ctx.context.adapter
+								.create({
+									model: "agentActivity",
+									data: {
+										agentId: agentSession.agent.id,
+										userId: agentSession.user.id,
+										method: loggedMethod,
+										path: loggedPath,
+										status,
+										inputTokens: null,
+										outputTokens: null,
+										ipAddress: clientIp,
+										userAgent: ctx.headers?.get("user-agent") ?? null,
+										createdAt: new Date(),
+									},
+								})
+								.catch(() => {}),
+						);
 					}),
 				},
 			],
 		},
-	endpoints: {
-		createAgent: routes.createAgent,
-		listAgents: routes.listAgents,
-		getAgent: routes.getAgent,
-		updateAgent: routes.updateAgent,
-		revokeAgent: routes.revokeAgent,
-		rotateKey: routes.rotateKey,
-		getAgentSession: routes.getAgentSession,
-		getAgentActivity: routes.getAgentActivity,
-		getTokenUsage: routes.getTokenUsage,
-		logActivity: routes.logActivity,
-		cleanupAgents: routes.cleanupAgents,
-		registerProvider: routes.registerProvider,
-		listProviders: routes.listProviders,
-		deleteProvider: routes.deleteProvider,
-		gatewayConfig: routes.gatewayConfig,
-	},
+		endpoints: {
+			createAgent: routes.createAgent,
+			listAgents: routes.listAgents,
+			getAgent: routes.getAgent,
+			updateAgent: routes.updateAgent,
+			revokeAgent: routes.revokeAgent,
+			rotateKey: routes.rotateKey,
+			getAgentSession: routes.getAgentSession,
+			getAgentActivity: routes.getAgentActivity,
+			getTokenUsage: routes.getTokenUsage,
+			logActivity: routes.logActivity,
+			cleanupAgents: routes.cleanupAgents,
+			registerProvider: routes.registerProvider,
+			listProviders: routes.listProviders,
+			deleteProvider: routes.deleteProvider,
+			gatewayConfig: routes.gatewayConfig,
+		},
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,
 		options,

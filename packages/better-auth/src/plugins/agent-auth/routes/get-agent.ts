@@ -39,26 +39,26 @@ export function getAgent() {
 				throw APIError.from("NOT_FOUND", ERROR_CODES.AGENT_NOT_FOUND);
 			}
 
-		return ctx.json({
-			id: agent.id,
-			name: agent.name,
-			status: agent.status,
-			scopes:
-				typeof agent.scopes === "string"
-					? JSON.parse(agent.scopes)
-					: agent.scopes,
-			role: agent.role,
-			orgId: agent.orgId,
-			lastUsedAt: agent.lastUsedAt,
-			totalInputTokens: agent.totalInputTokens ?? 0,
-			totalOutputTokens: agent.totalOutputTokens ?? 0,
-			createdAt: agent.createdAt,
-			updatedAt: agent.updatedAt,
-			metadata:
-				typeof agent.metadata === "string"
-					? JSON.parse(agent.metadata)
-					: agent.metadata,
-		});
+			return ctx.json({
+				id: agent.id,
+				name: agent.name,
+				status: agent.status,
+				scopes:
+					typeof agent.scopes === "string"
+						? JSON.parse(agent.scopes)
+						: agent.scopes,
+				role: agent.role,
+				orgId: agent.orgId,
+				lastUsedAt: agent.lastUsedAt,
+				totalInputTokens: agent.totalInputTokens ?? 0,
+				totalOutputTokens: agent.totalOutputTokens ?? 0,
+				createdAt: agent.createdAt,
+				updatedAt: agent.updatedAt,
+				metadata:
+					typeof agent.metadata === "string"
+						? JSON.parse(agent.metadata)
+						: agent.metadata,
+			});
 		},
 	);
 }

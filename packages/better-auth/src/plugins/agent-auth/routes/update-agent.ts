@@ -12,7 +12,12 @@ const updateAgentBodySchema = z.object({
 	name: z.string().min(1).optional(),
 	scopes: z.array(z.string()).optional(),
 	role: z.string().optional(),
-	metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+	metadata: z
+		.record(
+			z.string(),
+			z.union([z.string(), z.number(), z.boolean(), z.null()]),
+		)
+		.optional(),
 });
 
 export function updateAgent() {

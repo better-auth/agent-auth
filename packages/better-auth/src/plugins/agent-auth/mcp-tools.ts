@@ -273,7 +273,9 @@ export function createAgentMCPTools(
 				"Returns an Agent ID you MUST save and reuse for all subsequent calls. " +
 				"RULES: (1) Call ONCE per conversation. (2) SAVE the Agent ID. " +
 				"(3) Pass it as agentId if re-calling. (4) If user approval is needed, tell them and wait." +
-				(getAuthHeaders ? "" : " Uses device authorization (browser approval)."),
+				(getAuthHeaders
+					? ""
+					: " Uses device authorization (browser approval)."),
 			inputSchema: {
 				url: z.string().describe("App URL (e.g. https://myapp.com)"),
 				name: z
@@ -723,9 +725,7 @@ export function createAgentMCPTools(
 				"Automatically signs the request with the agent's identity.",
 			inputSchema: {
 				agentId: z.string().describe("Your Agent ID (from connect_agent)"),
-				path: z
-					.string()
-					.describe("API path on the app (e.g. /api/reports/Q4)"),
+				path: z.string().describe("API path on the app (e.g. /api/reports/Q4)"),
 				method: z.string().optional().describe("HTTP method (default: GET)"),
 				body: z
 					.string()

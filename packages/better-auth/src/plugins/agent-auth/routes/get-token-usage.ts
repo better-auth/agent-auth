@@ -49,10 +49,7 @@ export function getTokenUsage(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
 			const { agentId, recentLimit: recentLimitStr } = ctx.query;
@@ -68,10 +65,7 @@ export function getTokenUsage(opts: ResolvedAgentAuthOptions) {
 				});
 
 				if (!agent) {
-					throw APIError.from(
-						"NOT_FOUND",
-						ERROR_CODES.AGENT_NOT_FOUND,
-					);
+					throw APIError.from("NOT_FOUND", ERROR_CODES.AGENT_NOT_FOUND);
 				}
 
 				const recentActivity =
@@ -88,7 +82,8 @@ export function getTokenUsage(opts: ResolvedAgentAuthOptions) {
 				const inputTokens = agent.totalInputTokens ?? 0;
 				const outputTokens = agent.totalOutputTokens ?? 0;
 				const total = inputTokens + outputTokens;
-				const budget = opts.maxTokensPerAgent > 0 ? opts.maxTokensPerAgent : null;
+				const budget =
+					opts.maxTokensPerAgent > 0 ? opts.maxTokensPerAgent : null;
 
 				return ctx.json({
 					agentId: agent.id,
@@ -117,8 +112,7 @@ export function getTokenUsage(opts: ResolvedAgentAuthOptions) {
 
 			let totalInput = 0;
 			let totalOutput = 0;
-			const budget =
-				opts.maxTokensPerAgent > 0 ? opts.maxTokensPerAgent : null;
+			const budget = opts.maxTokensPerAgent > 0 ? opts.maxTokensPerAgent : null;
 			const perAgent = agents.map((a) => {
 				const inp = a.totalInputTokens ?? 0;
 				const out = a.totalOutputTokens ?? 0;
@@ -148,9 +142,7 @@ export function getTokenUsage(opts: ResolvedAgentAuthOptions) {
 				budgetPerAgent: budget,
 				budgetPerUser: userBudget,
 				userBudgetRemaining:
-					userBudget !== null
-						? Math.max(0, userBudget - allTotal)
-						: null,
+					userBudget !== null ? Math.max(0, userBudget - allTotal) : null,
 				agents: perAgent,
 			});
 		},

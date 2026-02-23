@@ -5,25 +5,31 @@ import { agentAuthClient } from "./client";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
 
 describe("agent-auth", async () => {
-	const { client, auth, db, signInWithTestUser, signInWithUser, customFetchImpl } =
-		await getTestInstance(
-			{
-				plugins: [
-					agentAuth({
-						roles: {
-							reader: ["reports.read"],
-							writer: ["reports.read", "reports.write"],
-						},
-						defaultRole: "reader",
-					}),
-				],
+	const {
+		client,
+		auth,
+		db,
+		signInWithTestUser,
+		signInWithUser,
+		customFetchImpl,
+	} = await getTestInstance(
+		{
+			plugins: [
+				agentAuth({
+					roles: {
+						reader: ["reports.read"],
+						writer: ["reports.read", "reports.write"],
+					},
+					defaultRole: "reader",
+				}),
+			],
+		},
+		{
+			clientOptions: {
+				plugins: [agentAuthClient()],
 			},
-			{
-				clientOptions: {
-					plugins: [agentAuthClient()],
-				},
-			},
-		);
+		},
+	);
 
 	const { headers, user } = await signInWithTestUser();
 	const keypair = await generateAgentKeypair();
@@ -706,9 +712,7 @@ describe("agent-auth", async () => {
 			{ headers: provHeaders },
 		);
 		expect(listRes.error).toBeNull();
-		const names = listRes.data?.providers?.map(
-			(p: { name: string }) => p.name,
-		);
+		const names = listRes.data?.providers?.map((p: { name: string }) => p.name);
 		expect(names).toContain("stdio-prov");
 		expect(names).toContain("sse-prov");
 	});
@@ -745,9 +749,7 @@ describe("agent-auth", async () => {
 			{},
 			{ headers: provHeaders },
 		);
-		const names = listRes.data?.providers?.map(
-			(p: { name: string }) => p.name,
-		);
+		const names = listRes.data?.providers?.map((p: { name: string }) => p.name);
 		expect(names).not.toContain("stdio-prov");
 	});
 
@@ -942,23 +944,21 @@ describe("agent-auth", async () => {
 // =============================================================================
 
 describe("agent-auth validateScopes", async () => {
-	const {
-		client: vsClient,
-		signInWithTestUser: vsSignIn,
-	} = await getTestInstance(
-		{
-			plugins: [
-				agentAuth({
-					roles: {
-						reader: ["reports.read"],
-						writer: ["reports.read", "reports.write"],
-					},
-					validateScopes: true,
-				}),
-			],
-		},
-		{ clientOptions: { plugins: [agentAuthClient()] } },
-	);
+	const { client: vsClient, signInWithTestUser: vsSignIn } =
+		await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						roles: {
+							reader: ["reports.read"],
+							writer: ["reports.read", "reports.write"],
+						},
+						validateScopes: true,
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClient()] } },
+		);
 
 	const { headers: vsHeaders } = await vsSignIn();
 
@@ -991,15 +991,13 @@ describe("agent-auth validateScopes", async () => {
 	});
 
 	it("should reject all scopes when validateScopes is true but no roles defined", async () => {
-		const {
-			client: noRolesClient,
-			signInWithTestUser: noRolesSignIn,
-		} = await getTestInstance(
-			{
-				plugins: [agentAuth({ validateScopes: true })],
-			},
-			{ clientOptions: { plugins: [agentAuthClient()] } },
-		);
+		const { client: noRolesClient, signInWithTestUser: noRolesSignIn } =
+			await getTestInstance(
+				{
+					plugins: [agentAuth({ validateScopes: true })],
+				},
+				{ clientOptions: { plugins: [agentAuthClient()] } },
+			);
 		const { headers: noRolesHeaders } = await noRolesSignIn();
 
 		const kp = await generateAgentKeypair();
@@ -1016,20 +1014,18 @@ describe("agent-auth validateScopes", async () => {
 	});
 
 	it("should use custom validation function", async () => {
-		const {
-			client: fnClient,
-			signInWithTestUser: fnSignIn,
-		} = await getTestInstance(
-			{
-				plugins: [
-					agentAuth({
-						validateScopes: (scopes) =>
-							scopes.every((s) => s.startsWith("custom.")),
-					}),
-				],
-			},
-			{ clientOptions: { plugins: [agentAuthClient()] } },
-		);
+		const { client: fnClient, signInWithTestUser: fnSignIn } =
+			await getTestInstance(
+				{
+					plugins: [
+						agentAuth({
+							validateScopes: (scopes) =>
+								scopes.every((s) => s.startsWith("custom.")),
+						}),
+					],
+				},
+				{ clientOptions: { plugins: [agentAuthClient()] } },
+			);
 		const { headers: fnHeaders } = await fnSignIn();
 
 		const kp1 = await generateAgentKeypair();
@@ -1062,15 +1058,13 @@ describe("agent-auth validateScopes", async () => {
 // =============================================================================
 
 describe("agent-auth maxAgentsPerUser", async () => {
-	const {
-		client: limClient,
-		signInWithTestUser: limSignIn,
-	} = await getTestInstance(
-		{
-			plugins: [agentAuth({ maxAgentsPerUser: 2 })],
-		},
-		{ clientOptions: { plugins: [agentAuthClient()] } },
-	);
+	const { client: limClient, signInWithTestUser: limSignIn } =
+		await getTestInstance(
+			{
+				plugins: [agentAuth({ maxAgentsPerUser: 2 })],
+			},
+			{ clientOptions: { plugins: [agentAuthClient()] } },
+		);
 
 	const { headers: limHeaders } = await limSignIn();
 

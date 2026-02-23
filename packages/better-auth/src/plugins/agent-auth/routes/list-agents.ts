@@ -46,8 +46,7 @@ export function listAgents() {
 						"List agents for the current user with pagination and filtering.",
 					responses: {
 						"200": {
-							description:
-								"Paginated list of agents with total count",
+							description: "Paginated list of agents with total count",
 						},
 					},
 				},
@@ -91,26 +90,26 @@ export function listAgents() {
 			]);
 
 			return ctx.json({
-			agents: agents.map((agent) => ({
-				id: agent.id,
-				name: agent.name,
-				status: agent.status,
-				scopes:
-					typeof agent.scopes === "string"
-						? JSON.parse(agent.scopes)
-						: agent.scopes,
-				role: agent.role,
-				orgId: agent.orgId,
-				lastUsedAt: agent.lastUsedAt,
-				totalInputTokens: agent.totalInputTokens ?? 0,
-				totalOutputTokens: agent.totalOutputTokens ?? 0,
-				createdAt: agent.createdAt,
-				updatedAt: agent.updatedAt,
-				metadata:
-					typeof agent.metadata === "string"
-						? JSON.parse(agent.metadata)
-						: agent.metadata,
-			})),
+				agents: agents.map((agent) => ({
+					id: agent.id,
+					name: agent.name,
+					status: agent.status,
+					scopes:
+						typeof agent.scopes === "string"
+							? JSON.parse(agent.scopes)
+							: agent.scopes,
+					role: agent.role,
+					orgId: agent.orgId,
+					lastUsedAt: agent.lastUsedAt,
+					totalInputTokens: agent.totalInputTokens ?? 0,
+					totalOutputTokens: agent.totalOutputTokens ?? 0,
+					createdAt: agent.createdAt,
+					updatedAt: agent.updatedAt,
+					metadata:
+						typeof agent.metadata === "string"
+							? JSON.parse(agent.metadata)
+							: agent.metadata,
+				})),
 				total,
 				limit,
 				offset,

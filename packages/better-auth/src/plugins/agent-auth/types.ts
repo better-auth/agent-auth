@@ -68,9 +68,7 @@ export interface AgentAuthOptions {
 	 * When `false` or omitted, any scope string is accepted.
 	 * @default false
 	 */
-	validateScopes?:
-		| boolean
-		| ((scopes: string[]) => boolean | Promise<boolean>);
+	validateScopes?: boolean | ((scopes: string[]) => boolean | Promise<boolean>);
 	/**
 	 * Maximum number of active agents a single user can have.
 	 * New agent creation is rejected once this limit is reached.
@@ -165,7 +163,11 @@ export interface AgentAuthOptions {
 	 * ```
 	 */
 	authorizeProviderManagement?:
-		| ((user: { id: string; role?: string | null; [key: string]: string | number | boolean | null | undefined }) => boolean | Promise<boolean>)
+		| ((user: {
+				id: string;
+				role?: string | null;
+				[key: string]: string | number | boolean | null | undefined;
+		  }) => boolean | Promise<boolean>)
 		| true;
 	/**
 	 * Custom schema overrides for the agent table.

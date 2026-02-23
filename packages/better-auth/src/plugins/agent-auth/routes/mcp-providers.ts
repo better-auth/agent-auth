@@ -9,7 +9,13 @@ const PROVIDER_TABLE = "mcpProvider";
 
 async function requireProviderAdmin(
 	_ctx: { headers?: Headers | null },
-	session: { user: { id: string; role?: string | null; [key: string]: string | number | boolean | null | undefined } },
+	session: {
+		user: {
+			id: string;
+			role?: string | null;
+			[key: string]: string | number | boolean | null | undefined;
+		};
+	},
 	opts: ResolvedAgentAuthOptions,
 ) {
 	const guard = opts.authorizeProviderManagement;
@@ -41,9 +47,7 @@ const providerBodySchema = z
 			.string()
 			.min(1)
 			.meta({ description: "Human-readable display name" }),
-		transport: z
-			.enum(["stdio", "sse"])
-			.meta({ description: "Transport type" }),
+		transport: z.enum(["stdio", "sse"]).meta({ description: "Transport type" }),
 		command: z
 			.string()
 			.min(1)
@@ -91,7 +95,8 @@ export function registerProvider(opts: ResolvedAgentAuthOptions) {
 			body: providerBodySchema,
 			metadata: {
 				openapi: {
-					description: "Register a new MCP provider. Requires admin role by default.",
+					description:
+						"Register a new MCP provider. Requires admin role by default.",
 				},
 			},
 		},
@@ -115,9 +120,7 @@ export function registerProvider(opts: ResolvedAgentAuthOptions) {
 				args: ctx.body.args ? JSON.stringify(ctx.body.args) : null,
 				env: ctx.body.env ? JSON.stringify(ctx.body.env) : null,
 				url: ctx.body.url ?? null,
-				headers: ctx.body.headers
-					? JSON.stringify(ctx.body.headers)
-					: null,
+				headers: ctx.body.headers ? JSON.stringify(ctx.body.headers) : null,
 				toolScopes: ctx.body.toolScopes
 					? JSON.stringify(ctx.body.toolScopes)
 					: null,
@@ -228,7 +231,8 @@ export function deleteProvider(opts: ResolvedAgentAuthOptions) {
 			}),
 			metadata: {
 				openapi: {
-					description: "Disable an MCP provider (soft-delete). Requires admin role by default. Re-register with the same name to reactivate.",
+					description:
+						"Disable an MCP provider (soft-delete). Requires admin role by default. Re-register with the same name to reactivate.",
 				},
 			},
 		},

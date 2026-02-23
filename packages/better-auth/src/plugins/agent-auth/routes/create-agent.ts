@@ -25,7 +25,10 @@ const createAgentBodySchema = z.object({
 		.meta({ description: "Organization ID (if org-scoped)" })
 		.optional(),
 	metadata: z
-		.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+		.record(
+			z.string(),
+			z.union([z.string(), z.number(), z.boolean(), z.null()]),
+		)
 		.meta({ description: "Optional metadata" })
 		.optional(),
 });
@@ -109,27 +112,24 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 					: [];
 			const resolvedScopes: string[] = scopes ?? roleScopes;
 
-		if (resolvedScopes.length > 0 && opts.validateScopes) {
-			if (typeof opts.validateScopes === "function") {
-				const valid = await opts.validateScopes(resolvedScopes);
-				if (!valid) {
-					throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
-				}
-			} else {
-				const knownScopes = new Set(
-					Object.values(opts.roles ?? {}).flat(),
-				);
-				const invalid = resolvedScopes.filter(
-					(s: string) => !knownScopes.has(s),
-				);
-				if (invalid.length > 0) {
-					throw APIError.from(
-						"BAD_REQUEST",
-						`${ERROR_CODES.UNKNOWN_SCOPES} Unrecognized: ${invalid.join(", ")}.`,
+			if (resolvedScopes.length > 0 && opts.validateScopes) {
+				if (typeof opts.validateScopes === "function") {
+					const valid = await opts.validateScopes(resolvedScopes);
+					if (!valid) {
+						throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
+					}
+				} else {
+					const knownScopes = new Set(Object.values(opts.roles ?? {}).flat());
+					const invalid = resolvedScopes.filter(
+						(s: string) => !knownScopes.has(s),
 					);
+					if (invalid.length > 0) {
+						throw new APIError("BAD_REQUEST", {
+							message: `${ERROR_CODES.UNKNOWN_SCOPES} Unrecognized: ${invalid.join(", ")}.`,
+						});
+					}
 				}
 			}
-		}
 
 			const now = new Date();
 			const kid = (publicKey.kid as string) ?? null;

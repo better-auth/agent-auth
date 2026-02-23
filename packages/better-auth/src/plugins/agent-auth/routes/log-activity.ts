@@ -60,7 +60,8 @@ export function logActivity(opts: ResolvedAgentAuthOptions) {
 			},
 		},
 		async (ctx) => {
-			const agentSession = (ctx.context as { agentSession?: AgentSession }).agentSession;
+			const agentSession = (ctx.context as { agentSession?: AgentSession })
+				.agentSession;
 
 			if (!agentSession) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
@@ -81,9 +82,7 @@ export function logActivity(opts: ResolvedAgentAuthOptions) {
 					totalOutputTokens: number;
 				}>({
 					model: AGENT_TABLE,
-					where: [
-						{ field: "userId", value: agentSession.user.id },
-					],
+					where: [{ field: "userId", value: agentSession.user.id }],
 				});
 
 				if (opts.maxTokensPerAgent > 0) {
@@ -106,9 +105,7 @@ export function logActivity(opts: ResolvedAgentAuthOptions) {
 				if (opts.maxTokensPerUser > 0) {
 					let userTotal = 0;
 					for (const a of userAgents) {
-						userTotal +=
-							(a.totalInputTokens ?? 0) +
-							(a.totalOutputTokens ?? 0);
+						userTotal += (a.totalInputTokens ?? 0) + (a.totalOutputTokens ?? 0);
 					}
 					if (userTotal + incoming > opts.maxTokensPerUser) {
 						throw APIError.from(

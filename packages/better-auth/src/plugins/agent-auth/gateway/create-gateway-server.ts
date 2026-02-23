@@ -258,7 +258,7 @@ export async function createGatewayServer(
 						"Step 2: Call connect_agent with those tool names as scopes.\n" +
 						"        Example: connect_agent(url='https://myapp.com', name='Issue Bot', scopes=['github.create_issue', 'github.list_pull_requests'])\n" +
 						"Step 3: After the user approves, call call_gateway_tool to execute them.\n" +
-						"        Example: call_gateway_tool(agentId='abc123', tool='github.create_issue', args='{\"title\": \"Fix bug\", \"body\": \"Details...\"}')\n\n" +
+						'        Example: call_gateway_tool(agentId=\'abc123\', tool=\'github.create_issue\', args=\'{"title": "Fix bug", "body": "Details..."}\')\n\n' +
 						"IMPORTANT: You must have the tool in your scopes to call it. Request only what you need.",
 				);
 
@@ -278,9 +278,7 @@ export async function createGatewayServer(
 				"(2) The tool must be in your granted scopes. " +
 				"Use list_gateway_tools to discover available tools first.",
 			{
-				agentId: z
-					.string()
-					.describe("Your Agent ID (from connect_agent)"),
+				agentId: z.string().describe("Your Agent ID (from connect_agent)"),
 				tool: z
 					.string()
 					.describe(

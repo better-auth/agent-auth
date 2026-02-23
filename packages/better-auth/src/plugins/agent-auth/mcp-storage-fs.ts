@@ -122,7 +122,11 @@ export function createFileStorage(
 		}
 	}
 
-	function writeJSON(filePath: string, data: StoredConnection | Record<string, PendingFlow>, secret = false) {
+	function writeJSON(
+		filePath: string,
+		data: StoredConnection | Record<string, PendingFlow>,
+		secret = false,
+	) {
 		ensureDir(path.dirname(filePath));
 		fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
 		if (secret) {
@@ -220,18 +224,21 @@ export function createFileStorage(
 		},
 
 		async savePendingFlow(appUrl, flow) {
-			const flows = readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
+			const flows =
+				readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
 			flows[appUrl] = flow;
 			writeJSON(pendingFlowsFile, flows);
 		},
 
 		async getPendingFlow(appUrl) {
-			const flows = readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
+			const flows =
+				readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
 			return flows[appUrl] ?? null;
 		},
 
 		async removePendingFlow(appUrl) {
-			const flows = readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
+			const flows =
+				readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
 			delete flows[appUrl];
 			writeJSON(pendingFlowsFile, flows);
 		},
