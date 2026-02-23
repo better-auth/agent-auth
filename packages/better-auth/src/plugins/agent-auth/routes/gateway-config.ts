@@ -1,5 +1,5 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import type { ResolvedAgentAuthOptions } from "../types";
+import type { ResolvedMCPGatewayOptions } from "../types";
 
 /**
  * Public endpoint that returns the gateway configuration.
@@ -8,8 +8,8 @@ import type { ResolvedAgentAuthOptions } from "../types";
  * which providers are configured in the plugin. No auth required —
  * only returns provider names, no secrets.
  */
-export function gatewayConfig(opts: ResolvedAgentAuthOptions) {
-	const providers = (opts.mcpProviders ?? []).map((p) =>
+export function gatewayConfig(opts: ResolvedMCPGatewayOptions) {
+	const providers = (opts.providers ?? []).map((p) =>
 		typeof p === "string" ? p : { name: p.name, displayName: p.displayName },
 	);
 

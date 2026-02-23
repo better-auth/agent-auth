@@ -3,7 +3,8 @@ import { getTestInstance } from "../../test-utils/test-instance";
 import { agentAuth } from ".";
 import { agentAuthClient } from "./client";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
-import { estimateTokens } from "./gateway";
+import { estimateTokens, mcpGateway } from "./gateway";
+import { mcpGatewayClient } from "./gateway/client";
 
 describe("agent-auth", async () => {
 	const {
@@ -23,11 +24,12 @@ describe("agent-auth", async () => {
 					},
 					defaultRole: "reader",
 				}),
+				mcpGateway(),
 			],
 		},
 		{
 			clientOptions: {
-				plugins: [agentAuthClient()],
+				plugins: [agentAuthClient(), mcpGatewayClient()],
 			},
 		},
 	);
@@ -593,8 +595,13 @@ describe("agent-auth", async () => {
 		signInWithTestUser: provSignIn,
 		customFetchImpl: provFetch,
 	} = await getTestInstance(
-		{ plugins: [agentAuth({ authorizeProviderManagement: true })] },
-		{ clientOptions: { plugins: [agentAuthClient()] } },
+		{
+			plugins: [
+				agentAuth(),
+				mcpGateway({ authorizeProviderManagement: true }),
+			],
+		},
+		{ clientOptions: { plugins: [agentAuthClient(), mcpGatewayClient()] } },
 	);
 	const { headers: provHeaders } = await provSignIn();
 

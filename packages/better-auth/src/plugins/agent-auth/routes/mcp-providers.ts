@@ -3,7 +3,7 @@ import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { getSessionFromCtx } from "../../../api";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { MCPProvider, ResolvedAgentAuthOptions } from "../types";
+import type { MCPProvider, ResolvedMCPGatewayOptions } from "../types";
 
 const PROVIDER_TABLE = "mcpProvider";
 
@@ -16,7 +16,7 @@ async function requireProviderAdmin(
 			[key: string]: string | number | boolean | null | undefined;
 		};
 	},
-	opts: ResolvedAgentAuthOptions,
+	opts: ResolvedMCPGatewayOptions,
 ) {
 	const guard = opts.authorizeProviderManagement;
 	if (guard === true) return;
@@ -87,7 +87,7 @@ const providerBodySchema = z
 		},
 	);
 
-export function registerProvider(opts: ResolvedAgentAuthOptions) {
+export function registerProvider(opts: ResolvedMCPGatewayOptions) {
 	return createAuthEndpoint(
 		"/agent/mcp-provider/register",
 		{
@@ -221,7 +221,7 @@ export function listProviders() {
 	);
 }
 
-export function deleteProvider(opts: ResolvedAgentAuthOptions) {
+export function deleteProvider(opts: ResolvedMCPGatewayOptions) {
 	return createAuthEndpoint(
 		"/agent/mcp-provider/delete",
 		{

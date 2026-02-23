@@ -1,18 +1,12 @@
 import type { ResolvedAgentAuthOptions } from "../types";
 import { cleanupAgents } from "./cleanup-agents";
 import { createAgent } from "./create-agent";
-import { gatewayConfig } from "./gateway-config";
 import { getAgent } from "./get-agent";
 import { getAgentActivity } from "./get-agent-activity";
 import { getAgentSession } from "./get-agent-session";
 import { getTokenUsage } from "./get-token-usage";
 import { listAgents } from "./list-agents";
 import { logActivity } from "./log-activity";
-import {
-	deleteProvider,
-	listProviders,
-	registerProvider,
-} from "./mcp-providers";
 import { revokeAgent } from "./revoke-agent";
 import { rotateKey } from "./rotate-key";
 import { updateAgent } from "./update-agent";
@@ -30,9 +24,5 @@ export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
 		getTokenUsage: getTokenUsage(opts),
 		logActivity: logActivity(opts),
 		cleanupAgents: cleanupAgents(),
-		registerProvider: registerProvider(opts),
-		listProviders: listProviders(),
-		deleteProvider: deleteProvider(opts),
-		gatewayConfig: gatewayConfig(opts),
 	};
 }

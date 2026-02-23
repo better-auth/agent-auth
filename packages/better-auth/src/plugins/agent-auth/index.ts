@@ -45,12 +45,7 @@ function buildRateLimits(config: AgentAuthOptions["rateLimit"]) {
 		},
 		{
 			pathMatcher(path: string) {
-				return (
-					path === "/agent/rotate-key" ||
-					path === "/agent/cleanup" ||
-					path === "/agent/mcp-provider/register" ||
-					path === "/agent/mcp-provider/delete"
-				);
+				return path === "/agent/rotate-key" || path === "/agent/cleanup";
 			},
 			window,
 			max: sensitiveMax,
@@ -400,10 +395,6 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			getTokenUsage: routes.getTokenUsage,
 			logActivity: routes.logActivity,
 			cleanupAgents: routes.cleanupAgents,
-			registerProvider: routes.registerProvider,
-			listProviders: routes.listProviders,
-			deleteProvider: routes.deleteProvider,
-			gatewayConfig: routes.gatewayConfig,
 		},
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,

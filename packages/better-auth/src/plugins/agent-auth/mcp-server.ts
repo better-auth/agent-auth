@@ -19,7 +19,7 @@
  * ```
  *
  * The gateway fetches its provider config from the app on startup
- * (configured in agentAuth({ mcpProviders: ["github"] })).
+ * (configured in mcpGateway({ providers: ["github"] })).
  *
  * Only secrets (API keys, tokens) go in env.
  *
