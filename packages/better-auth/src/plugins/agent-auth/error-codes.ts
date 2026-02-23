@@ -15,6 +15,10 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 	TOKEN_BUDGET_EXCEEDED: "Agent has exceeded its token budget.",
 	USER_TOKEN_BUDGET_EXCEEDED:
 		"User has exceeded their total token budget across all agents.",
+	ORG_TOKEN_BUDGET_EXCEEDED:
+		"Organization has exceeded its total token budget across all agents.",
+	WORKGROUP_TOKEN_BUDGET_EXCEEDED:
+		"Workgroup has exceeded its total token budget across all agents.",
 	SCOPE_REQUEST_NOT_FOUND: "Scope request not found or expired.",
 	SCOPE_REQUEST_OWNER_MISMATCH:
 		"This scope request belongs to a different user.",

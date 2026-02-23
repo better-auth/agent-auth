@@ -15,6 +15,10 @@ export function listAgents() {
 			query: z
 				.object({
 					orgId: z.string().optional(),
+					workgroupId: z
+						.string()
+						.meta({ description: "Filter by workgroup" })
+						.optional(),
 					status: z
 						.enum(["active", "revoked"])
 						.meta({ description: "Filter by status (default: all)" })
@@ -71,6 +75,10 @@ export function listAgents() {
 				where.push({ field: "orgId", value: ctx.query.orgId });
 			}
 
+			if (ctx.query?.workgroupId) {
+				where.push({ field: "workgroupId", value: ctx.query.workgroupId });
+			}
+
 			if (ctx.query?.status) {
 				where.push({ field: "status", value: ctx.query.status });
 			}
@@ -100,6 +108,7 @@ export function listAgents() {
 							: agent.scopes,
 					role: agent.role,
 					orgId: agent.orgId,
+					workgroupId: agent.workgroupId,
 					lastUsedAt: agent.lastUsedAt,
 					totalInputTokens: agent.totalInputTokens ?? 0,
 					totalOutputTokens: agent.totalOutputTokens ?? 0,

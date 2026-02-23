@@ -72,12 +72,17 @@ export function logActivity(opts: ResolvedAgentAuthOptions) {
 
 			const incoming = (inputTokens ?? 0) + (outputTokens ?? 0);
 
-			if (
-				incoming > 0 &&
-				(opts.maxTokensPerAgent > 0 || opts.maxTokensPerUser > 0)
-			) {
+			const hasBudgets =
+				opts.maxTokensPerAgent > 0 ||
+				opts.maxTokensPerUser > 0 ||
+				opts.maxTokensPerOrg > 0 ||
+				opts.maxTokensPerWorkgroup > 0;
+
+			if (incoming > 0 && hasBudgets) {
 				const userAgents = await ctx.context.adapter.findMany<{
 					id: string;
+					orgId: string | null;
+					workgroupId: string | null;
 					totalInputTokens: number;
 					totalOutputTokens: number;
 				}>({
@@ -111,6 +116,48 @@ export function logActivity(opts: ResolvedAgentAuthOptions) {
 						throw APIError.from(
 							"FORBIDDEN",
 							ERROR_CODES.USER_TOKEN_BUDGET_EXCEEDED,
+						);
+					}
+				}
+
+				if (opts.maxTokensPerOrg > 0 && agentSession.agent.orgId) {
+					const orgAgents = await ctx.context.adapter.findMany<{
+						totalInputTokens: number;
+						totalOutputTokens: number;
+					}>({
+						model: AGENT_TABLE,
+						where: [{ field: "orgId", value: agentSession.agent.orgId }],
+					});
+					let orgTotal = 0;
+					for (const a of orgAgents) {
+						orgTotal += (a.totalInputTokens ?? 0) + (a.totalOutputTokens ?? 0);
+					}
+					if (orgTotal + incoming > opts.maxTokensPerOrg) {
+						throw APIError.from(
+							"FORBIDDEN",
+							ERROR_CODES.ORG_TOKEN_BUDGET_EXCEEDED,
+						);
+					}
+				}
+
+				if (opts.maxTokensPerWorkgroup > 0 && agentSession.agent.workgroupId) {
+					const wgAgents = await ctx.context.adapter.findMany<{
+						totalInputTokens: number;
+						totalOutputTokens: number;
+					}>({
+						model: AGENT_TABLE,
+						where: [
+							{ field: "workgroupId", value: agentSession.agent.workgroupId },
+						],
+					});
+					let wgTotal = 0;
+					for (const a of wgAgents) {
+						wgTotal += (a.totalInputTokens ?? 0) + (a.totalOutputTokens ?? 0);
+					}
+					if (wgTotal + incoming > opts.maxTokensPerWorkgroup) {
+						throw APIError.from(
+							"FORBIDDEN",
+							ERROR_CODES.WORKGROUP_TOKEN_BUDGET_EXCEEDED,
 						);
 					}
 				}

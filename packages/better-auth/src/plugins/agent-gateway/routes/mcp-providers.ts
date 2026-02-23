@@ -40,6 +40,14 @@ const providerBodySchema = z.object({
 		.string()
 		.min(1)
 		.meta({ description: "Unique provider name (scope namespace)" }),
+	orgId: z
+		.string()
+		.meta({ description: "Organization ID (null = global)" })
+		.optional(),
+	workgroupId: z
+		.string()
+		.meta({ description: "Workgroup ID within the org" })
+		.optional(),
 	displayName: z
 		.string()
 		.min(1)
@@ -102,9 +110,15 @@ export function registerProvider(opts?: AgentGatewayOptions) {
 				});
 			}
 
+			const nameWhere: Array<{ field: string; value: string }> = [
+				{ field: "name", value: ctx.body.name },
+			];
+			if (ctx.body.orgId) {
+				nameWhere.push({ field: "orgId", value: ctx.body.orgId });
+			}
 			const existing = await ctx.context.adapter.findOne<MCPProvider>({
 				model: PROVIDER_TABLE,
-				where: [{ field: "name", value: ctx.body.name }],
+				where: nameWhere,
 			});
 
 			if (existing && existing.status === "active") {
@@ -130,6 +144,8 @@ export function registerProvider(opts?: AgentGatewayOptions) {
 						toolScopes: ctx.body.toolScopes
 							? JSON.stringify(ctx.body.toolScopes)
 							: null,
+						orgId: ctx.body.orgId ?? null,
+						workgroupId: ctx.body.workgroupId ?? null,
 						status: "active",
 						updatedAt: now,
 					},
@@ -155,6 +171,8 @@ export function registerProvider(opts?: AgentGatewayOptions) {
 				model: PROVIDER_TABLE,
 				data: {
 					name: ctx.body.name,
+					orgId: ctx.body.orgId ?? null,
+					workgroupId: ctx.body.workgroupId ?? null,
 					displayName: ctx.body.displayName,
 					transport: ctx.body.transport,
 					command: ctx.body.command ?? null,
@@ -187,9 +205,22 @@ export function listProviders() {
 		"/agent/gateway/provider/list",
 		{
 			method: "GET",
+			query: z
+				.object({
+					orgId: z
+						.string()
+						.meta({ description: "Filter by organization" })
+						.optional(),
+					workgroupId: z
+						.string()
+						.meta({ description: "Filter by workgroup" })
+						.optional(),
+				})
+				.optional(),
 			metadata: {
 				openapi: {
-					description: "List all registered MCP providers.",
+					description:
+						"List registered MCP providers, optionally filtered by org/workgroup.",
 				},
 			},
 		},
@@ -199,15 +230,27 @@ export function listProviders() {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
+			const where: Array<{ field: string; value: string }> = [
+				{ field: "status", value: "active" },
+			];
+			if (ctx.query?.orgId) {
+				where.push({ field: "orgId", value: ctx.query.orgId });
+			}
+			if (ctx.query?.workgroupId) {
+				where.push({ field: "workgroupId", value: ctx.query.workgroupId });
+			}
+
 			const providers = await ctx.context.adapter.findMany<MCPProvider>({
 				model: PROVIDER_TABLE,
-				where: [{ field: "status", value: "active" }],
+				where,
 			});
 
 			return ctx.json({
 				providers: providers.map((p) => ({
 					id: p.id,
 					name: p.name,
+					orgId: p.orgId,
+					workgroupId: p.workgroupId,
 					displayName: p.displayName,
 					transport: p.transport,
 					status: p.status,

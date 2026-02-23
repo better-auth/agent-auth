@@ -12,7 +12,22 @@ export const gatewaySchema = () =>
 				name: {
 					type: "string",
 					required: true,
-					unique: true,
+				},
+				/**
+				 * Organization this provider belongs to. Null = global.
+				 */
+				orgId: {
+					type: "string",
+					required: false,
+					index: true,
+				},
+				/**
+				 * Workgroup within an organization. Null = org-wide.
+				 */
+				workgroupId: {
+					type: "string",
+					required: false,
+					index: true,
 				},
 				/**
 				 * Human-readable display name (e.g. "Google Drive").

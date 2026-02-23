@@ -33,6 +33,20 @@ export const agentSchema = () =>
 					index: true,
 				},
 				/**
+				 * Optional workgroup within an organization.
+				 */
+				workgroupId: {
+					type: "string",
+					references: {
+						model: "agentWorkgroup",
+						field: "id",
+						onDelete: "set null",
+					},
+					required: false,
+					input: false,
+					index: true,
+				},
+				/**
 				 * JSON array of scope strings (e.g. '["email.send","reports.read"]')
 				 */
 				scopes: {
@@ -308,6 +322,46 @@ export const agentSchema = () =>
 					input: false,
 				},
 				expiresAt: {
+					type: "date",
+					required: true,
+					input: false,
+				},
+			},
+		},
+		agentWorkgroup: {
+			fields: {
+				name: {
+					type: "string",
+					required: true,
+					input: false,
+				},
+				description: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				orgId: {
+					type: "string",
+					required: true,
+					input: false,
+					index: true,
+				},
+				/**
+				 * Max total tokens across all agents in this workgroup.
+				 * 0 = unlimited.
+				 */
+				maxTokens: {
+					type: "number",
+					required: false,
+					input: false,
+					defaultValue: 0,
+				},
+				createdAt: {
+					type: "date",
+					required: true,
+					input: false,
+				},
+				updatedAt: {
 					type: "date",
 					required: true,
 					input: false,

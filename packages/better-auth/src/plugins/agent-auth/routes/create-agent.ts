@@ -24,6 +24,10 @@ const createAgentBodySchema = z.object({
 		.string()
 		.meta({ description: "Organization ID (if org-scoped)" })
 		.optional(),
+	workgroupId: z
+		.string()
+		.meta({ description: "Workgroup ID within the org" })
+		.optional(),
 	metadata: z
 		.record(
 			z.string(),
@@ -95,7 +99,8 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			const { name, publicKey, scopes, role, orgId, metadata } = ctx.body;
+			const { name, publicKey, scopes, role, orgId, workgroupId, metadata } =
+				ctx.body;
 
 			if (!publicKey.kty || !publicKey.x) {
 				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
@@ -209,6 +214,7 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 					name,
 					userId,
 					orgId: orgId ?? null,
+					workgroupId: workgroupId ?? null,
 					scopes: JSON.stringify(resolvedScopes),
 					role: resolvedRole,
 					status: "active",

@@ -148,6 +148,8 @@ export interface ToolResult {
 export interface MCPProvider {
 	id: string;
 	name: string;
+	orgId: string | null;
+	workgroupId: string | null;
 	displayName: string;
 	transport: "stdio" | "sse";
 	command: string | null;

@@ -13,6 +13,12 @@ import { revokeAgent } from "./revoke-agent";
 import { rotateKey } from "./rotate-key";
 import { scopeRequestStatus } from "./scope-request-status";
 import { updateAgent } from "./update-agent";
+import {
+	createWorkgroup,
+	deleteWorkgroup,
+	listWorkgroups,
+	updateWorkgroup,
+} from "./workgroup";
 
 export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
 	return {
@@ -30,5 +36,9 @@ export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
 		requestScope: requestScope(),
 		scopeRequestStatus: scopeRequestStatus(),
 		approveScope: approveScope(),
+		createWorkgroup: createWorkgroup(),
+		listWorkgroups: listWorkgroups(),
+		updateWorkgroup: updateWorkgroup(),
+		deleteWorkgroup: deleteWorkgroup(),
 	};
 }

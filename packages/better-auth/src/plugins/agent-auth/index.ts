@@ -71,6 +71,8 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		maxAgentsPerUser: options?.maxAgentsPerUser ?? 25,
 		maxTokensPerAgent: options?.maxTokensPerAgent ?? 0,
 		maxTokensPerUser: options?.maxTokensPerUser ?? 0,
+		maxTokensPerOrg: options?.maxTokensPerOrg ?? 0,
+		maxTokensPerWorkgroup: options?.maxTokensPerWorkgroup ?? 0,
 	};
 
 	const schema = mergeSchema(agentSchema(), opts.schema);
@@ -262,6 +264,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 										: agent.scopes,
 								role: agent.role,
 								orgId: agent.orgId,
+								workgroupId: agent.workgroupId ?? null,
 								createdAt: agent.createdAt,
 								metadata:
 									typeof agent.metadata === "string"

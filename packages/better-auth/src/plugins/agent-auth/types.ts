@@ -112,6 +112,23 @@ export interface AgentAuthOptions {
 	 */
 	agentMaxLifetime?: number;
 	/**
+	 * Maximum total tokens (input + output) across ALL agents
+	 * within a single organization.
+	 *
+	 * Set to `0` or omit to disable (unlimited).
+	 * @default 0
+	 */
+	maxTokensPerOrg?: number;
+	/**
+	 * Maximum total tokens (input + output) across ALL agents
+	 * within a single workgroup.
+	 *
+	 * Set to `0` or omit to disable (unlimited).
+	 * Workgroup-level `maxTokens` field takes precedence if set.
+	 * @default 0
+	 */
+	maxTokensPerWorkgroup?: number;
+	/**
 	 * Rate limiting configuration for agent endpoints.
 	 * Set to `false` to disable plugin-level rate limiting entirely.
 	 *
@@ -148,6 +165,7 @@ export interface Agent {
 	name: string;
 	userId: string;
 	orgId: string | null;
+	workgroupId: string | null;
 	scopes: string[];
 	role: string | null;
 	status: "active" | "revoked";
@@ -166,6 +184,20 @@ export interface Agent {
 export type AgentMetadata = Record<string, string | number | boolean | null>;
 
 /**
+ * A workgroup record as stored in the database.
+ * Workgroups group agents within an organization.
+ */
+export interface Workgroup {
+	id: string;
+	name: string;
+	description: string | null;
+	orgId: string;
+	maxTokens: number;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
  * The session object returned when an agent authenticates.
  * Available via `ctx.context.agentSession` in route handlers.
  */
@@ -176,6 +208,7 @@ export interface AgentSession {
 		scopes: string[];
 		role: string | null;
 		orgId: string | null;
+		workgroupId: string | null;
 		createdAt: Date;
 		metadata: AgentMetadata | null;
 	};
@@ -250,6 +283,8 @@ export type ResolvedAgentAuthOptions = Required<
 		| "maxAgentsPerUser"
 		| "maxTokensPerAgent"
 		| "maxTokensPerUser"
+		| "maxTokensPerOrg"
+		| "maxTokensPerWorkgroup"
 	>
 > &
 	AgentAuthOptions;
