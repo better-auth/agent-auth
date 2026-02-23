@@ -1,4 +1,5 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import type { AgentSession } from "../types";
 
 /**
  * GET /agent/get-session
@@ -22,7 +23,7 @@ export function getAgentSession() {
 			},
 		},
 		async (ctx) => {
-			const agentSession = (ctx.context as Record<string, unknown>)
+			const agentSession = (ctx.context as { agentSession?: AgentSession })
 				.agentSession;
 
 			if (!agentSession) {

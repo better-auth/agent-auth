@@ -43,7 +43,7 @@ export function logActivity() {
 			},
 		},
 		async (ctx) => {
-			const agentSession = (ctx.context as Record<string, unknown>).agentSession as AgentSession | undefined;
+			const agentSession = (ctx.context as { agentSession?: AgentSession }).agentSession;
 
 			if (!agentSession) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);

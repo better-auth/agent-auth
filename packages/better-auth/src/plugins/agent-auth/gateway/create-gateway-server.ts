@@ -48,6 +48,7 @@
 
 import { exec } from "node:child_process";
 import { platform } from "node:os";
+import type { AgentJWK } from "../crypto";
 import { signAgentJWT } from "../crypto";
 import { createMemoryStorage } from "../mcp-storage-memory";
 import type { MCPAgentStorage } from "../mcp-tools";
@@ -151,7 +152,7 @@ export async function createGatewayServer(
 		provider: string;
 		originalName: string;
 		description: string;
-		inputSchema: unknown;
+		inputSchema: Record<string, unknown>;
 	}> = [];
 
 	if (providers.length > 0) {
@@ -210,7 +211,7 @@ export async function createGatewayServer(
 			zodShape[key] = schema as ReturnType<typeof z.string>;
 		}
 		server.tool(tool.name, tool.description, zodShape, async (params) => {
-			return await tool.handler(params as Record<string, unknown>);
+			return await tool.handler(params as Record<string, string | string[]>);
 		});
 	}
 
@@ -466,7 +467,7 @@ function buildRevokeAll(storage: MCPAgentStorage) {
  * Uses the agent's keypair to sign a JWT so the app can verify the caller.
  */
 async function reportActivity(
-	connection: { appUrl: string; keypair: { privateKey: Record<string, unknown> } },
+	connection: { appUrl: string; keypair: { privateKey: AgentJWK } },
 	agentId: string,
 	tool: string,
 	isError: boolean,

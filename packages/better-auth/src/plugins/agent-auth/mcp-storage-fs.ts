@@ -20,6 +20,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { AgentJWK } from "./crypto";
 import type { AgentKeypair, MCPAgentStorage } from "./mcp-tools";
 
 const ENCRYPTED_PREFIX = "enc:";
@@ -28,14 +29,21 @@ interface StoredConnection {
 	appUrl: string;
 	keypair:
 		| {
-				privateKey: Record<string, unknown>;
-				publicKey: Record<string, unknown>;
+				privateKey: AgentJWK;
+				publicKey: AgentJWK;
 				kid: string;
 		  }
 		| string;
 	name: string;
 	scopes: string[];
 	connectedAt: string;
+}
+
+interface PendingFlow {
+	deviceCode: string;
+	clientId: string;
+	name: string;
+	scopes: string[];
 }
 
 export interface FileStorageOptions {
@@ -87,7 +95,7 @@ async function decryptKeypair(
 	return JSON.parse(decrypted) as AgentKeypair;
 }
 
-function isEncrypted(keypair: unknown): keypair is string {
+function isEncrypted(keypair: StoredConnection["keypair"]): keypair is string {
 	return typeof keypair === "string" && keypair.startsWith(ENCRYPTED_PREFIX);
 }
 
@@ -114,7 +122,7 @@ export function createFileStorage(
 		}
 	}
 
-	function writeJSON(filePath: string, data: unknown, secret = false) {
+	function writeJSON(filePath: string, data: StoredConnection | Record<string, PendingFlow>, secret = false) {
 		ensureDir(path.dirname(filePath));
 		fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
 		if (secret) {
@@ -212,29 +220,18 @@ export function createFileStorage(
 		},
 
 		async savePendingFlow(appUrl, flow) {
-			const flows = readJSON<Record<string, unknown>>(pendingFlowsFile) ?? {};
+			const flows = readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
 			flows[appUrl] = flow;
 			writeJSON(pendingFlowsFile, flows);
 		},
 
 		async getPendingFlow(appUrl) {
-			const flows =
-				readJSON<
-					Record<
-						string,
-						{
-							deviceCode: string;
-							clientId: string;
-							name: string;
-							scopes: string[];
-						}
-					>
-				>(pendingFlowsFile) ?? {};
+			const flows = readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
 			return flows[appUrl] ?? null;
 		},
 
 		async removePendingFlow(appUrl) {
-			const flows = readJSON<Record<string, unknown>>(pendingFlowsFile) ?? {};
+			const flows = readJSON<Record<string, PendingFlow>>(pendingFlowsFile) ?? {};
 			delete flows[appUrl];
 			writeJSON(pendingFlowsFile, flows);
 		},

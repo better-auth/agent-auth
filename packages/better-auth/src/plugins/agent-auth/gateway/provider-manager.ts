@@ -27,7 +27,7 @@ export interface GatewayTool {
 
 /** Result from calling a tool on a provider. */
 export interface GatewayToolResult {
-	content: Array<{ type: string; text?: string; [key: string]: unknown }>;
+	content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 	isError?: boolean;
 }
 

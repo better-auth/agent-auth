@@ -14,7 +14,10 @@ export function rotateKey() {
 			method: "POST",
 			body: z.object({
 				agentId: z.string(),
-				publicKey: z.record(z.string(), z.unknown()),
+				publicKey: z.record(
+					z.string(),
+					z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+				),
 			}),
 			metadata: {
 				openapi: {

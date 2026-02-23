@@ -394,8 +394,8 @@ function createInMemoryStorage(): MCPAgentStorage {
 		{
 			appUrl: string;
 			keypair: {
-				privateKey: Record<string, unknown>;
-				publicKey: Record<string, unknown>;
+				privateKey: import("./crypto").AgentJWK;
+				publicKey: import("./crypto").AgentJWK;
 				kid: string;
 			};
 			name: string;

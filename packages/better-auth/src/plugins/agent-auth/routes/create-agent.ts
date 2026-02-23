@@ -10,7 +10,10 @@ const AGENT_TABLE = "agent";
 const createAgentBodySchema = z.object({
 	name: z.string().min(1).meta({ description: "Friendly name for the agent" }),
 	publicKey: z
-		.record(z.string(), z.unknown())
+		.record(
+			z.string(),
+			z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+		)
 		.meta({ description: "Agent's Ed25519 public key as JWK" }),
 	scopes: z
 		.array(z.string())
@@ -22,7 +25,7 @@ const createAgentBodySchema = z.object({
 		.meta({ description: "Organization ID (if org-scoped)" })
 		.optional(),
 	metadata: z
-		.record(z.string(), z.unknown())
+		.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
 		.meta({ description: "Optional metadata" })
 		.optional(),
 });
@@ -136,7 +139,7 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const agent = await ctx.context.adapter.create<
-				Record<string, unknown>,
+				Record<string, string | Date | null>,
 				Agent
 			>({
 				model: AGENT_TABLE,

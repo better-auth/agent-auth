@@ -4,6 +4,7 @@ import { decodeJwt } from "jose";
 import { APIError } from "../../api";
 import { mergeSchema } from "../../db";
 import { isAPIError } from "../../utils/is-api-error";
+import type { AgentJWK } from "./crypto";
 import { verifyAgentJWT } from "./crypto";
 import { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 import { createAgentRoutes } from "./routes";
@@ -185,7 +186,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						}
 
 						// Verify the JWT signature with the agent's stored public key
-						let publicKey: Record<string, unknown>;
+						let publicKey: AgentJWK;
 						try {
 							publicKey = JSON.parse(agent.publicKey);
 						} catch {
@@ -243,12 +244,12 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						};
 
 						// Attach agent session to context
-						(ctx.context as Record<string, unknown>).agentSession =
+						(ctx.context as { agentSession?: AgentSession }).agentSession =
 							agentSession;
 
 						// Update lastUsedAt (and extend expiresAt if TTL is active) in background
 						const now = new Date();
-						const heartbeatUpdate: Record<string, unknown> = {
+						const heartbeatUpdate: { lastUsedAt: Date; expiresAt?: Date } = {
 							lastUsedAt: now,
 						};
 						if (opts.agentSessionTTL > 0) {
@@ -286,16 +287,16 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 				{
 					matcher: (ctx) => {
 						// Run after hook only for requests that went through agent auth
-						return !!(ctx.context as Record<string, unknown>).agentSession;
+						return !!(ctx.context as { agentSession?: AgentSession }).agentSession;
 					},
 					handler: createAuthMiddleware(async (ctx) => {
-						const agentSession = (ctx.context as Record<string, unknown>)
-							.agentSession as AgentSession;
+						const agentSession = (ctx.context as { agentSession?: AgentSession })
+							.agentSession;
 						if (!agentSession) return;
 
 						// Derive HTTP status from the response
 						let status: number | null = null;
-						const returned = (ctx.context as Record<string, unknown>).returned;
+						const returned = (ctx.context as { returned?: { status?: number; statusCode?: number } }).returned;
 						if (isAPIError(returned)) {
 							status = returned.statusCode;
 						} else if (

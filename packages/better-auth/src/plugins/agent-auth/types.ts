@@ -113,7 +113,7 @@ export interface AgentAuthOptions {
 	 * ```
 	 */
 	authorizeProviderManagement?:
-		| ((user: { id: string; role?: string | null; [key: string]: unknown }) => boolean | Promise<boolean>)
+		| ((user: { id: string; role?: string | null; [key: string]: string | number | boolean | null | undefined }) => boolean | Promise<boolean>)
 		| true;
 	/**
 	 * Custom schema overrides for the agent table.
@@ -136,10 +136,13 @@ export interface Agent {
 	kid: string | null;
 	lastUsedAt: Date | null;
 	expiresAt: Date | null;
-	metadata: Record<string, unknown> | null;
+	metadata: AgentMetadata | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
+
+/** Arbitrary key-value metadata attached to an agent. */
+export type AgentMetadata = Record<string, string | number | boolean | null>;
 
 /**
  * The session object returned when an agent authenticates.
@@ -153,13 +156,13 @@ export interface AgentSession {
 		role: string | null;
 		orgId: string | null;
 		createdAt: Date;
-		metadata: Record<string, unknown> | null;
+		metadata: AgentMetadata | null;
 	};
 	user: {
 		id: string;
 		name: string;
 		email: string;
-		[key: string]: unknown;
+		[key: string]: string | number | boolean | null | undefined;
 	};
 }
 

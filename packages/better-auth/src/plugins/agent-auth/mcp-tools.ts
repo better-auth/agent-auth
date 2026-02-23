@@ -11,11 +11,12 @@
  */
 
 import * as z from "zod";
+import type { AgentJWK } from "./crypto";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
 
 export interface AgentKeypair {
-	privateKey: Record<string, unknown>;
-	publicKey: Record<string, unknown>;
+	privateKey: AgentJWK;
+	publicKey: AgentJWK;
 	kid: string;
 }
 
@@ -79,7 +80,7 @@ export interface MCPToolDefinition {
 	name: string;
 	description: string;
 	inputSchema: Record<string, z.ZodType>;
-	handler: (input: Record<string, unknown>) => Promise<{
+	handler: (input: Record<string, string | string[]>) => Promise<{
 		content: Array<{ type: "text"; text: string }>;
 	}>;
 }
@@ -113,7 +114,8 @@ export interface CreateAgentMCPToolsOptions {
 		locations?: string[];
 		actions?: string[];
 		identifier?: string;
-		[key: string]: unknown;
+		description?: string;
+		[key: string]: string | string[] | undefined;
 	}>;
 }
 
@@ -123,7 +125,7 @@ export interface CreateAgentMCPToolsOptions {
 async function tryRegisterAgent(
 	url: string,
 	token: string,
-	body: { name: string; publicKey: Record<string, unknown>; scopes: string[] },
+	body: { name: string; publicKey: AgentJWK; scopes: string[] },
 ): Promise<{ agentId: string; scopes: string[] } | null> {
 	const res = await globalThis.fetch(`${url}/api/auth/agent/create`, {
 		method: "POST",

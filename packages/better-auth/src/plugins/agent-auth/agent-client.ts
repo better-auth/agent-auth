@@ -1,3 +1,4 @@
+import type { AgentJWK } from "./crypto";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
 import type { AgentSession } from "./types";
 
@@ -34,8 +35,8 @@ export interface ConnectAgentOptions {
 	role?: string;
 	/** Pre-generated keypair. If not provided, one will be generated. */
 	keypair?: {
-		publicKey: Record<string, unknown>;
-		privateKey: Record<string, unknown>;
+		publicKey: AgentJWK;
+		privateKey: AgentJWK;
 		kid: string;
 	};
 	/** Client ID for the device auth flow. Default: "agent-auth" */
@@ -71,8 +72,8 @@ export interface ConnectAgentResult {
 	agentId: string;
 	name: string;
 	scopes: string[];
-	publicKey: Record<string, unknown>;
-	privateKey: Record<string, unknown>;
+	publicKey: AgentJWK;
+	privateKey: AgentJWK;
 	kid: string;
 }
 
@@ -261,7 +262,7 @@ export interface AgentClientOptions {
 	/** The agent's ID (returned from /agent/create) */
 	agentId: string;
 	/** The agent's Ed25519 private key as JWK */
-	privateKey: Record<string, unknown>;
+	privateKey: AgentJWK;
 	/** JWT expiration in seconds. Default: 60 */
 	jwtExpiresIn?: number;
 	/** JWT claim format. Default: "simple" */

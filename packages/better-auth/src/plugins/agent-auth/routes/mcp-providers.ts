@@ -9,7 +9,7 @@ const PROVIDER_TABLE = "mcpProvider";
 
 async function requireProviderAdmin(
 	_ctx: { headers?: Headers | null },
-	session: { user: { id: string; role?: string | null; [key: string]: unknown } },
+	session: { user: { id: string; role?: string | null; [key: string]: string | number | boolean | null | undefined } },
 	opts: ResolvedAgentAuthOptions,
 ) {
 	const guard = opts.authorizeProviderManagement;
@@ -151,7 +151,7 @@ export function registerProvider(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const provider = await ctx.context.adapter.create<
-				Record<string, unknown>,
+				Record<string, string | Date | null>,
 				MCPProvider
 			>({
 				model: PROVIDER_TABLE,
