@@ -1,7 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
-import { discoverTools } from "../mcp-bridge";
 import { AGENT_GATEWAY_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import { discoverTools } from "../mcp-bridge";
 import type { ResolvedGatewayOptions } from "../types";
 
 type AgentSession = {
@@ -36,10 +36,7 @@ export function gatewayTools(opts: ResolvedGatewayOptions) {
 				.agentSession as AgentSession | undefined;
 
 			if (!agentSession) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
 			const bridge = opts.resolvedBridge;
@@ -62,11 +59,7 @@ export function gatewayTools(opts: ResolvedGatewayOptions) {
 				if (!token) continue;
 
 				try {
-					const rawTools = await discoverTools(
-						config,
-						token,
-						providerName,
-					);
+					const rawTools = await discoverTools(config, token, providerName);
 					providers.push({
 						name: providerName,
 						tools: rawTools.map((t) => ({

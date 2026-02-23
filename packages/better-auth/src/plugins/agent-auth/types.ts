@@ -1,5 +1,4 @@
 import type { InferOptionSchema } from "../../types";
-import type { gatewaySchema } from "./gateway-schema";
 import type { agentSchema } from "./schema";
 
 export interface AgentAuthOptions {
@@ -238,25 +237,6 @@ export interface MCPProviderConfig {
 }
 
 /**
- * An MCP provider record as stored in the database.
- */
-export interface MCPProvider {
-	id: string;
-	name: string;
-	displayName: string;
-	transport: "stdio" | "sse";
-	command: string | null;
-	args: string[];
-	env: Record<string, string> | null;
-	url: string | null;
-	headers: Record<string, string> | null;
-	toolScopes: Record<string, string[]> | null;
-	status: "active" | "disabled";
-	createdAt: Date;
-	updatedAt: Date;
-}
-
-/**
  * Resolved options with defaults applied.
  */
 export type ResolvedAgentAuthOptions = Required<
@@ -273,72 +253,3 @@ export type ResolvedAgentAuthOptions = Required<
 	>
 > &
 	AgentAuthOptions;
-
-/**
- * Options for the MCP gateway plugin.
- */
-export interface MCPGatewayOptions {
-	/**
-	 * MCP providers that agents can connect to through the gateway.
-	 *
-	 * Pass a string for known providers (e.g. "github", "slack"),
-	 * or a config object for custom MCP servers.
-	 *
-	 * @example
-	 * ```ts
-	 * providers: [
-	 *   "github",
-	 *   "slack",
-	 *   { name: "my-tool", command: "node", args: ["my-server.js"] },
-	 * ]
-	 * ```
-	 */
-	providers?: (string | MCPProviderConfig)[];
-	/**
-	 * Guard for MCP provider management endpoints (register, delete).
-	 * Receives the user session and returns `true` to allow.
-	 *
-	 * Defaults to checking `user.role === "admin"`.
-	 * Set to `true` to allow any authenticated user.
-	 *
-	 * @example
-	 * ```ts
-	 * authorizeProviderManagement: (user) => user.role === "admin"
-	 * ```
-	 */
-	authorizeProviderManagement?:
-		| ((user: {
-				id: string;
-				role?: string | null;
-				[key: string]: string | number | boolean | null | undefined;
-		  }) => boolean | Promise<boolean>)
-		| true;
-	/**
-	 * Rate limiting for MCP gateway endpoints.
-	 * Set to `false` to disable.
-	 *
-	 * @default { window: 60, max: 60, sensitiveMax: 5 }
-	 */
-	rateLimit?:
-		| {
-				/** Time window in seconds. @default 60 */
-				window?: number;
-				/** Max requests per window for general gateway routes. @default 60 */
-				max?: number;
-				/** Max requests per window for provider register/delete. @default 5 */
-				sensitiveMax?: number;
-		  }
-		| false;
-	/**
-	 * Custom schema overrides for the mcpProvider table.
-	 */
-	schema?: InferOptionSchema<ReturnType<typeof gatewaySchema>>;
-}
-
-/**
- * Resolved MCP gateway options with defaults applied.
- */
-export type ResolvedMCPGatewayOptions = Required<
-	Pick<MCPGatewayOptions, "providers">
-> &
-	MCPGatewayOptions;

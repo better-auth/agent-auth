@@ -25,7 +25,7 @@
  * shell, .env, or MCP client config.
  */
 
-import type { MCPProviderConfig } from "../types";
+import type { MCPProviderConfig } from "../agent-auth/types";
 
 /**
  * Registry of known MCP servers.

@@ -1,8 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
-import { callTool } from "../mcp-bridge";
 import { AGENT_GATEWAY_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import { callTool } from "../mcp-bridge";
 import type { ResolvedGatewayOptions } from "../types";
 
 type AgentSession = {
@@ -38,13 +38,10 @@ export function gatewayCall(opts: ResolvedGatewayOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				tool: z
-					.string()
-					.min(1)
-					.meta({
-						description:
-							'Tool to call in provider.tool format (e.g. "github.list_issues")',
-					}),
+				tool: z.string().min(1).meta({
+					description:
+						'Tool to call in provider.tool format (e.g. "github.list_issues")',
+				}),
 				args: z
 					.record(z.string(), z.any())
 					.optional()
@@ -63,31 +60,19 @@ export function gatewayCall(opts: ResolvedGatewayOptions) {
 				.agentSession as AgentSession | undefined;
 
 			if (!agentSession) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
 			const { tool, args } = ctx.body;
 			const dotIdx = tool.indexOf(".");
 			if (dotIdx === -1) {
-				throw APIError.from(
-					"BAD_REQUEST",
-					ERROR_CODES.INVALID_TOOL_NAME,
-				);
+				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_TOOL_NAME);
 			}
 
 			const providerName = tool.slice(0, dotIdx);
 			const toolName = tool.slice(dotIdx + 1);
 
-			if (
-				!isScopeAllowed(
-					agentSession.agent.scopes,
-					providerName,
-					toolName,
-				)
-			) {
+			if (!isScopeAllowed(agentSession.agent.scopes, providerName, toolName)) {
 				throw new APIError("FORBIDDEN", {
 					message: `Scope denied: agent does not have access to "${tool}". Scopes: ${agentSession.agent.scopes.join(", ") || "none"}`,
 				});
@@ -100,8 +85,7 @@ export function gatewayCall(opts: ResolvedGatewayOptions) {
 				});
 			}
 
-			const resolve =
-				opts.resolveCredentials ?? defaultResolveCredentials;
+			const resolve = opts.resolveCredentials ?? defaultResolveCredentials;
 			const token = await resolve({
 				providerId: providerName,
 				userId: agentSession.user.id,
@@ -115,16 +99,10 @@ export function gatewayCall(opts: ResolvedGatewayOptions) {
 			}
 
 			try {
-				const result = await callTool(
-					config,
-					token,
-					toolName,
-					args ?? {},
-				);
+				const result = await callTool(config, token, toolName, args ?? {});
 				return ctx.json(result);
 			} catch (err) {
-				const message =
-					err instanceof Error ? err.message : String(err);
+				const message = err instanceof Error ? err.message : String(err);
 				return ctx.json(
 					{
 						content: [{ type: "text", text: message }],

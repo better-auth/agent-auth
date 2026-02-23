@@ -11,13 +11,14 @@
 
 import { exec } from "node:child_process";
 import { platform } from "node:os";
+import type { AgentJWK } from "better-auth/plugins/agent-auth/agent-client";
 
 export interface MCPAgentStorage {
 	getConnection(agentId: string): Promise<{
 		appUrl: string;
 		keypair: {
-			privateKey: Record<string, unknown>;
-			publicKey: Record<string, unknown>;
+			privateKey: AgentJWK;
+			publicKey: AgentJWK;
 			kid: string;
 		};
 		name: string;
@@ -28,8 +29,8 @@ export interface MCPAgentStorage {
 		connection: {
 			appUrl: string;
 			keypair: {
-				privateKey: Record<string, unknown>;
-				publicKey: Record<string, unknown>;
+				privateKey: AgentJWK;
+				publicKey: AgentJWK;
 				kid: string;
 			};
 			name: string;
@@ -102,11 +103,10 @@ export async function createGatewayServer(
 		appUrl: configAppUrl,
 	} = options;
 
-	const rawUrl = (
-		configAppUrl ||
-		process.env.BETTER_AUTH_URL ||
-		""
-	).replace(/\/+$/, "");
+	const rawUrl = (configAppUrl || process.env.BETTER_AUTH_URL || "").replace(
+		/\/+$/,
+		"",
+	);
 
 	let resolvedAppUrl = rawUrl;
 	let resolvedUrlQuery = "";
@@ -164,7 +164,7 @@ export async function createGatewayServer(
 		}
 
 		const originalHandler = tool.handler;
-		const handler = async (params: Record<string, unknown>) => {
+		const handler = async (params: Record<string, string | string[]>) => {
 			if (tool.name === "discover_tools" && rawUrl) {
 				params.url = rawUrl;
 			} else if (resolvedAppUrl && !params.url) {
@@ -185,8 +185,8 @@ export async function createGatewayServer(
 		{
 			agentId: z.string().describe("Your Agent ID (from connect_agent)"),
 		},
-		async (params) => {
-			const agentId = params.agentId as string;
+		async (params: { agentId: string }) => {
+			const { agentId } = params;
 			const connection = await storage.getConnection(agentId);
 			if (!connection) {
 				return {
@@ -296,16 +296,8 @@ export async function createGatewayServer(
 					'JSON arguments for the tool (e.g. \'{"owner":"org","repo":"app"}\')',
 				),
 		},
-		async (params) => {
-			const {
-				agentId,
-				tool,
-				args: argsJson,
-			} = params as {
-				agentId: string;
-				tool: string;
-				args?: string;
-			};
+		async (params: { agentId: string; tool: string; args?: string }) => {
+			const { agentId, tool, args: argsJson } = params;
 
 			if (!agentId) {
 				return {
@@ -429,16 +421,8 @@ export async function createGatewayServer(
 					"New agent name reflecting the expanded role (e.g. 'GitHub & Email Assistant')",
 				),
 		},
-		async (params) => {
-			const {
-				agentId,
-				scopes: newScopes,
-				name,
-			} = params as {
-				agentId: string;
-				scopes: string[];
-				name?: string;
-			};
+		async (params: { agentId: string; scopes: string[]; name?: string }) => {
+			const { agentId, scopes: newScopes, name } = params;
 
 			if (!agentId) {
 				return {
@@ -582,9 +566,7 @@ export async function createGatewayServer(
 							await storage.saveConnection(agentId, updated);
 						}
 						const addedMsg =
-							added.length > 0
-								? `Added: ${added.join(", ")}.`
-								: "";
+							added.length > 0 ? `Added: ${added.join(", ")}.` : "";
 						return {
 							content: [
 								{
@@ -659,10 +641,7 @@ export async function createGatewayServer(
 
 function buildRevokeAll(
 	storage: MCPAgentStorage,
-	signJWT: (opts: {
-		agentId: string;
-		privateKey: Record<string, unknown>;
-	}) => Promise<string>,
+	signJWT: (opts: { agentId: string; privateKey: AgentJWK }) => Promise<string>,
 ) {
 	return async () => {
 		const connections = await storage.listConnections();

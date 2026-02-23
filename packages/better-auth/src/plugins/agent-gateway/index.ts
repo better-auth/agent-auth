@@ -20,6 +20,35 @@ declare module "@better-auth/core" {
 
 export { AGENT_GATEWAY_ERROR_CODES } from "./error-codes";
 
+function buildGatewayRateLimits(config: AgentGatewayOptions["rateLimit"]) {
+	if (config === false) return [];
+	const rl = typeof config === "object" ? config : {};
+	const window = rl.window ?? 60;
+	const max = rl.max ?? 60;
+	const sensitiveMax = rl.sensitiveMax ?? 5;
+	return [
+		{
+			pathMatcher(path: string) {
+				return (
+					path === "/agent/gateway/provider/register" ||
+					path === "/agent/gateway/provider/delete"
+				);
+			},
+			window,
+			max: sensitiveMax,
+		},
+		{
+			pathMatcher(path: string) {
+				return (
+					path.startsWith("/agent/gateway/") || path === "/agent/gateway-config"
+				);
+			},
+			window,
+			max,
+		},
+	];
+}
+
 /**
  * Agent Gateway plugin.
  *
@@ -35,13 +64,15 @@ export { AGENT_GATEWAY_ERROR_CODES } from "./error-codes";
  *
  * @example
  * ```ts
- * import { agentAuth, agentGateway } from "better-auth/plugins";
+ * import { agentAuth } from "better-auth/plugins/agent-auth";
+ * import { agentGateway } from "better-auth/plugins/agent-gateway";
  *
  * const auth = betterAuth({
  *   plugins: [
  *     agentAuth(),
  *     agentGateway({
  *       providers: ["github"],
+ *       authorizeProviderManagement: (user) => user.role === "admin",
  *     }),
  *   ],
  * });
@@ -73,7 +104,7 @@ export const agentGateway = (options?: AgentGatewayOptions) => {
 	};
 
 	const schema = mergeSchema(gatewaySchema(), opts.schema);
-	const routes = createGatewayRoutes(opts);
+	const routes = createGatewayRoutes(opts, options);
 
 	return {
 		id: "agent-gateway",
@@ -84,11 +115,24 @@ export const agentGateway = (options?: AgentGatewayOptions) => {
 			registerGatewayProvider: routes.registerGatewayProvider,
 			listGatewayProviders: routes.listGatewayProviders,
 			deleteGatewayProvider: routes.deleteGatewayProvider,
+			gatewayConfig: routes.gatewayConfig,
 		},
+		rateLimit: buildGatewayRateLimits(options?.rateLimit),
 		schema,
 		options,
 	} satisfies BetterAuthPlugin;
 };
 
+export type { GatewayServerOptions } from "./create-gateway-server";
+export { createGatewayServer, estimateTokens } from "./create-gateway-server";
+export { callTool, discoverTools, invalidateToolCache } from "./mcp-bridge";
+export type {
+	GatewayTool,
+	GatewayToolResult,
+	ProviderManager,
+} from "./provider-manager";
+export { createProviderManager } from "./provider-manager";
+export type { ProviderInput } from "./providers";
+export { registry, resolveProvider, resolveProviders } from "./providers";
+export { getAllowedTools, isScopeAllowed } from "./scope-utils";
 export type * from "./types";
-export { discoverTools, callTool, invalidateToolCache } from "./mcp-bridge";

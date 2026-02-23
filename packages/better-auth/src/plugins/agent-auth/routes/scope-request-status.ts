@@ -47,32 +47,24 @@ export function scopeRequestStatus() {
 			}),
 			metadata: {
 				openapi: {
-					description:
-						"Check the status of a pending scope request.",
+					description: "Check the status of a pending scope request.",
 				},
 			},
 		},
 		async (ctx) => {
 			const { requestId } = ctx.query;
 
-			const scopeReq =
-				await ctx.context.adapter.findOne<ScopeRequestRecord>({
-					model: SCOPE_REQUEST_TABLE,
-					where: [{ field: "id", value: requestId }],
-				});
+			const scopeReq = await ctx.context.adapter.findOne<ScopeRequestRecord>({
+				model: SCOPE_REQUEST_TABLE,
+				where: [{ field: "id", value: requestId }],
+			});
 
 			if (!scopeReq) {
-				throw APIError.from(
-					"NOT_FOUND",
-					ERROR_CODES.SCOPE_REQUEST_NOT_FOUND,
-				);
+				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
 			}
 
 			if (new Date(scopeReq.expiresAt) <= new Date()) {
-				throw APIError.from(
-					"NOT_FOUND",
-					ERROR_CODES.SCOPE_REQUEST_NOT_FOUND,
-				);
+				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
 			}
 
 			const existing = parseScopes(scopeReq.existingScopes);
@@ -90,8 +82,7 @@ export function scopeRequestStatus() {
 					scopeReq.status === "approved"
 						? [...new Set([...existing, ...requested])]
 						: undefined,
-				added:
-					scopeReq.status === "approved" ? requested : undefined,
+				added: scopeReq.status === "approved" ? requested : undefined,
 			});
 		},
 	);

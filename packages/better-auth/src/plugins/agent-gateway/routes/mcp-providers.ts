@@ -3,9 +3,37 @@ import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { getSessionFromCtx } from "../../../api";
 import { AGENT_GATEWAY_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { MCPProvider } from "../types";
+import type { AgentGatewayOptions, MCPProvider } from "../types";
 
 const PROVIDER_TABLE = "mcpProvider";
+
+async function requireProviderAdmin(
+	session: {
+		user: {
+			id: string;
+			role?: string | null;
+			[key: string]: string | number | boolean | null | undefined;
+		};
+	},
+	opts?: AgentGatewayOptions,
+) {
+	const guard = opts?.authorizeProviderManagement;
+	if (guard === true) return;
+	if (typeof guard === "function") {
+		const allowed = await guard(session.user);
+		if (!allowed) {
+			throw new APIError("FORBIDDEN", {
+				message: "You do not have permission to manage MCP providers.",
+			});
+		}
+		return;
+	}
+	if (session.user.role !== "admin") {
+		throw new APIError("FORBIDDEN", {
+			message: "Provider management requires admin role.",
+		});
+	}
+}
 
 const providerBodySchema = z.object({
 	name: z
@@ -43,7 +71,7 @@ const providerBodySchema = z.object({
 		.optional(),
 });
 
-export function registerProvider() {
+export function registerProvider(opts?: AgentGatewayOptions) {
 	return createAuthEndpoint(
 		"/agent/gateway/provider/register",
 		{
@@ -51,17 +79,27 @@ export function registerProvider() {
 			body: providerBodySchema,
 			metadata: {
 				openapi: {
-					description: "Register a new MCP provider.",
+					description:
+						"Register a new MCP provider. Requires admin role by default.",
 				},
 			},
 		},
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
+			}
+			await requireProviderAdmin(session, opts);
+
+			if (ctx.body.transport === "stdio" && !ctx.body.command) {
+				throw new APIError("BAD_REQUEST", {
+					message: "stdio transport requires a command.",
+				});
+			}
+			if (ctx.body.transport === "sse" && !ctx.body.url) {
+				throw new APIError("BAD_REQUEST", {
+					message: "sse transport requires a url.",
+				});
 			}
 
 			const existing = await ctx.context.adapter.findOne<MCPProvider>({
@@ -69,13 +107,47 @@ export function registerProvider() {
 				where: [{ field: "name", value: ctx.body.name }],
 			});
 
-			if (existing) {
+			if (existing && existing.status === "active") {
 				throw new APIError("BAD_REQUEST", {
 					message: `Provider "${ctx.body.name}" already exists.`,
 				});
 			}
 
 			const now = new Date();
+
+			if (existing && existing.status === "disabled") {
+				const updated = await ctx.context.adapter.update<MCPProvider>({
+					model: PROVIDER_TABLE,
+					where: [{ field: "id", value: existing.id }],
+					update: {
+						displayName: ctx.body.displayName,
+						transport: ctx.body.transport,
+						command: ctx.body.command ?? null,
+						args: ctx.body.args ? JSON.stringify(ctx.body.args) : null,
+						env: ctx.body.env ? JSON.stringify(ctx.body.env) : null,
+						url: ctx.body.url ?? null,
+						headers: ctx.body.headers ? JSON.stringify(ctx.body.headers) : null,
+						toolScopes: ctx.body.toolScopes
+							? JSON.stringify(ctx.body.toolScopes)
+							: null,
+						status: "active",
+						updatedAt: now,
+					},
+				});
+				if (!updated) {
+					throw new APIError("INTERNAL_SERVER_ERROR", {
+						message: "Failed to reactivate provider.",
+					});
+				}
+				return ctx.json({
+					id: updated.id,
+					name: updated.name,
+					displayName: updated.displayName,
+					transport: updated.transport,
+					status: updated.status,
+				});
+			}
+
 			const provider = await ctx.context.adapter.create<
 				Record<string, unknown>,
 				MCPProvider
@@ -89,9 +161,7 @@ export function registerProvider() {
 					args: ctx.body.args ? JSON.stringify(ctx.body.args) : null,
 					env: ctx.body.env ? JSON.stringify(ctx.body.env) : null,
 					url: ctx.body.url ?? null,
-					headers: ctx.body.headers
-						? JSON.stringify(ctx.body.headers)
-						: null,
+					headers: ctx.body.headers ? JSON.stringify(ctx.body.headers) : null,
 					toolScopes: ctx.body.toolScopes
 						? JSON.stringify(ctx.body.toolScopes)
 						: null,
@@ -126,10 +196,7 @@ export function listProviders() {
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
 			const providers = await ctx.context.adapter.findMany<MCPProvider>({
@@ -151,30 +218,27 @@ export function listProviders() {
 	);
 }
 
-export function deleteProvider() {
+export function deleteProvider(opts?: AgentGatewayOptions) {
 	return createAuthEndpoint(
 		"/agent/gateway/provider/delete",
 		{
 			method: "POST",
 			body: z.object({
-				name: z
-					.string()
-					.meta({ description: "Provider name to delete" }),
+				name: z.string().meta({ description: "Provider name to delete" }),
 			}),
 			metadata: {
 				openapi: {
-					description: "Delete an MCP provider.",
+					description:
+						"Disable an MCP provider (soft-delete). Requires admin role by default.",
 				},
 			},
 		},
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
+			await requireProviderAdmin(session, opts);
 
 			const provider = await ctx.context.adapter.findOne<MCPProvider>({
 				model: PROVIDER_TABLE,

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { getTestInstance } from "../../test-utils/test-instance";
+import { agentGateway, estimateTokens } from "../agent-gateway";
 import { agentAuth } from ".";
 import { agentAuthClient } from "./client";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
-import { estimateTokens, mcpGateway } from "./gateway";
-import { mcpGatewayClient } from "./gateway/client";
 
 describe("agent-auth", async () => {
 	const {
@@ -24,12 +23,12 @@ describe("agent-auth", async () => {
 					},
 					defaultRole: "reader",
 				}),
-				mcpGateway(),
+				agentGateway(),
 			],
 		},
 		{
 			clientOptions: {
-				plugins: [agentAuthClient(), mcpGatewayClient()],
+				plugins: [agentAuthClient()],
 			},
 		},
 	);
@@ -578,11 +577,15 @@ describe("agent-auth", async () => {
 	// =========================================================================
 
 	it("should return gateway config (public endpoint)", async () => {
-		const res = await client.agent.gatewayConfig({});
-		expect(res.error).toBeNull();
-		expect(res.data).toBeDefined();
-		expect(res.data?.providers).toBeDefined();
-		expect(Array.isArray(res.data?.providers)).toBe(true);
+		const res = await customFetchImpl(
+			"http://localhost:3000/api/auth/agent/gateway-config",
+			{ method: "GET" },
+		);
+		expect(res.ok).toBe(true);
+		const data = await res.json();
+		expect(data).toBeDefined();
+		expect(data.providers).toBeDefined();
+		expect(Array.isArray(data.providers)).toBe(true);
 	});
 
 	// =========================================================================
@@ -590,24 +593,21 @@ describe("agent-auth", async () => {
 	// =========================================================================
 
 	// Shared instance with authorizeProviderManagement: true for CRUD tests
-	const {
-		client: provClient,
-		signInWithTestUser: provSignIn,
-		customFetchImpl: provFetch,
-	} = await getTestInstance(
-		{
-			plugins: [
-				agentAuth(),
-				mcpGateway({ authorizeProviderManagement: true }),
-			],
-		},
-		{ clientOptions: { plugins: [agentAuthClient(), mcpGatewayClient()] } },
-	);
+	const { signInWithTestUser: provSignIn, customFetchImpl: provFetch } =
+		await getTestInstance(
+			{
+				plugins: [
+					agentAuth(),
+					agentGateway({ authorizeProviderManagement: true }),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClient()] } },
+		);
 	const { headers: provHeaders } = await provSignIn();
 
 	function provRegister(body: Record<string, unknown>) {
 		return provFetch(
-			"http://localhost:3000/api/auth/agent/mcp-provider/register",
+			"http://localhost:3000/api/auth/agent/gateway/provider/register",
 			{
 				method: "POST",
 				headers: {
@@ -621,7 +621,7 @@ describe("agent-auth", async () => {
 
 	function provDelete(name: string) {
 		return provFetch(
-			"http://localhost:3000/api/auth/agent/mcp-provider/delete",
+			"http://localhost:3000/api/auth/agent/gateway/provider/delete",
 			{
 				method: "POST",
 				headers: {
@@ -631,6 +631,19 @@ describe("agent-auth", async () => {
 				body: JSON.stringify({ name }),
 			},
 		);
+	}
+
+	async function provList(hdrs?: Headers) {
+		const res = await provFetch(
+			"http://localhost:3000/api/auth/agent/gateway/provider/list",
+			{
+				method: "GET",
+				headers: hdrs ? Object.fromEntries(hdrs.entries()) : undefined,
+			},
+		);
+		if (!res.ok) return { error: { status: res.status }, data: null };
+		const data = await res.json();
+		return { error: null, data };
 	}
 
 	// --- registerProvider ---
@@ -694,7 +707,7 @@ describe("agent-auth", async () => {
 
 	it("should reject provider registration without admin role (default guard)", async () => {
 		const res = await customFetchImpl(
-			"http://localhost:3000/api/auth/agent/mcp-provider/register",
+			"http://localhost:3000/api/auth/agent/gateway/provider/register",
 			{
 				method: "POST",
 				headers: {
@@ -715,10 +728,7 @@ describe("agent-auth", async () => {
 	// --- listProviders ---
 
 	it("should list only active providers", async () => {
-		const listRes = await provClient.agent.mcpProvider.list(
-			{},
-			{ headers: provHeaders },
-		);
+		const listRes = await provList(provHeaders);
 		expect(listRes.error).toBeNull();
 		const names = listRes.data?.providers?.map((p: { name: string }) => p.name);
 		expect(names).toContain("stdio-prov");
@@ -726,10 +736,7 @@ describe("agent-auth", async () => {
 	});
 
 	it("should not leak env/headers/command in list response", async () => {
-		const listRes = await provClient.agent.mcpProvider.list(
-			{},
-			{ headers: provHeaders },
-		);
+		const listRes = await provList(provHeaders);
 		const prov = listRes.data?.providers?.[0];
 		expect(prov).toBeDefined();
 		// Response should only contain safe fields
@@ -741,7 +748,7 @@ describe("agent-auth", async () => {
 	});
 
 	it("should reject list without session", async () => {
-		const res = await provClient.agent.mcpProvider.list({});
+		const res = await provList();
 		expect(res.error).toBeDefined();
 		expect(res.error?.status).toBe(401);
 	});
@@ -753,10 +760,7 @@ describe("agent-auth", async () => {
 		expect(res.status).toBe(200);
 
 		// Should be gone from list
-		const listRes = await provClient.agent.mcpProvider.list(
-			{},
-			{ headers: provHeaders },
-		);
+		const listRes = await provList(provHeaders);
 		const names = listRes.data?.providers?.map((p: { name: string }) => p.name);
 		expect(names).not.toContain("stdio-prov");
 	});
@@ -773,7 +777,7 @@ describe("agent-auth", async () => {
 
 	it("should reject delete without admin role (default guard)", async () => {
 		const res = await customFetchImpl(
-			"http://localhost:3000/api/auth/agent/mcp-provider/delete",
+			"http://localhost:3000/api/auth/agent/gateway/provider/delete",
 			{
 				method: "POST",
 				headers: {
@@ -802,10 +806,7 @@ describe("agent-auth", async () => {
 		expect(data.status).toBe("active");
 
 		// Should be back in list
-		const listRes = await provClient.agent.mcpProvider.list(
-			{},
-			{ headers: provHeaders },
-		);
+		const listRes = await provList(provHeaders);
 		const found = listRes.data?.providers?.find(
 			(p: { name: string; displayName: string }) => p.name === "stdio-prov",
 		);

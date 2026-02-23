@@ -4,11 +4,10 @@ import chalk from "chalk";
 import { Command } from "commander";
 
 const resolveAppUrl = () =>
-	(
-		process.env.BETTER_AUTH_URL ||
-		process.env.BASE_URL ||
-		""
-	).replace(/\/+$/, "");
+	(process.env.BETTER_AUTH_URL || process.env.BASE_URL || "").replace(
+		/\/+$/,
+		"",
+	);
 
 function toArray(val: unknown): string[] {
 	if (Array.isArray(val)) return val;
@@ -132,9 +131,7 @@ async function connectAction(
 			},
 			onPoll: (attempt) => {
 				if (attempt % 6 === 0) {
-					console.error(
-						chalk.gray(`  Still waiting... (${attempt * 5}s)`),
-					);
+					console.error(chalk.gray(`  Still waiting... (${attempt * 5}s)`));
 				}
 			},
 		});
@@ -165,9 +162,7 @@ async function connectAction(
 		);
 	} catch (err) {
 		console.error(
-			chalk.red(
-				`Failed: ${err instanceof Error ? err.message : String(err)}`,
-			),
+			chalk.red(`Failed: ${err instanceof Error ? err.message : String(err)}`),
 		);
 		process.exit(1);
 	}
@@ -372,10 +367,7 @@ async function addScopesAction(
 			if (options.name) updated.name = options.name;
 			await storage.saveConnection(agentId, updated);
 
-			const addedMsg =
-				added.length > 0
-					? `Added: ${added.join(", ")}.`
-					: "";
+			const addedMsg = added.length > 0 ? `Added: ${added.join(", ")}.` : "";
 			const nameMsg = options.name
 				? ` Agent renamed to "${options.name}".`
 				: "";
@@ -386,9 +378,7 @@ async function addScopesAction(
 		}
 
 		if (poll.status === "denied") {
-			console.error(
-				chalk.red("Scope escalation was denied by the user."),
-			);
+			console.error(chalk.red("Scope escalation was denied by the user."));
 			process.exit(1);
 		}
 	}
@@ -497,10 +487,7 @@ const aiCallTool = new Command("call-tool")
 const aiAddScopes = new Command("add-scopes")
 	.description("Request additional scopes (requires user approval in browser)")
 	.argument("<agentId>", "Agent ID")
-	.requiredOption(
-		"--scopes <scopes>",
-		"Comma-separated scopes to add",
-	)
+	.requiredOption("--scopes <scopes>", "Comma-separated scopes to add")
 	.option("--name <name>", "New agent name reflecting expanded role")
 	.action(addScopesAction);
 

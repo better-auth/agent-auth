@@ -58,6 +58,41 @@ export interface AgentGatewayOptions {
 		adapter: unknown;
 	}) => Promise<string | null> | string | null;
 	/**
+	 * Guard for MCP provider management endpoints (register, delete).
+	 * Receives the user session and returns `true` to allow.
+	 *
+	 * Defaults to checking `user.role === "admin"`.
+	 * Set to `true` to allow any authenticated user.
+	 *
+	 * @example
+	 * ```ts
+	 * authorizeProviderManagement: (user) => user.role === "admin"
+	 * ```
+	 */
+	authorizeProviderManagement?:
+		| ((user: {
+				id: string;
+				role?: string | null;
+				[key: string]: string | number | boolean | null | undefined;
+		  }) => boolean | Promise<boolean>)
+		| true;
+	/**
+	 * Rate limiting for gateway endpoints.
+	 * Set to `false` to disable plugin-level rate limiting entirely.
+	 *
+	 * @default { window: 60, max: 60, sensitiveMax: 5 }
+	 */
+	rateLimit?:
+		| {
+				/** Time window in seconds. @default 60 */
+				window?: number;
+				/** Max requests per window for general gateway routes. @default 60 */
+				max?: number;
+				/** Max requests per window for provider register/delete. @default 5 */
+				sensitiveMax?: number;
+		  }
+		| false;
+	/**
 	 * Custom schema overrides for the gateway tables.
 	 */
 	schema?: InferOptionSchema<ReturnType<typeof gatewaySchema>>;

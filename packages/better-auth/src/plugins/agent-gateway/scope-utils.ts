@@ -10,7 +10,7 @@
  *   - "google-drive.read" → maps to ["list_files", "read_file"] via toolScopes config
  */
 
-import type { MCPProviderConfig } from "../types";
+import type { MCPProviderConfig } from "../agent-auth/types";
 
 /**
  * Check whether an agent's granted scopes allow calling a namespaced tool.

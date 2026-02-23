@@ -1,5 +1,6 @@
-import type { ResolvedGatewayOptions } from "../types";
+import type { AgentGatewayOptions, ResolvedGatewayOptions } from "../types";
 import { gatewayCall } from "./gateway-call";
+import { gatewayConfig } from "./gateway-config";
 import { gatewayTools } from "./gateway-tools";
 import {
 	deleteProvider,
@@ -7,12 +8,16 @@ import {
 	registerProvider,
 } from "./mcp-providers";
 
-export function createGatewayRoutes(opts: ResolvedGatewayOptions) {
+export function createGatewayRoutes(
+	opts: ResolvedGatewayOptions,
+	rawOpts?: AgentGatewayOptions,
+) {
 	return {
 		gatewayTools: gatewayTools(opts),
 		gatewayCall: gatewayCall(opts),
-		registerGatewayProvider: registerProvider(),
+		registerGatewayProvider: registerProvider(rawOpts),
 		listGatewayProviders: listProviders(),
-		deleteGatewayProvider: deleteProvider(),
+		deleteGatewayProvider: deleteProvider(rawOpts),
+		gatewayConfig: gatewayConfig(rawOpts ?? {}),
 	};
 }

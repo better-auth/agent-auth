@@ -5,7 +5,7 @@
  *
  * ```ts
  * // my-gateway.ts
- * import { createGatewayServer } from "better-auth/plugins/agent-auth/mcp-gateway"
+ * import { createGatewayServer } from "better-auth/plugins/agent-gateway"
  *
  * createGatewayServer({
  *   providers: ["github", "slack", "brave-search"],
@@ -48,11 +48,14 @@
 
 import { exec } from "node:child_process";
 import { platform } from "node:os";
-import type { AgentJWK } from "../crypto";
-import { signAgentJWT } from "../crypto";
-import { createMemoryStorage } from "../mcp-storage-memory";
-import type { MCPAgentStorage } from "../mcp-tools";
-import { createAgentMCPTools, getAgentAuthInstructions } from "../mcp-tools";
+import type { AgentJWK } from "../agent-auth/crypto";
+import { signAgentJWT } from "../agent-auth/crypto";
+import { createMemoryStorage } from "../agent-auth/mcp-storage-memory";
+import type { MCPAgentStorage } from "../agent-auth/mcp-tools";
+import {
+	createAgentMCPTools,
+	getAgentAuthInstructions,
+} from "../agent-auth/mcp-tools";
 import type { ProviderManager } from "./provider-manager";
 import { createProviderManager } from "./provider-manager";
 import type { ProviderInput } from "./providers";

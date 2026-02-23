@@ -86,10 +86,9 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 						sortBy: { field: "createdAt", direction: "desc" },
 						limit: 1,
 					});
-					if (deviceCodes.length > 0 && deviceCodes[0].scope) {
-						deviceApprovedScopes = deviceCodes[0].scope
-							.split(" ")
-							.filter(Boolean);
+					const latestCode = deviceCodes[0];
+					if (deviceCodes.length > 0 && latestCode?.scope) {
+						deviceApprovedScopes = latestCode.scope.split(" ").filter(Boolean);
 					}
 				} catch {
 					// device code lookup is best-effort
@@ -152,10 +151,7 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 			}
 
 			// If the user edited scopes during device approval, use their selection
-			if (
-				deviceApprovedScopes !== null &&
-				deviceApprovedScopes.length > 0
-			) {
+			if (deviceApprovedScopes !== null && deviceApprovedScopes.length > 0) {
 				resolvedScopes = deviceApprovedScopes;
 			}
 

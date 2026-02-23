@@ -36,8 +36,7 @@ export function requestScope() {
 						"Request additional scopes for an agent. Requires user approval.",
 					responses: {
 						200: {
-							description:
-								"Scope request created, pending user approval",
+							description: "Scope request created, pending user approval",
 						},
 					},
 				},
@@ -48,19 +47,13 @@ export function requestScope() {
 				.agentSession as AgentSession | undefined;
 
 			if (!agentSession) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
 			const { scopes, name } = ctx.body;
 			const existingScopes = agentSession.agent.scopes ?? [];
-			const newOnly = scopes.filter(
-				(s: string) => !existingScopes.includes(s),
-			);
-			const hasNameChange =
-				!!name && name !== agentSession.agent.name;
+			const newOnly = scopes.filter((s: string) => !existingScopes.includes(s));
+			const hasNameChange = !!name && name !== agentSession.agent.name;
 
 			if (newOnly.length === 0 && !hasNameChange) {
 				return ctx.json({

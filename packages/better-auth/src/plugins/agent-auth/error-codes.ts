@@ -18,7 +18,6 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 	SCOPE_REQUEST_NOT_FOUND: "Scope request not found or expired.",
 	SCOPE_REQUEST_OWNER_MISMATCH:
 		"This scope request belongs to a different user.",
-	SCOPE_REQUEST_ALREADY_RESOLVED:
-		"Scope request has already been resolved.",
+	SCOPE_REQUEST_ALREADY_RESOLVED: "Scope request has already been resolved.",
 	NO_SCOPE_CHANGES: "No new scopes or name changes requested.",
 });

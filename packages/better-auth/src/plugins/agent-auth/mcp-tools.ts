@@ -180,35 +180,35 @@ export function getAgentAuthInstructions(hasGateway = false): string {
 			"### Step 1 — Discover tools (if configured)",
 			"",
 			"If the url is pre-configured, call `discover_tools` before connecting:",
-			"  `discover_tools(url=\"<app-url>\")`",
+			'  `discover_tools(url="<app-url>")`',
 			"The url may include query parameters that identify the target context (e.g. `?referenceId=abc`).",
 			"This returns providers and tool names without authentication. Use the returned tool names as **specific scopes** in Step 2.",
 			"If no url is pre-configured for discovery, skip to Step 2.",
 			"",
 			"### Step 2 — Connect",
 			"",
-			"  `connect_agent(url=\"<app-url>\", name=\"<task-specific name>\", scopes=[\"<provider>.<tool>\", ...])`",
+			'  `connect_agent(url="<app-url>", name="<task-specific name>", scopes=["<provider>.<tool>", ...])`',
 			"- Pick a descriptive name reflecting the user's request.",
-			"- If you discovered tools in Step 1, pass the exact tool names as scopes (e.g. `[\"github.list_issues\"]`).",
+			'- If you discovered tools in Step 1, pass the exact tool names as scopes (e.g. `["github.list_issues"]`).',
 			"- If you skipped Step 1, omit `scopes` to let the user choose on the approval page.",
 			"- The user will see an approval page in their browser. Tell them to approve.",
 			"- **Save the returned Agent ID.**",
 			"",
 			"### Step 3 — List tools",
 			"",
-			"  `list_gateway_tools(agentId=\"<agent-id>\")`",
+			'  `list_gateway_tools(agentId="<agent-id>")`',
 			"Read the returned list carefully. Use the **exact** provider and tool names returned.",
 			"**The user already granted permissions. You are ready to call tools now.**",
 			"",
 			"### Step 4 — Call tools",
 			"",
-			"  `call_gateway_tool(agentId=\"<agent-id>\", tool=\"<provider>.<tool_name>\", args='{ ... }')`",
+			'  `call_gateway_tool(agentId="<agent-id>", tool="<provider>.<tool_name>", args=\'{ ... }\')`',
 			"`args` is a JSON string matching the tool's input schema from step 3.",
 			"**Just call the tool directly. Do NOT call `add_scopes` first.**",
 			"",
 			"### Step 5 — Disconnect when done",
 			"",
-			"  `disconnect_agent(agentId=\"<agent-id>\")`",
+			'  `disconnect_agent(agentId="<agent-id>")`',
 		);
 	} else {
 		lines.push(
@@ -310,7 +310,7 @@ export function createAgentMCPTools(
 					parsed.search = "";
 					baseUrl = parsed.toString().replace(/\/+$/, "");
 				} catch {}
-				const sep = query ? "&" : "?";
+				const _sep = query ? "&" : "?";
 
 				try {
 					const res = await globalThis.fetch(
@@ -362,18 +362,18 @@ export function createAgentMCPTools(
 								lines.push(`  - ${p.name}.${t.name}: ${t.description}`);
 							}
 						} else {
-							lines.push(`\n${p.displayName} (${p.name}): tools not yet cached — they will be available after first connection`);
+							lines.push(
+								`\n${p.displayName} (${p.name}): tools not yet cached — they will be available after first connection`,
+							);
 						}
 					}
 					lines.push(
 						"\nUse these tool names as scopes when calling connect_agent. " +
-							"Example: connect_agent(url=..., scopes=[\"github.list_issues\", \"github.create_issue\"])",
+							'Example: connect_agent(url=..., scopes=["github.list_issues", "github.create_issue"])',
 					);
 
 					return {
-						content: [
-							{ type: "text" as const, text: lines.join("\n") },
-						],
+						content: [{ type: "text" as const, text: lines.join("\n") }],
 					};
 				} catch (err) {
 					return {

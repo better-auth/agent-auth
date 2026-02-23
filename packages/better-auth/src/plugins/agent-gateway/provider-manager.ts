@@ -11,7 +11,7 @@
  * Requires: @modelcontextprotocol/sdk (peer dependency)
  */
 
-import type { MCPProviderConfig } from "../types";
+import type { MCPProviderConfig } from "../agent-auth/types";
 
 /** A tool discovered from a provider, namespaced for the gateway. */
 export interface GatewayTool {

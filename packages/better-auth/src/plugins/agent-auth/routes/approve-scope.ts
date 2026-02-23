@@ -48,50 +48,36 @@ export function approveScope() {
 			body: z.object({
 				requestId: z.string(),
 				action: z.enum(["approve", "deny"]),
-				scopes: z
-					.array(z.string())
-					.optional()
-					.meta({
-						description:
-							"When approving, the subset of requested scopes the user actually granted. Omit to approve all requested scopes.",
-					}),
+				scopes: z.array(z.string()).optional().meta({
+					description:
+						"When approving, the subset of requested scopes the user actually granted. Omit to approve all requested scopes.",
+				}),
 			}),
 			metadata: {
 				openapi: {
-					description:
-						"Approve or deny a pending scope escalation request.",
+					description: "Approve or deny a pending scope escalation request.",
 				},
 			},
 		},
 		async (ctx) => {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERROR_CODES.UNAUTHORIZED_SESSION,
-				);
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
 			const { requestId, action, scopes: userScopes } = ctx.body;
 
-			const scopeReq =
-				await ctx.context.adapter.findOne<ScopeRequestRecord>({
-					model: SCOPE_REQUEST_TABLE,
-					where: [{ field: "id", value: requestId }],
-				});
+			const scopeReq = await ctx.context.adapter.findOne<ScopeRequestRecord>({
+				model: SCOPE_REQUEST_TABLE,
+				where: [{ field: "id", value: requestId }],
+			});
 
 			if (!scopeReq) {
-				throw APIError.from(
-					"NOT_FOUND",
-					ERROR_CODES.SCOPE_REQUEST_NOT_FOUND,
-				);
+				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
 			}
 
 			if (new Date(scopeReq.expiresAt) <= new Date()) {
-				throw APIError.from(
-					"NOT_FOUND",
-					ERROR_CODES.SCOPE_REQUEST_NOT_FOUND,
-				);
+				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
 			}
 
 			if (scopeReq.userId !== session.user.id) {
