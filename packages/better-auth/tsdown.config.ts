@@ -45,7 +45,6 @@ export default defineConfig({
 		"./src/plugins/agent-auth/mcp-tools.ts",
 		"./src/plugins/agent-auth/mcp-storage-fs.ts",
 		"./src/plugins/agent-auth/mcp-storage-memory.ts",
-		"./src/plugins/agent-auth/mcp-server.ts",
 		"./src/plugins/agent-auth/gateway/index.ts",
 		"./src/plugins/agent-auth/gateway/client.ts",
 		"./src/plugins/agent-gateway/index.ts",
