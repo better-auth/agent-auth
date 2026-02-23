@@ -191,7 +191,7 @@ export interface Workgroup {
 	id: string;
 	name: string;
 	description: string | null;
-	orgId: string;
+	orgId: string | null;
 	maxTokens: number;
 	createdAt: Date;
 	updatedAt: Date;

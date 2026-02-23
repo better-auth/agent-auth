@@ -16,8 +16,8 @@ export function createWorkgroup() {
 				name: z.string().min(1).meta({ description: "Workgroup name" }),
 				orgId: z
 					.string()
-					.min(1)
-					.meta({ description: "Organization this workgroup belongs to" }),
+					.meta({ description: "Organization this workgroup belongs to" })
+					.optional(),
 				description: z
 					.string()
 					.meta({ description: "Optional description" })
@@ -51,7 +51,7 @@ export function createWorkgroup() {
 				model: WORKGROUP_TABLE,
 				data: {
 					name: ctx.body.name,
-					orgId: ctx.body.orgId,
+					orgId: ctx.body.orgId ?? null,
 					description: ctx.body.description ?? null,
 					maxTokens: ctx.body.maxTokens ?? 0,
 					createdAt: now,
@@ -75,12 +75,14 @@ export function listWorkgroups() {
 		"/agent/workgroup/list",
 		{
 			method: "GET",
-			query: z.object({
-				orgId: z
-					.string()
-					.min(1)
-					.meta({ description: "Organization to list workgroups for" }),
-			}),
+			query: z
+				.object({
+					orgId: z
+						.string()
+						.meta({ description: "Filter by organization" })
+						.optional(),
+				})
+				.optional(),
 			metadata: {
 				openapi: {
 					description: "List workgroups for an organization.",
@@ -93,9 +95,14 @@ export function listWorkgroups() {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
+			const where: Array<{ field: string; value: string }> = [];
+			if (ctx.query?.orgId) {
+				where.push({ field: "orgId", value: ctx.query.orgId });
+			}
+
 			const workgroups = await ctx.context.adapter.findMany<Workgroup>({
 				model: WORKGROUP_TABLE,
-				where: [{ field: "orgId", value: ctx.query.orgId }],
+				where: where.length > 0 ? where : undefined,
 				sortBy: { field: "createdAt", direction: "desc" },
 			});
 

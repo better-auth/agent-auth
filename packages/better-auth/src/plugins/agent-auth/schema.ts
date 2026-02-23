@@ -342,7 +342,7 @@ export const agentSchema = () =>
 				},
 				orgId: {
 					type: "string",
-					required: true,
+					required: false,
 					input: false,
 					index: true,
 				},
