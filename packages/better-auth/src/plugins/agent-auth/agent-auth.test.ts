@@ -3,6 +3,7 @@ import { getTestInstance } from "../../test-utils/test-instance";
 import { agentAuth } from ".";
 import { agentAuthClient } from "./client";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
+import { estimateTokens } from "./gateway";
 
 describe("agent-auth", async () => {
 	const {
@@ -1317,5 +1318,46 @@ describe("agent-auth token tracking", async () => {
 			},
 		);
 		expect(overRes.status).toBe(403);
+	});
+});
+
+// =============================================================================
+// ESTIMATE TOKENS
+// =============================================================================
+
+describe("estimateTokens", () => {
+	it("should estimate tokens from string lengths (~4 chars per token)", () => {
+		const result = estimateTokens("hello world", "response text here");
+		expect(result.inputTokens).toBe(Math.ceil(11 / 4));
+		expect(result.outputTokens).toBe(Math.ceil(18 / 4));
+	});
+
+	it("should return 0 for empty strings", () => {
+		const result = estimateTokens("", "");
+		expect(result.inputTokens).toBe(0);
+		expect(result.outputTokens).toBe(0);
+	});
+
+	it("should ceil fractional token counts", () => {
+		const result = estimateTokens("ab", "abcde");
+		expect(result.inputTokens).toBe(1);
+		expect(result.outputTokens).toBe(2);
+	});
+
+	it("should handle large JSON payloads", () => {
+		const input = JSON.stringify({
+			title: "Bug report",
+			body: "Steps to reproduce...",
+		});
+		const output = JSON.stringify({
+			id: 123,
+			url: "https://github.com/org/repo/issues/123",
+			state: "open",
+		});
+		const result = estimateTokens(input, output);
+		expect(result.inputTokens).toBe(Math.ceil(input.length / 4));
+		expect(result.outputTokens).toBe(Math.ceil(output.length / 4));
+		expect(result.inputTokens).toBeGreaterThan(0);
+		expect(result.outputTokens).toBeGreaterThan(0);
 	});
 });

@@ -1,5 +1,5 @@
 export type { GatewayServerOptions } from "./create-gateway-server";
-export { createGatewayServer } from "./create-gateway-server";
+export { createGatewayServer, estimateTokens } from "./create-gateway-server";
 export type {
 	GatewayTool,
 	GatewayToolResult,

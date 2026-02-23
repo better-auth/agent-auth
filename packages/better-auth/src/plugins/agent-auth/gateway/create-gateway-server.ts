@@ -390,10 +390,23 @@ export async function createGatewayServer(
 					}
 				}
 
+				const inputPayload = JSON.stringify(toolArgs);
 				const result = await gateway!.callTool(mcpToolName, toolArgs);
 				const isError = result.isError ?? false;
 
-				reportActivity(connection, agentId, tool, isError).catch(() => {});
+				// For image/binary chunks, c.text is undefined so this falls
+				// back to JSON.stringify(c) which includes base64 data — this
+				// inflates the estimate for binary responses. Acceptable since
+				// budgets are advisory; the overcount reflects real payload size.
+				const outputPayload = (result.content ?? [])
+					.map((c) => c.text ?? JSON.stringify(c))
+					.join("");
+
+				const tokenUsage = estimateTokens(inputPayload, outputPayload);
+
+				reportActivity(connection, agentId, tool, isError, tokenUsage).catch(
+					() => {},
+				);
 
 				return {
 					content: (result.content ?? []).map((c) => ({
@@ -457,6 +470,21 @@ function buildRevokeAll(storage: MCPAgentStorage) {
 			}
 			await storage.removeConnection(conn.agentId);
 		}
+	};
+}
+
+/**
+ * Estimate token count from serialized payloads.
+ * Uses the ~4 characters per token heuristic (standard for English text
+ * and JSON). This is server-measured — not self-reported by the agent.
+ */
+export function estimateTokens(
+	input: string,
+	output: string,
+): { inputTokens: number; outputTokens: number } {
+	return {
+		inputTokens: Math.ceil(input.length / 4),
+		outputTokens: Math.ceil(output.length / 4),
 	};
 }
 
