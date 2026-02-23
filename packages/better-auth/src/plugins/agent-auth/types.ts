@@ -19,7 +19,13 @@ export interface AgentAuthOptions {
 	 */
 	defaultRole?: string;
 	/**
-	 * Allowed key algorithms for keypair.
+	 * Allowed key algorithms for agent keypairs. Validated against
+	 * the JWK `crv` field (or `kty` when no curve applies).
+	 *
+	 * Use JWK curve names, **not** JWA algorithm identifiers:
+	 * - `"Ed25519"` (correct) — not `"EdDSA"`
+	 * - `"P-256"` (correct) — not `"ES256"`
+	 *
 	 * @default ["Ed25519"]
 	 */
 	allowedKeyAlgorithms?: string[];
