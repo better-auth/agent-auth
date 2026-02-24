@@ -192,7 +192,7 @@ async function disconnectAction(agentId: string) {
 async function listToolsAction(agentId: string) {
 	const { client } = await requireConnection(agentId);
 
-	const res = await client.fetch("/api/agent/gateway/tools");
+	const res = await client.fetch("/api/auth/agent/gateway/tools");
 	if (!res.ok) {
 		const text = await res.text();
 		console.error(
@@ -250,7 +250,7 @@ async function callToolAction(
 		}
 	}
 
-	const res = await client.fetch("/api/agent/gateway/call", {
+	const res = await client.fetch("/api/auth/agent/gateway/call", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ tool: options.tool, args: toolArgs }),

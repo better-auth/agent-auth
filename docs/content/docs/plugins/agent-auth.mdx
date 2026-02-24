@@ -964,7 +964,7 @@ const { data } = await authClient.agent.getTokenUsage({
 
 ## Workgroups
 
-Workgroups let you **group agents within an organization**. This is useful for enterprise setups where you want to organize agents by team, project, or department — each with its own token budget.
+Workgroups let you **group agents** by team, project, or department — each with its own token budget. They can optionally belong to an organization, or exist standalone.
 
 ### Create a Workgroup
 
@@ -974,9 +974,9 @@ await fetch("/api/auth/agent/workgroup/create", {
     headers,
     body: JSON.stringify({
         name: "Finance Team",
-        orgId: "org_123",
+        orgId: "org_123",           // optional — omit for standalone workgroups
         description: "Agents for the finance department",
-        maxTokens: 500_000,  // optional per-workgroup budget (0 = unlimited)
+        maxTokens: 500_000,         // optional per-workgroup budget (0 = unlimited)
     }),
 })
 ```
@@ -984,7 +984,12 @@ await fetch("/api/auth/agent/workgroup/create", {
 ### List Workgroups
 
 ```ts
+// List all workgroups
+const res = await fetch("/api/auth/agent/workgroup/list", { headers })
+
+// Or filter by org
 const res = await fetch("/api/auth/agent/workgroup/list?orgId=org_123", { headers })
+
 const { workgroups } = await res.json()
 // [{ id, name, orgId, description, maxTokens, createdAt, updatedAt }]
 ```
@@ -1118,7 +1123,7 @@ The plugin adds the following tables to the database.
         { name: "id", type: "string", description: "Unique workgroup identifier", isPrimaryKey: true },
         { name: "name", type: "string", description: "Workgroup name" },
         { name: "description", type: "string", description: "Optional description", isOptional: true },
-        { name: "orgId", type: "string", description: "Organization this workgroup belongs to" },
+        { name: "orgId", type: "string", description: "Organization this workgroup belongs to (optional)", isOptional: true },
         { name: "maxTokens", type: "number", description: "Token budget for this workgroup (0 = unlimited)" },
         { name: "createdAt", type: "date", description: "When the workgroup was created" },
         { name: "updatedAt", type: "date", description: "When the workgroup was last modified" },

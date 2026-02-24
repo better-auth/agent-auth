@@ -4,8 +4,8 @@
  *
  * The web app resolves credentials and forwards to real MCP providers.
  *
- *   list_gateway_tools  → GET  {appUrl}/api/agent/gateway/tools
- *   call_gateway_tool   → POST {appUrl}/api/agent/gateway/call
+ *   list_gateway_tools  → GET  {appUrl}/api/auth/agent/gateway/tools
+ *   call_gateway_tool   → POST {appUrl}/api/auth/agent/gateway/call
  *   add_scopes          → POST {appUrl}/api/auth/agent/request-scope
  */
 
@@ -206,7 +206,7 @@ export async function createGatewayServer(
 
 			try {
 				const res = await globalThis.fetch(
-					`${connection.appUrl}/api/agent/gateway/tools`,
+					`${connection.appUrl}/api/auth/agent/gateway/tools`,
 					{ headers: { Authorization: `Bearer ${jwt}` } },
 				);
 
@@ -345,7 +345,7 @@ export async function createGatewayServer(
 
 			try {
 				const res = await globalThis.fetch(
-					`${connection.appUrl}/api/agent/gateway/call`,
+					`${connection.appUrl}/api/auth/agent/gateway/call`,
 					{
 						method: "POST",
 						headers: {
