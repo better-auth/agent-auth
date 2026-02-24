@@ -4,9 +4,11 @@
  *
  * The web app resolves credentials and forwards to real MCP providers.
  *
- *   list_gateway_tools  → GET  {appUrl}/api/auth/agent/gateway/tools
- *   call_gateway_tool   → POST {appUrl}/api/auth/agent/gateway/call
- *   add_scopes          → POST {appUrl}/api/auth/agent/request-scope
+ *   list_gateway_tools  → GET  {appUrl}{basePath}/agent/gateway/tools
+ *   call_gateway_tool   → POST {appUrl}{basePath}/agent/gateway/call
+ *   add_scopes          → POST {appUrl}{basePath}/agent/request-scope
+ *
+ * basePath is discovered at runtime via GET {appUrl}{basePath}/agent/gateway-config
  */
 
 import { exec } from "node:child_process";
@@ -137,6 +139,32 @@ export async function createGatewayServer(
 			onVerificationUrl === false ? undefined : onVerificationUrl,
 	});
 
+	const basePathCache = new Map<string, string>();
+
+	async function resolveBasePath(appUrl: string): Promise<string> {
+		const cached = basePathCache.get(appUrl);
+		if (cached) return cached;
+
+		const knownPaths = ["/api/auth", "/auth", "/api"];
+		for (const prefix of knownPaths) {
+			try {
+				const res = await globalThis.fetch(
+					`${appUrl}${prefix}/agent/gateway-config`,
+				);
+				if (res.ok) {
+					const data = (await res.json()) as { basePath?: string };
+					const bp = data.basePath || prefix;
+					basePathCache.set(appUrl, bp);
+					return bp;
+				}
+			} catch {}
+		}
+
+		const fallback = "/api/auth";
+		basePathCache.set(appUrl, fallback);
+		return fallback;
+	}
+
 	const hasDiscoverParams = resolvedUrlQuery.length > 1;
 
 	let instructions = getAgentAuthInstructions(true);
@@ -205,8 +233,9 @@ export async function createGatewayServer(
 			});
 
 			try {
+				const basePath = await resolveBasePath(connection.appUrl);
 				const res = await globalThis.fetch(
-					`${connection.appUrl}/api/auth/agent/gateway/tools`,
+					`${connection.appUrl}${basePath}/agent/gateway/tools`,
 					{ headers: { Authorization: `Bearer ${jwt}` } },
 				);
 
@@ -344,8 +373,9 @@ export async function createGatewayServer(
 			});
 
 			try {
+				const basePath = await resolveBasePath(connection.appUrl);
 				const res = await globalThis.fetch(
-					`${connection.appUrl}/api/auth/agent/gateway/call`,
+					`${connection.appUrl}${basePath}/agent/gateway/call`,
 					{
 						method: "POST",
 						headers: {

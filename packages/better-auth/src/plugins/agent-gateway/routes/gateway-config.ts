@@ -25,7 +25,10 @@ export function gatewayConfig(opts: AgentGatewayOptions) {
 			},
 		},
 		async (ctx) => {
-			return ctx.json({ providers });
+			return ctx.json({
+				providers,
+				basePath: ctx.context.options.basePath || "/api/auth",
+			});
 		},
 	);
 }
