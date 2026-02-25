@@ -3,9 +3,39 @@ import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { Workgroup } from "../types";
+import type { Agent, Workgroup } from "../types";
 
 const WORKGROUP_TABLE = "agentWorkgroup";
+const AGENT_TABLE = "agent";
+
+/**
+ * Verify the user has at least one agent in the given org,
+ * proving they are a participant (not an outsider).
+ */
+async function assertOrgMembership(
+	adapter: {
+		count: (data: {
+			model: string;
+			where?: Array<{ field: string; value: string }>;
+		}) => Promise<number>;
+	},
+	userId: string,
+	orgId: string | null,
+) {
+	if (!orgId) return;
+	const count = await adapter.count({
+		model: AGENT_TABLE,
+		where: [
+			{ field: "userId", value: userId },
+			{ field: "orgId", value: orgId },
+		],
+	});
+	if (count === 0) {
+		throw new APIError("FORBIDDEN", {
+			message: "You do not have agents in this organization.",
+		});
+	}
+}
 
 export function createWorkgroup() {
 	return createAuthEndpoint(
@@ -34,6 +64,12 @@ export function createWorkgroup() {
 			if (!session) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
+
+			await assertOrgMembership(
+				ctx.context.adapter,
+				session.user.id,
+				ctx.body.orgId ?? null,
+			);
 
 			const now = new Date();
 			const workgroup = await ctx.context.adapter.create<
@@ -84,6 +120,12 @@ export function listWorkgroups() {
 			if (!session) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
+
+			await assertOrgMembership(
+				ctx.context.adapter,
+				session.user.id,
+				ctx.query?.orgId ?? null,
+			);
 
 			const where: Array<{ field: string; value: string }> = [];
 			if (ctx.query?.orgId) {
@@ -142,6 +184,12 @@ export function updateWorkgroup() {
 				});
 			}
 
+			await assertOrgMembership(
+				ctx.context.adapter,
+				session.user.id,
+				existing.orgId,
+			);
+
 			const update: Record<string, unknown> = { updatedAt: new Date() };
 			if (ctx.body.name !== undefined) update.name = ctx.body.name;
 			if (ctx.body.description !== undefined)
@@ -197,6 +245,25 @@ export function deleteWorkgroup() {
 			if (!existing) {
 				throw new APIError("NOT_FOUND", {
 					message: "Workgroup not found.",
+				});
+			}
+
+			await assertOrgMembership(
+				ctx.context.adapter,
+				session.user.id,
+				existing.orgId,
+			);
+
+			// Cascade: unassign all agents from this workgroup
+			const agents = await ctx.context.adapter.findMany<Agent>({
+				model: AGENT_TABLE,
+				where: [{ field: "workgroupId", value: ctx.body.workgroupId }],
+			});
+			for (const agent of agents) {
+				await ctx.context.adapter.update({
+					model: AGENT_TABLE,
+					where: [{ field: "id", value: agent.id }],
+					update: { workgroupId: null, updatedAt: new Date() },
 				});
 			}
 

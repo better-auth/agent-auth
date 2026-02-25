@@ -3,11 +3,11 @@ import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { Agent } from "../types";
+import type { Agent, ResolvedAgentAuthOptions } from "../types";
 
 const AGENT_TABLE = "agent";
 
-export function rotateKey() {
+export function rotateKey(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/rotate-key",
 		{
@@ -48,6 +48,15 @@ export function rotateKey() {
 
 			if (!publicKey.kty || !publicKey.x) {
 				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
+			}
+
+			const kty = publicKey.kty as string;
+			const crv = (publicKey.crv as string) ?? null;
+			const keyAlg = crv ?? kty;
+			if (!opts.allowedKeyAlgorithms.includes(keyAlg)) {
+				throw new APIError("BAD_REQUEST", {
+					message: `Key algorithm "${keyAlg}" is not allowed. Accepted: ${opts.allowedKeyAlgorithms.join(", ")}`,
+				});
 			}
 
 			const kid = (publicKey.kid as string) ?? null;

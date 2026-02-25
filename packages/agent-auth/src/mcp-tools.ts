@@ -583,26 +583,37 @@ export function createAgentMCPTools(
 						},
 					);
 
-					if (tokenRes.ok) {
-						const tokenData = (await tokenRes.json()) as {
-							access_token: string;
+					const resText = await tokenRes.text();
+					let resJson: Record<string, unknown>;
+					try {
+						resJson = JSON.parse(resText);
+					} catch {
+						if (storage.removePendingFlow) await storage.removePendingFlow(url);
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Device auth returned non-JSON response: ${resText.slice(0, 200)}`,
+								},
+							],
 						};
-						accessToken = tokenData.access_token;
+					}
+
+					if (tokenRes.ok) {
+						accessToken = resJson.access_token as string;
 						break;
 					}
 
-					const errorData = (await tokenRes.json()) as {
-						error: string;
-					};
+					const error = resJson.error as string | undefined;
 
-					if (errorData.error === "authorization_pending") {
+					if (error === "authorization_pending") {
 						continue;
 					}
-					if (errorData.error === "slow_down") {
+					if (error === "slow_down") {
 						await new Promise((resolve) => setTimeout(resolve, pollInterval));
 						continue;
 					}
-					if (errorData.error === "access_denied") {
+					if (error === "access_denied") {
 						if (storage.removePendingFlow) await storage.removePendingFlow(url);
 						return {
 							content: [
@@ -613,7 +624,7 @@ export function createAgentMCPTools(
 							],
 						};
 					}
-					if (errorData.error === "expired_token") {
+					if (error === "expired_token") {
 						if (storage.removePendingFlow) await storage.removePendingFlow(url);
 						return {
 							content: [
@@ -630,7 +641,7 @@ export function createAgentMCPTools(
 						content: [
 							{
 								type: "text" as const,
-								text: `Device auth failed: ${errorData.error}`,
+								text: `Device auth failed: ${error}`,
 							},
 						],
 					};
@@ -875,14 +886,39 @@ export function createAgentMCPTools(
 					};
 				}
 
+				const fullUrl = reqPath.startsWith("http")
+					? reqPath
+					: `${connection.appUrl}${reqPath}`;
+
+				// Prevent SSRF: only allow requests to the app the agent connected to
+				try {
+					const target = new URL(fullUrl);
+					const allowed = new URL(connection.appUrl);
+					if (target.origin !== allowed.origin) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Blocked: request origin ${target.origin} does not match connected app ${allowed.origin}.`,
+								},
+							],
+						};
+					}
+				} catch {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `Invalid URL: ${fullUrl}`,
+							},
+						],
+					};
+				}
+
 				const jwt = await signAgentJWT({
 					agentId,
 					privateKey: connection.keypair.privateKey,
 				});
-
-				const fullUrl = reqPath.startsWith("http")
-					? reqPath
-					: `${connection.appUrl}${reqPath}`;
 
 				const headers: Record<string, string> = {
 					Authorization: `Bearer ${jwt}`,
@@ -960,29 +996,40 @@ export function createAgentMCPTools(
 						},
 					);
 
-					if (tokenRes.ok) {
-						const tokenData = (await tokenRes.json()) as {
-							access_token: string;
+					const resText = await tokenRes.text();
+					let resJson: Record<string, unknown>;
+					try {
+						resJson = JSON.parse(resText);
+					} catch {
+						if (storage.removePendingFlow) await storage.removePendingFlow(url);
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Device auth returned non-JSON response: ${resText.slice(0, 200)}`,
+								},
+							],
 						};
-						accessToken = tokenData.access_token;
+					}
+
+					if (tokenRes.ok) {
+						accessToken = resJson.access_token as string;
 						break;
 					}
 
-					const errorData = (await tokenRes.json()) as {
-						error: string;
-					};
+					const error = resJson.error as string | undefined;
 
-					if (errorData.error === "authorization_pending") {
+					if (error === "authorization_pending") {
 						await new Promise((resolve) => setTimeout(resolve, pollInterval));
 						continue;
 					}
-					if (errorData.error === "slow_down") {
+					if (error === "slow_down") {
 						await new Promise((resolve) =>
 							setTimeout(resolve, pollInterval * 2),
 						);
 						continue;
 					}
-					if (errorData.error === "access_denied") {
+					if (error === "access_denied") {
 						if (storage.removePendingFlow) await storage.removePendingFlow(url);
 						return {
 							content: [
@@ -993,7 +1040,7 @@ export function createAgentMCPTools(
 							],
 						};
 					}
-					if (errorData.error === "expired_token") {
+					if (error === "expired_token") {
 						if (storage.removePendingFlow) await storage.removePendingFlow(url);
 						return {
 							content: [
@@ -1010,7 +1057,7 @@ export function createAgentMCPTools(
 						content: [
 							{
 								type: "text" as const,
-								text: `Device auth failed: ${errorData.error}`,
+								text: `Device auth failed: ${error}`,
 							},
 						],
 					};
