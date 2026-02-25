@@ -5,88 +5,81 @@ when working with code in this repository.
 
 ## Project Overview
 
-Better Auth is a comprehensive, framework-agnostic authentication
-framework for TypeScript.
+Agent Auth is an AI agent authentication and authorization plugin for
+[Better Auth](https://github.com/better-auth/better-auth). It provides
+Ed25519 keypair-based identity, JWT authentication, scopes, roles, and
+workgroups for AI agents.
+
+## Repository Structure
+
+This is a pnpm monorepo. The main package is `packages/agent-auth/`.
+
+```
+packages/agent-auth/       @better-auth/agent-auth - the plugin
+```
+
+Future packages (e.g. `agent-gateway`) will be added as separate
+packages in this monorepo.
 
 ## Development Commands
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Run all tests
-pnpm test
-
-# Lint code
-pnpm lint
-
-# Fix linting issues
-pnpm lint:fix
-
-# Type check
-pnpm typecheck
+pnpm install              # Install dependencies
+pnpm build                # Build all packages
+pnpm lint                 # Lint (Biome)
+pnpm lint:fix             # Auto-fix lint
+pnpm format:check         # Check formatting
+pnpm typecheck            # Type check
 ```
 
-Do not run `pnpm test` directly because it runs tests in all packages,
-which takes a long time, use `vitest /path/to/<test-file> -t <pattern>` to
-run specific tests.
+Run specific tests with:
+```bash
+vitest packages/agent-auth/src/agent-auth.test.ts
+```
 
 ## Architecture
 
-### Package Structure
+### Agent Auth Plugin (`packages/agent-auth/`)
 
-* `packages/better-auth` - Main authentication library
-* `packages/core` - Core utilities and types
-* `packages/cli` - Command-line interface
-* `packages/*` - Various plugins and integrations
+Core agent identity and authorization system:
+
+- **Plugin entry** (`index.ts`): JWT middleware, session building,
+  rate limiting
+- **Crypto** (`crypto.ts`): Ed25519 keypair generation, JWT
+  signing/verification
+- **Schema** (`schema.ts`): DB tables — `agent`, `agentScopeRequest`,
+  `agentWorkgroup`
+- **Routes** (`routes/`): `create-agent`, `list-agents`, `get-agent`,
+  `update-agent`, `revoke-agent`, `rotate-key`, `get-agent-session`,
+  `cleanup-agents`, `request-scope`, `scope-request-status`,
+  `approve-scope`, `workgroup` (CRUD)
+- **Client** (`client.ts`): Browser client plugin for `createAuthClient`
+- **Agent Client** (`agent-client.ts`): SDK for agent runtimes — keypair
+  management, device auth flow, JWT-authenticated fetch
+- **MCP Tools** (`mcp-tools.ts`): MCP server tool definitions for
+  Cursor/Claude
+- **Storage**: Memory and file-based agent connection storage
+
+### Dependencies
+
+`better-auth` and `@better-auth/core` are **peer dependencies** — users
+install Better Auth separately and add this plugin.
 
 ## Code Style
 
 * Formatter: Biome (tabs for code, 2-space for JSON)
 * Avoid unsafe typecasts or types like `any`
 * Avoid classes, use functions and objects
-* Do not use runtime-specific feature like `Buffer` in codebase except
-  test, use `Uint8Array` instead
-
-## Testing
-
-* Most of the tests use Vitest
-* Some tests under `e2e` directory use playwright
-* Adapter tests require Docker containers running (`docker compose up -d`)
-* Consider using test helpers like `getTestInstance()` from
-  `better-auth/test` first
-* If a test is to prevent regression of a specific numbered GitHub issue,
-  add a JSDoc `@see` comment with the issue URL above the `it()` or `describe()`:
-  ```typescript
-  /**
-   * @see https://github.com/better-auth/better-auth/issues/{issue_number}
-   */
-  it("should handle the previously broken behavior", async () => {
-    // ...
-  });
-  ```
-
-## Documentation
-
-* Please update the documentation when you make changes to the public API
-* Documentation is located in the `docs/` directory, built with
-  [Next.js](https://nextjs.org/docs/llms.txt) + [Fumadocs](https://www.fumadocs.dev/llms.txt)
+* Do not use runtime-specific features like `Buffer` in source code,
+  use `Uint8Array` instead
 
 ## Git Workflow
 
-* PRs should target the `canary` branch
-* Commit format: `feat(scope): description` or `fix(scope): description`,
-  following [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
-* Use `docs:` for documentation, `chore:` for non-functional changes
+* PRs should target the `agent-auth` branch
+* Commit format: `feat(agent-auth): description` or
+  `fix(agent-auth): description`
 
-## Postmortems
-
-Check `postmortem/` directory for lessons learned from past issues.
-
-## After Everything is done
+## After Everything is Done
 
 **Unless the user asked for it or you are working on CI, DO NOT COMMIT**
 

@@ -5,11 +5,6 @@
     "enabled": true,
     "indentStyle": "tab"
   },
-  "css": {
-    "parser": {
-      "tailwindDirectives": true
-    }
-  },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
@@ -64,16 +59,6 @@
   },
   "overrides": [
     {
-      "includes": ["**/examples/svelte-kit-example/**"],
-      "linter": {
-        "rules": {
-          "correctness": {
-            "noUnusedImports": "off"
-          }
-        }
-      }
-    },
-    {
       "includes": ["**/*.json"],
       "formatter": {
         "indentStyle": "space",
@@ -113,8 +98,7 @@
         "**/*.test.*",
         "**/*.spec.*",
         "**/test/**",
-        "**/__tests__/**",
-        "packages/sso/**"
+        "**/__tests__/**"
       ],
       "linter": {
         "rules": {
@@ -132,19 +116,8 @@
       "!**/dist",
       "!**/coverage",
       "!**/build",
-      "!**/demo/electron/out",
-      "!**/.next",
-      "!**/.svelte-kit",
-      "!**/.contentlayer",
       "!**/.turbo",
-      "!**/.nuxt",
-      "!**/.source",
-      "!**/.expo",
-      "!**/.cache",
-      "!**/dev/cloudflare/drizzle",
-      "!**/playwright-report",
-      "!**/.output",
-      "!**/.tmp"
+      "!**/.cache"
     ]
   }
 }

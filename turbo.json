@@ -1,108 +1,16 @@
 {
-  "$schema": "./node_modules/turbo/schema.json",
-  "globalDependencies": [
-    "package.json",
-    "tsconfig.json",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml"
-  ],
+  "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "dev": {
-      "cache": false,
-      "persistent": true
-    },
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
-    },
-    "clean": {},
-    "format": {
-      "dependsOn": ["//#format"]
-    },
-    "//#format": {},
-    "lint": {},
-    "lint:types": {
-      "dependsOn": ["^build", "build"]
-    },
-    "lint:package": {
-      "dependsOn": ["^build", "build"]
+      "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": ["^build", "build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "vitest.config.*",
-        "src/**",
-        "test/**",
-        "tests/**",
-        "*.test.*",
-        "*.spec.*",
-        "package.json"
-      ],
-      "outputs": [".vitest/**", "coverage/**", "test-results/**"],
-      "cache": true
+      "dependsOn": ["build"]
     },
-    "coverage": {
-      "dependsOn": ["^build", "build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "vitest.config.*",
-        "src/**",
-        "test/**",
-        "tests/**",
-        "*.test.*",
-        "*.spec.*",
-        "package.json"
-      ],
-      "outputs": ["coverage/**", "coverage-final.json", ".nyc_output/**"]
+    "typecheck": {
+      "dependsOn": ["^build"]
     },
-    "e2e:smoke": {
-      "dependsOn": ["^build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "vitest.config.*",
-        "playwright.config.*",
-        "test/**",
-        "tests/**",
-        "e2e/**",
-        "*.test.*",
-        "*.spec.*",
-        "package.json"
-      ],
-      "outputs": ["test-results/**", "playwright-report/**"],
-      "cache": true
-    },
-    "e2e:integration": {
-      "dependsOn": ["^build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "vitest.config.*",
-        "playwright.config.*",
-        "test/**",
-        "tests/**",
-        "e2e/**",
-        "*.test.*",
-        "*.spec.*",
-        "package.json"
-      ],
-      "outputs": [
-        "coverage/**",
-        "coverage-final.json",
-        ".nyc_output/**",
-        "test-results/**",
-        "playwright-report/**"
-      ],
-      "cache": true
-    },
-    "deploy": {
-      "cache": false
-    },
-    "migrate": {
-      "cache": false
-    },
-    "generate": {
-      "cache": false
-    }
+    "lint": {}
   }
 }

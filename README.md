@@ -1,49 +1,94 @@
-<p align="center">
-  <picture>
-    <source srcset="./banner-dark.png" media="(prefers-color-scheme: dark)"/>
-    <source srcset="./banner.png" media="(prefers-color-scheme: light)"/>
-    <img src="./banner.png" alt="Better Auth Logo"/>
-  </picture>
-  <h2 align="center">
-    Better Auth
-  </h2>
+# Agent Auth
 
-  <p align="center">
-    The most comprehensive authentication framework for TypeScript
-    <br />
-    <a href="https://better-auth.com"><strong>Learn more »</strong></a>
-    <br />
-    <br />
-    <a href="https://discord.gg/better-auth">Discord</a>
-    ·
-    <a href="https://better-auth.com">Website</a>
-    ·
-    <a href="https://github.com/better-auth/better-auth/issues">Issues</a>
-  </p>
+AI agent authentication and authorization plugin for [Better Auth](https://github.com/better-auth/better-auth).
 
-[![npm](https://img.shields.io/npm/dm/better-auth?style=flat&colorA=000000&colorB=000000)](https://npm.chart.dev/better-auth?primary=neutral&gray=neutral&theme=dark)
-[![npm version](https://img.shields.io/npm/v/better-auth.svg?style=flat&colorA=000000&colorB=000000)](https://www.npmjs.com/package/better-auth)
-[![GitHub stars](https://img.shields.io/github/stars/better-auth/better-auth?style=flat&colorA=000000&colorB=000000)](https://github.com/better-auth/better-auth/stargazers)
-</p>
+## Features
 
-## About the Project
+- **Ed25519 Keypair Identity** — agents authenticate with asymmetric keys, private keys never touch the server
+- **JWT Authentication** — short-lived JWTs signed by agents, verified by the server
+- **Scopes & Roles** — fine-grained access control with role-to-scope mapping
+- **Workgroups** — group agents within organizations
+- **Device Auth Flow** — OAuth device authorization for agent onboarding
+- **Scope Escalation** — agents can request additional scopes with user approval
+- **MCP Tools** — expose agent management as MCP server tools for Cursor/Claude
 
-Better Auth is framework-agnostic authentication (and authorization) library for TypeScript. It provides a comprehensive set of features out of the box and includes a plugin ecosystem that simplifies adding advanced functionalities with minimal code in a short amount of time. Whether you need 2FA, multi-tenant support, or other complex features. It lets you focus on building your actual application instead of reinventing the wheel. 
+## Installation
 
-### Why Better Auth
+```bash
+npm install @better-auth/agent-auth better-auth
+```
 
-Authentication in the TypeScript ecosystem is a half-solved problem. Other open-source libraries often require a lot of additional code for anything beyond basic authentication. Rather than just pushing third-party services as the solution, I believe we can do better as a community—hence, Better Auth.
+## Quick Start
 
-## Contribution
+### Server
 
-Better Auth is a free and open source project licensed under the [MIT License](./LICENSE.md). You are free to do whatever you want with it.
+```ts
+import { betterAuth } from "better-auth";
+import { agentAuth } from "@better-auth/agent-auth";
 
-You could help continuing its development by:
+const auth = betterAuth({
+  plugins: [
+    agentAuth({
+      roles: {
+        agent: ["email.send", "reports.read"],
+        admin_agent: ["*"],
+      },
+      defaultRole: "agent",
+    }),
+  ],
+});
+```
 
-- [Contribute to the source code](./CONTRIBUTING.md)
-- [Suggest new features and report issues](https://github.com/better-auth/better-auth/issues)
+### Client
 
-## Security
-If you discover a security vulnerability within Better Auth, please send an e-mail to [security@better-auth.com](mailto:security@better-auth.com).
+```ts
+import { createAuthClient } from "better-auth/client";
+import { agentAuthClient } from "@better-auth/agent-auth/client";
 
-All reports will be promptly addressed, and you'll be credited accordingly.
+const client = createAuthClient({
+  plugins: [agentAuthClient()],
+});
+```
+
+### Agent Runtime
+
+```ts
+import { connectAgent, createAgentClient } from "@better-auth/agent-auth/agent-client";
+
+const result = await connectAgent({
+  appURL: "https://myapp.com",
+  name: "My Agent",
+  scopes: ["reports.read"],
+  openBrowser: true,
+  onUserCode: ({ userCode, verificationUri }) => {
+    console.log(`Go to ${verificationUri} and enter: ${userCode}`);
+  },
+});
+
+const agent = createAgentClient({
+  baseURL: "https://myapp.com",
+  agentId: result.agentId,
+  privateKey: result.privateKey,
+});
+
+const response = await agent.fetch("/api/reports/Q4");
+```
+
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| `@better-auth/agent-auth` | Core plugin |
+
+## Development
+
+```bash
+pnpm install
+pnpm build
+pnpm typecheck
+pnpm lint
+```
+
+## License
+
+MIT
