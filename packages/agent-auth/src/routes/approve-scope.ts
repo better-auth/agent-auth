@@ -3,36 +3,11 @@ import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import { findBlockedScopes, mergeScopes } from "../scopes";
-import type { ResolvedAgentAuthOptions } from "../types";
+import { findBlockedScopes } from "../scopes";
+import type { AgentPermission, ResolvedAgentAuthOptions } from "../types";
 
-const SCOPE_REQUEST_TABLE = "agentScopeRequest";
+const PERMISSION_TABLE = "agentPermission";
 const AGENT_TABLE = "agent";
-
-interface ScopeRequestRecord {
-	id: string;
-	agentId: string;
-	userId: string;
-	agentName: string;
-	newName: string | null;
-	existingScopes: string[] | string;
-	requestedScopes: string[] | string;
-	status: string;
-	createdAt: Date;
-	expiresAt: Date;
-}
-
-function parseScopes(val: unknown): string[] {
-	if (Array.isArray(val)) return val;
-	if (typeof val === "string") {
-		try {
-			return JSON.parse(val);
-		} catch {
-			return [];
-		}
-	}
-	return [];
-}
 
 export function approveScope(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -40,17 +15,20 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				requestId: z.string(),
+				requestId: z.string().meta({
+					description:
+						"The agent ID whose pending permissions should be resolved.",
+				}),
 				action: z.enum(["approve", "deny"]),
 				scopes: z.array(z.string()).optional().meta({
 					description:
-						"When approving, the subset of requested scopes the user actually granted. Omit to approve all requested scopes.",
+						"When approving, the subset of pending scopes the user actually granted. Omit to approve all pending scopes.",
 				}),
 			}),
 			metadata: {
 				openapi: {
 					description:
-						"Approve or deny a pending scope escalation request. Requires a fresh session (§15.2).",
+						"Approve or deny pending permission requests for an agent. Requires a fresh session (§15.2).",
 				},
 			},
 		},
@@ -70,52 +48,64 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			const { requestId, action, scopes: userScopes } = ctx.body;
+			const { requestId: agentId, action, scopes: userScopes } = ctx.body;
 
-			const scopeReq = await ctx.context.adapter.findOne<ScopeRequestRecord>({
-				model: SCOPE_REQUEST_TABLE,
-				where: [{ field: "id", value: requestId }],
+			const agent = await ctx.context.adapter.findOne<{
+				id: string;
+				userId: string;
+			}>({
+				model: AGENT_TABLE,
+				where: [{ field: "id", value: agentId }],
 			});
 
-			if (!scopeReq) {
+			if (!agent) {
 				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
 			}
 
-			if (new Date(scopeReq.expiresAt) <= new Date()) {
-				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
-			}
-
-			if (scopeReq.userId !== session.user.id) {
+			if (agent.userId !== session.user.id) {
 				throw APIError.from(
 					"FORBIDDEN",
 					ERROR_CODES.SCOPE_REQUEST_OWNER_MISMATCH,
 				);
 			}
 
-			if (scopeReq.status !== "pending") {
+			const allPerms = await ctx.context.adapter.findMany<AgentPermission>({
+				model: PERMISSION_TABLE,
+				where: [{ field: "agentId", value: agentId }],
+			});
+
+			const pendingPerms = allPerms.filter((p) => p.status === "pending");
+
+			if (pendingPerms.length === 0) {
 				throw APIError.from(
 					"PRECONDITION_FAILED",
 					ERROR_CODES.SCOPE_REQUEST_ALREADY_RESOLVED,
 				);
 			}
 
-			const existing = parseScopes(scopeReq.existingScopes);
-			const requested = parseScopes(scopeReq.requestedScopes);
+			const now = new Date();
 
 			if (action === "deny") {
-				await ctx.context.adapter.update({
-					model: SCOPE_REQUEST_TABLE,
-					where: [{ field: "id", value: requestId }],
-					update: { status: "denied" },
-				});
+				for (const perm of pendingPerms) {
+					await ctx.context.adapter.update({
+						model: PERMISSION_TABLE,
+						where: [{ field: "id", value: perm.id }],
+						update: { status: "denied", updatedAt: now },
+					});
+				}
 
 				return ctx.json({ status: "denied" });
 			}
 
-			const approved = userScopes ?? requested;
+			const approvedScopes = userScopes
+				? new Set(userScopes)
+				: new Set(pendingPerms.map((p) => p.scope));
 
 			if (opts.blockedScopes.length > 0) {
-				const blocked = findBlockedScopes(approved, opts.blockedScopes);
+				const blocked = findBlockedScopes(
+					[...approvedScopes],
+					opts.blockedScopes,
+				);
 				if (blocked.length > 0) {
 					throw new APIError("BAD_REQUEST", {
 						message: `${ERROR_CODES.SCOPE_BLOCKED} Blocked: ${blocked.join(", ")}.`,
@@ -123,33 +113,29 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			const merged = mergeScopes(existing, approved);
+			const added: string[] = [];
 
-			const agentUpdate: Record<string, unknown> = {
-				scopes: merged,
-				updatedAt: new Date(),
-			};
-			if (scopeReq.newName) {
-				agentUpdate.name = scopeReq.newName;
+			for (const perm of pendingPerms) {
+				if (approvedScopes.has(perm.scope)) {
+					await ctx.context.adapter.update({
+						model: PERMISSION_TABLE,
+						where: [{ field: "id", value: perm.id }],
+						update: { status: "active", updatedAt: now },
+					});
+					added.push(perm.scope);
+				} else {
+					await ctx.context.adapter.update({
+						model: PERMISSION_TABLE,
+						where: [{ field: "id", value: perm.id }],
+						update: { status: "denied", updatedAt: now },
+					});
+				}
 			}
-
-			await ctx.context.adapter.update({
-				model: AGENT_TABLE,
-				where: [{ field: "id", value: scopeReq.agentId }],
-				update: agentUpdate,
-			});
-
-			await ctx.context.adapter.update({
-				model: SCOPE_REQUEST_TABLE,
-				where: [{ field: "id", value: requestId }],
-				update: { status: "approved" },
-			});
 
 			return ctx.json({
 				status: "approved",
-				agentId: scopeReq.agentId,
-				scopes: merged,
-				added: approved,
+				agentId,
+				added,
 			});
 		},
 	);

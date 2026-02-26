@@ -8,10 +8,11 @@ import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
 import { findBlockedScopes, isSubsetOf } from "../scopes";
-import type { Agent, Enrollment, ResolvedAgentAuthOptions } from "../types";
+import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../types";
 
 const AGENT_TABLE = "agent";
-const ENROLLMENT_TABLE = "agentEnrollment";
+const HOST_TABLE = "agentHost";
+const PERMISSION_TABLE = "agentPermission";
 
 const createAgentBodySchema = z.object({
 	name: z.string().min(1).meta({ description: "Friendly name for the agent" }),
@@ -25,30 +26,18 @@ const createAgentBodySchema = z.object({
 		.array(z.string())
 		.meta({
 			description:
-				"Scope strings the agent is granted. When used with enrollmentJWT, must be a subset of baseScopes.",
+				"Scope strings the agent is granted. When used with hostJWT, must be a subset of the host's scopes.",
 		})
 		.optional(),
-	role: z.string().meta({ description: "Role name for the agent" }).optional(),
-	orgId: z
+	role: z
 		.string()
-		.meta({ description: "Organization ID (if org-scoped)" })
+		.meta({ description: "Role name to resolve scopes from" })
 		.optional(),
-	workgroupId: z
-		.string()
-		.meta({ description: "Workgroup ID within the org" })
-		.optional(),
-	source: z
+	hostJWT: z
 		.string()
 		.meta({
 			description:
-				'Upstream application identifier (e.g. "cursor", "claude-code")',
-		})
-		.optional(),
-	enrollmentJWT: z
-		.string()
-		.meta({
-			description:
-				"A JWT signed by the enrollment's private key (sub = enrollmentId). Enables silent agent creation without user session (§6).",
+				"A JWT signed by the host's private key (sub = hostId). Enables silent agent creation without user session (§6).",
 		})
 		.optional(),
 	metadata: z
@@ -59,6 +48,58 @@ const createAgentBodySchema = z.object({
 		.meta({ description: "Optional metadata" })
 		.optional(),
 });
+
+async function createPermissionRows(
+	adapter: {
+		create: (args: {
+			model: string;
+			data: Record<string, unknown>;
+		}) => Promise<unknown>;
+		delete: (args: {
+			model: string;
+			where: { field: string; value: string }[];
+		}) => Promise<unknown>;
+		findMany: <T>(args: {
+			model: string;
+			where: { field: string; value: string }[];
+		}) => Promise<T[]>;
+	},
+	agentId: string,
+	scopes: string[],
+	grantedBy: string,
+	opts?: { clearExisting?: boolean },
+) {
+	if (opts?.clearExisting) {
+		const existing = await adapter.findMany<{ id: string }>({
+			model: PERMISSION_TABLE,
+			where: [{ field: "agentId", value: agentId }],
+		});
+		for (const perm of existing) {
+			await adapter.delete({
+				model: PERMISSION_TABLE,
+				where: [{ field: "id", value: perm.id }],
+			});
+		}
+	}
+
+	const now = new Date();
+	for (const scope of scopes) {
+		await adapter.create({
+			model: PERMISSION_TABLE,
+			data: {
+				agentId,
+				scope,
+				referenceId: null,
+				grantedBy,
+				expiresAt: null,
+				status: "active",
+				reason: null,
+				createdAt: now,
+				updatedAt: now,
+			},
+		});
+	}
+}
 
 export function createAgent(
 	opts: ResolvedAgentAuthOptions,
@@ -72,7 +113,7 @@ export function createAgent(
 			metadata: {
 				openapi: {
 					description:
-						"Register a new agent with its public key. Supports session-based or enrollment-based (silent) creation via signed JWT.",
+						"Register a new agent with its public key. Supports session-based or host-based (silent) creation via signed JWT.",
 					responses: {
 						"200": {
 							description: "Agent created successfully",
@@ -82,56 +123,44 @@ export function createAgent(
 			},
 		},
 		async (ctx) => {
-			const {
-				name,
-				publicKey,
-				scopes,
-				role,
-				orgId,
-				workgroupId,
-				source,
-				enrollmentJWT,
-				metadata,
-			} = ctx.body;
+			const { name, publicKey, scopes, role, hostJWT, metadata } = ctx.body;
 
 			let userId: string;
-			let enrollmentId: string | null = null;
-			let enrollmentBaseScopes: string[] | null = null;
+			let hostId: string | null = null;
+			let hostBaseScopes: string[] | null = null;
 			let deviceApprovedScopes: string[] | null = null;
 
-			if (enrollmentJWT) {
-				let enrollmentIdFromJwt: string;
+			if (hostJWT) {
+				let hostIdFromJwt: string;
 				try {
-					const decoded = decodeJwt(enrollmentJWT);
+					const decoded = decodeJwt(hostJWT);
 					if (!decoded.sub) {
 						throw new Error("Missing sub");
 					}
-					enrollmentIdFromJwt = decoded.sub;
+					hostIdFromJwt = decoded.sub;
 				} catch {
 					throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
 				}
 
-				const enrollment = await ctx.context.adapter.findOne<Enrollment>({
-					model: ENROLLMENT_TABLE,
-					where: [{ field: "id", value: enrollmentIdFromJwt }],
+				const host = await ctx.context.adapter.findOne<AgentHost>({
+					model: HOST_TABLE,
+					where: [{ field: "id", value: hostIdFromJwt }],
 				});
 
-				if (!enrollment) {
-					throw APIError.from("NOT_FOUND", ERROR_CODES.ENROLLMENT_NOT_FOUND);
+				if (!host) {
+					throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
 				}
-				if (enrollment.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+				if (host.status === "revoked") {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 
-				// §9.2 absoluteLifetime — results in revocation, not expiration
-				if (opts.absoluteLifetime > 0 && enrollment.createdAt) {
+				if (opts.absoluteLifetime > 0 && host.createdAt) {
 					const absoluteExpiry =
-						new Date(enrollment.createdAt).getTime() +
-						opts.absoluteLifetime * 1000;
+						new Date(host.createdAt).getTime() + opts.absoluteLifetime * 1000;
 					if (Date.now() >= absoluteExpiry) {
 						await ctx.context.adapter.update({
-							model: ENROLLMENT_TABLE,
-							where: [{ field: "id", value: enrollment.id }],
+							model: HOST_TABLE,
+							where: [{ field: "id", value: host.id }],
 							update: {
 								status: "revoked",
 								publicKey: "",
@@ -139,63 +168,61 @@ export function createAgent(
 								updatedAt: new Date(),
 							},
 						});
-						throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+						throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 					}
 				}
 
-				// §9.2 maxLifetime — measured from activatedAt, results in expiration (reactivatable)
 				if (opts.agentMaxLifetime > 0) {
-					const anchor = enrollment.activatedAt ?? enrollment.createdAt;
+					const anchor = host.activatedAt ?? host.createdAt;
 					if (anchor) {
 						const maxExpiry =
 							new Date(anchor).getTime() + opts.agentMaxLifetime * 1000;
 						if (Date.now() >= maxExpiry) {
 							await ctx.context.adapter.update({
-								model: ENROLLMENT_TABLE,
-								where: [{ field: "id", value: enrollment.id }],
+								model: HOST_TABLE,
+								where: [{ field: "id", value: host.id }],
 								update: { status: "expired", updatedAt: new Date() },
 							});
-							throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_EXPIRED);
+							throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_EXPIRED);
 						}
 					}
 				}
 
-				// Transition active → expired when expiresAt has passed
 				if (
-					enrollment.status === "active" &&
-					enrollment.expiresAt &&
-					new Date(enrollment.expiresAt) <= new Date()
+					host.status === "active" &&
+					host.expiresAt &&
+					new Date(host.expiresAt) <= new Date()
 				) {
 					await ctx.context.adapter.update({
-						model: ENROLLMENT_TABLE,
-						where: [{ field: "id", value: enrollment.id }],
+						model: HOST_TABLE,
+						where: [{ field: "id", value: host.id }],
 						update: { status: "expired", updatedAt: new Date() },
 					});
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_EXPIRED);
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_EXPIRED);
 				}
 
-				if (enrollment.status === "expired") {
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_EXPIRED);
+				if (host.status === "expired") {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_EXPIRED);
 				}
 
-				if (!enrollment.publicKey) {
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+				if (!host.publicKey) {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 
-				let enrollmentPubKey: AgentJWK;
+				let hostPubKey: AgentJWK;
 				try {
-					enrollmentPubKey = JSON.parse(enrollment.publicKey);
+					hostPubKey = JSON.parse(host.publicKey);
 				} catch {
 					throw APIError.from("FORBIDDEN", ERROR_CODES.INVALID_PUBLIC_KEY);
 				}
 
 				const payload = await verifyAgentJWT({
-					jwt: enrollmentJWT,
-					publicKey: enrollmentPubKey,
+					jwt: hostJWT,
+					publicKey: hostPubKey,
 					maxAge: opts.jwtMaxAge,
 				});
 
-				if (!payload || payload.sub !== enrollment.id) {
+				if (!payload || payload.sub !== host.id) {
 					throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
 				}
 
@@ -206,14 +233,13 @@ export function createAgent(
 					jtiCache.add(payload.jti, opts.jwtMaxAge);
 				}
 
-				userId = enrollment.userId;
-				enrollmentId = enrollment.id;
-				enrollmentBaseScopes =
-					typeof enrollment.baseScopes === "string"
-						? JSON.parse(enrollment.baseScopes)
-						: enrollment.baseScopes;
+				userId = host.userId;
+				hostId = host.id;
+				hostBaseScopes =
+					typeof host.scopes === "string"
+						? JSON.parse(host.scopes)
+						: host.scopes;
 
-				// TTL heartbeat: update lastUsedAt and extend expiresAt
 				const heartbeatUpdate: Record<string, Date> = {
 					lastUsedAt: new Date(),
 				};
@@ -225,8 +251,8 @@ export function createAgent(
 				ctx.context.runInBackground(
 					ctx.context.adapter
 						.update({
-							model: ENROLLMENT_TABLE,
-							where: [{ field: "id", value: enrollment.id }],
+							model: HOST_TABLE,
+							where: [{ field: "id", value: host.id }],
 							update: heartbeatUpdate,
 						})
 						.catch(() => {}),
@@ -309,27 +335,21 @@ export function createAgent(
 				}
 			}
 
-			const resolvedRole = role ?? opts.defaultRole ?? null;
-			const roleScopes =
-				resolvedRole && opts.roles?.[resolvedRole]
-					? opts.roles[resolvedRole]
-					: [];
+			const roleScopes = role && opts.roles?.[role] ? opts.roles[role] : [];
 
 			let resolvedScopes: string[];
 
-			if (enrollmentBaseScopes !== null) {
-				// §6.2: scopes must be a subset of enrollment's baseScopes.
-				// If omitted, the full baseScopes are granted (§6.1).
+			if (hostBaseScopes !== null) {
 				if (scopes && scopes.length > 0) {
-					if (!isSubsetOf(scopes, enrollmentBaseScopes)) {
+					if (!isSubsetOf(scopes, hostBaseScopes)) {
 						throw new APIError("BAD_REQUEST", {
 							message:
-								"Requested scopes must be a subset of the enrollment's baseScopes.",
+								"Requested scopes must be a subset of the host's scopes.",
 						});
 					}
 					resolvedScopes = scopes;
 				} else {
-					resolvedScopes = enrollmentBaseScopes;
+					resolvedScopes = hostBaseScopes;
 				}
 			} else {
 				resolvedScopes = scopes ?? roleScopes;
@@ -389,12 +409,9 @@ export function createAgent(
 						where: [{ field: "id", value: existing.id }],
 						update: {
 							name,
-							scopes: JSON.stringify(resolvedScopes),
-							role: resolvedRole,
 							status: "active",
 							publicKey: JSON.stringify(publicKey),
-							enrollmentId,
-							source: source ?? existing.source ?? null,
+							hostId,
 							activatedAt: now,
 							metadata: metadata ? JSON.stringify(metadata) : null,
 							expiresAt,
@@ -402,12 +419,19 @@ export function createAgent(
 						},
 					});
 
+					await createPermissionRows(
+						ctx.context.adapter,
+						existing.id,
+						resolvedScopes,
+						userId,
+						{ clearExisting: true },
+					);
+
 					return ctx.json({
 						agentId: existing.id,
 						name,
 						scopes: resolvedScopes,
-						role: resolvedRole,
-						enrollmentId,
+						hostId,
 					});
 				}
 			}
@@ -420,12 +444,7 @@ export function createAgent(
 				data: {
 					name,
 					userId,
-					enrollmentId,
-					orgId: orgId ?? null,
-					workgroupId: workgroupId ?? null,
-					source: source ?? null,
-					scopes: JSON.stringify(resolvedScopes),
-					role: resolvedRole,
+					hostId,
 					status: "active",
 					publicKey: JSON.stringify(publicKey),
 					kid,
@@ -438,12 +457,18 @@ export function createAgent(
 				},
 			});
 
+			await createPermissionRows(
+				ctx.context.adapter,
+				agent.id,
+				resolvedScopes,
+				userId,
+			);
+
 			return ctx.json({
 				agentId: agent.id,
 				name: agent.name,
 				scopes: resolvedScopes,
-				role: resolvedRole,
-				enrollmentId,
+				hostId,
 			});
 		},
 	);

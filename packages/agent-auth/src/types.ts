@@ -131,15 +131,14 @@ export interface AgentAuthOptions {
 }
 
 /**
- * An enrollment record — persistent, app-level consent.
+ * An agent host record — persistent, app-level consent.
  * Uses Ed25519 keypair for proof-of-possession (no bearer tokens — §4).
  * Three-state lifecycle matching agents (§9.1).
  */
-export interface Enrollment {
+export interface AgentHost {
 	id: string;
 	userId: string;
-	appSource: string | null;
-	baseScopes: string[];
+	scopes: string[];
 	publicKey: string;
 	kid: string | null;
 	status: "active" | "expired" | "revoked";
@@ -152,18 +151,14 @@ export interface Enrollment {
 
 /**
  * An agent record as stored in the database.
+ * Pure identity — authorization lives in `agentPermission`.
  * Three-state lifecycle: active → expired → (reactivate) → active, or → revoked.
  */
 export interface Agent {
 	id: string;
 	name: string;
 	userId: string;
-	enrollmentId: string | null;
-	orgId: string | null;
-	workgroupId: string | null;
-	source: string | null;
-	scopes: string[];
-	role: string | null;
+	hostId: string;
 	status: "active" | "expired" | "revoked";
 	publicKey: string;
 	kid: string | null;
@@ -175,21 +170,29 @@ export interface Agent {
 	updatedAt: Date;
 }
 
-/** Arbitrary key-value metadata attached to an agent. */
-export type AgentMetadata = Record<string, string | number | boolean | null>;
-
 /**
- * A workgroup record as stored in the database.
- * Workgroups group agents within an organization.
+ * A single permission granted to an agent.
+ * Multiple rows per agent — the union of all active rows is the agent's effective permissions.
  */
-export interface Workgroup {
+export interface AgentPermission {
 	id: string;
-	name: string;
-	description: string | null;
-	orgId: string | null;
+	agentId: string;
+	scope: string;
+	/** Resource this permission applies to. Null = unrestricted. */
+	referenceId: string | null;
+	/** User who granted this permission. */
+	grantedBy: string;
+	expiresAt: Date | null;
+	/** Lifecycle status: active permissions are enforced, pending await user approval, denied are rejected. */
+	status: "active" | "pending" | "denied";
+	/** Human-readable reason for a pending permission request. */
+	reason: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 }
+
+/** Arbitrary key-value metadata attached to an agent. */
+export type AgentMetadata = Record<string, string | number | boolean | null>;
 
 /**
  * The session object returned when an agent authenticates.
@@ -199,12 +202,13 @@ export interface AgentSession {
 	agent: {
 		id: string;
 		name: string;
-		scopes: string[];
-		role: string | null;
-		orgId: string | null;
-		workgroupId: string | null;
-		enrollmentId: string | null;
-		source: string | null;
+		permissions: Array<{
+			scope: string;
+			referenceId: string | null;
+			grantedBy: string;
+			status: string;
+		}>;
+		hostId: string;
 		createdAt: Date;
 		activatedAt: Date | null;
 		metadata: AgentMetadata | null;

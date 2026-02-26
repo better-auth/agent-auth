@@ -16,14 +16,17 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 	INVALID_SCOPES: "Scopes must be an array of strings.",
 	UNKNOWN_SCOPES: "One or more requested scopes are not recognized.",
 	AGENT_LIMIT_REACHED: "Maximum number of active agents reached.",
-	SCOPE_REQUEST_NOT_FOUND: "Scope request not found or expired.",
-	SCOPE_REQUEST_OWNER_MISMATCH:
-		"This scope request belongs to a different user.",
-	SCOPE_REQUEST_ALREADY_RESOLVED: "Scope request has already been resolved.",
-	NO_SCOPE_CHANGES: "No new scopes or name changes requested.",
-	ENROLLMENT_NOT_FOUND: "Enrollment not found.",
-	ENROLLMENT_REVOKED: "Enrollment has been revoked.",
-	ENROLLMENT_EXPIRED:
-		"Enrollment has expired. Reactivate it via proof-of-possession.",
-	ENROLLMENT_REQUIRED: "An active enrollment is required to create agents.",
+	SCOPE_REQUEST_NOT_FOUND:
+		"No pending permission requests found for this agent.",
+	SCOPE_REQUEST_OWNER_MISMATCH: "This agent belongs to a different user.",
+	SCOPE_REQUEST_ALREADY_RESOLVED:
+		"All permission requests have already been resolved.",
+	NO_SCOPE_CHANGES: "No new scopes requested.",
+	HOST_NOT_FOUND: "Agent host not found.",
+	HOST_REVOKED: "Agent host has been revoked.",
+	HOST_EXPIRED:
+		"Agent host has expired. Reactivate it via proof-of-possession.",
+	HOST_REQUIRED: "An active agent host is required to create agents.",
+	REQUEST_BINDING_MISMATCH:
+		"JWT request binding does not match the actual request.",
 });

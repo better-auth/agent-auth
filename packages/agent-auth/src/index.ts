@@ -4,7 +4,7 @@ import { APIError } from "@better-auth/core/error";
 import { mergeSchema } from "better-auth/db";
 import { decodeJwt } from "jose";
 import type { AgentJWK } from "./crypto";
-import { verifyAgentJWT } from "./crypto";
+import { hashRequestBody, verifyAgentJWT } from "./crypto";
 import { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 import { JtiReplayCache } from "./jti-cache";
 import { createAgentRoutes } from "./routes";
@@ -12,8 +12,9 @@ import { agentSchema } from "./schema";
 import type {
 	Agent,
 	AgentAuthOptions,
+	AgentHost,
+	AgentPermission,
 	AgentSession,
-	Enrollment,
 	ResolvedAgentAuthOptions,
 } from "./types";
 
@@ -28,7 +29,8 @@ declare module "@better-auth/core" {
 export { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 
 const AGENT_TABLE = "agent";
-const ENROLLMENT_TABLE = "agentEnrollment";
+const HOST_TABLE = "agentHost";
+const PERMISSION_TABLE = "agentPermission";
 
 const jtiCache = new JtiReplayCache();
 
@@ -66,7 +68,7 @@ function buildRateLimits(config: AgentAuthOptions["rateLimit"]) {
 
 /**
  * Transparently reactivate an expired agent (§7.1).
- * Scopes decay to enrollment's baseScopes if enrollment exists (§7.3).
+ * Permissions decay to host's scopes if host exists (§7.3).
  * Returns the updated agent record or null if reactivation is not possible.
  */
 async function tryTransparentReactivation(
@@ -77,34 +79,69 @@ async function tryTransparentReactivation(
 			model: string;
 			where: { field: string; value: string }[];
 		}) => Promise<T | null>;
+		findMany: <T>(args: {
+			model: string;
+			where: { field: string; value: string }[];
+		}) => Promise<T[]>;
 		update: (args: {
 			model: string;
 			where: { field: string; value: string }[];
 			update: Record<string, unknown>;
 		}) => Promise<unknown>;
+		delete: (args: {
+			model: string;
+			where: { field: string; value: string }[];
+		}) => Promise<unknown>;
+		create: (args: {
+			model: string;
+			data: Record<string, unknown>;
+		}) => Promise<unknown>;
 	},
 ): Promise<Agent | null> {
 	if (!agent.publicKey) return null;
 
-	let baseScopes: string[];
-	if (agent.enrollmentId) {
-		const enrollment = await adapter.findOne<Enrollment>({
-			model: ENROLLMENT_TABLE,
-			where: [{ field: "id", value: agent.enrollmentId }],
-		});
-		if (!enrollment || enrollment.status === "revoked") return null;
-		baseScopes =
-			typeof enrollment.baseScopes === "string"
-				? JSON.parse(enrollment.baseScopes)
-				: enrollment.baseScopes;
-	} else {
-		baseScopes =
-			typeof agent.scopes === "string"
-				? JSON.parse(agent.scopes)
-				: agent.scopes;
-	}
-
 	const now = new Date();
+
+	if (agent.hostId) {
+		const host = await adapter.findOne<AgentHost>({
+			model: HOST_TABLE,
+			where: [{ field: "id", value: agent.hostId }],
+		});
+		if (!host || host.status === "revoked") return null;
+
+		const baseScopes: string[] =
+			typeof host.scopes === "string" ? JSON.parse(host.scopes) : host.scopes;
+
+		// Scope decay: delete all existing permissions, re-create from host scopes
+		const existingPerms = await adapter.findMany<AgentPermission>({
+			model: PERMISSION_TABLE,
+			where: [{ field: "agentId", value: agent.id }],
+		});
+		for (const perm of existingPerms) {
+			await adapter.delete({
+				model: PERMISSION_TABLE,
+				where: [{ field: "id", value: perm.id }],
+			});
+		}
+		for (const scope of baseScopes) {
+			await adapter.create({
+				model: PERMISSION_TABLE,
+				data: {
+					agentId: agent.id,
+					scope,
+					referenceId: null,
+					grantedBy: agent.userId,
+					expiresAt: null,
+					status: "active",
+					reason: null,
+					createdAt: now,
+					updatedAt: now,
+				},
+			});
+		}
+	}
+	// If no host, keep existing permissions as-is
+
 	const expiresAt =
 		opts.agentSessionTTL > 0
 			? new Date(now.getTime() + opts.agentSessionTTL * 1000)
@@ -115,7 +152,6 @@ async function tryTransparentReactivation(
 		where: [{ field: "id", value: agent.id }],
 		update: {
 			status: "active",
-			scopes: JSON.stringify(baseScopes),
 			activatedAt: now,
 			expiresAt,
 			lastUsedAt: now,
@@ -126,7 +162,6 @@ async function tryTransparentReactivation(
 	return {
 		...agent,
 		status: "active",
-		scopes: baseScopes,
 		activatedAt: now,
 		expiresAt,
 		lastUsedAt: now,
@@ -303,6 +338,48 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							jtiCache.add(payload.jti, opts.jwtMaxAge);
 						}
 
+						// DPoP-style request binding verification.
+						// If the JWT contains htm/htu/ath claims, verify they match the actual request.
+						if (payload.htm || payload.htu) {
+							const method = ctx.method?.toUpperCase();
+							const path = ctx.path;
+
+							if (
+								payload.htm &&
+								typeof payload.htm === "string" &&
+								payload.htm !== method
+							) {
+								throw APIError.from(
+									"UNAUTHORIZED",
+									AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
+								);
+							}
+
+							if (
+								payload.htu &&
+								typeof payload.htu === "string" &&
+								payload.htu !== path
+							) {
+								throw APIError.from(
+									"UNAUTHORIZED",
+									AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
+								);
+							}
+
+							if (payload.ath && typeof payload.ath === "string") {
+								const body = ctx.body ? JSON.stringify(ctx.body) : undefined;
+								if (body) {
+									const actualHash = await hashRequestBody(body);
+									if (payload.ath !== actualHash) {
+										throw APIError.from(
+											"UNAUTHORIZED",
+											AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
+										);
+									}
+								}
+							}
+						}
+
 						// §7.1: Transparent reactivation — if expired but JWT is valid,
 						// auto-reactivate with scope decay instead of rejecting.
 						if (needsReactivation) {
@@ -320,9 +397,13 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							agent = reactivated;
 						}
 
-						const user = await ctx.context.internalAdapter.findUserById(
-							agent.userId,
-						);
+						const [user, permissions] = await Promise.all([
+							ctx.context.internalAdapter.findUserById(agent.userId),
+							ctx.context.adapter.findMany<AgentPermission>({
+								model: PERMISSION_TABLE,
+								where: [{ field: "agentId", value: agent.id }],
+							}),
+						]);
 						if (!user) {
 							throw APIError.from(
 								"UNAUTHORIZED",
@@ -330,19 +411,23 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							);
 						}
 
+						const activePermissions = permissions.filter(
+							(p) =>
+								p.status === "active" &&
+								(!p.expiresAt || new Date(p.expiresAt) > new Date()),
+						);
+
 						const agentSession: AgentSession = {
 							agent: {
 								id: agent.id,
 								name: agent.name,
-								scopes:
-									typeof agent.scopes === "string"
-										? JSON.parse(agent.scopes)
-										: agent.scopes,
-								role: agent.role,
-								orgId: agent.orgId,
-								workgroupId: agent.workgroupId ?? null,
-								enrollmentId: agent.enrollmentId ?? null,
-								source: agent.source ?? null,
+								permissions: activePermissions.map((p) => ({
+									scope: p.scope,
+									referenceId: p.referenceId,
+									grantedBy: p.grantedBy,
+									status: p.status,
+								})),
+								hostId: agent.hostId,
 								createdAt: agent.createdAt,
 								activatedAt: agent.activatedAt ?? null,
 								metadata:
@@ -422,15 +507,11 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			scopeRequestStatus: routes.scopeRequestStatus,
 			approveScope: routes.approveScope,
 			discover: routes.discover,
-			createEnrollment: routes.createEnrollment,
-			listEnrollments: routes.listEnrollments,
-			getEnrollment: routes.getEnrollment,
-			revokeEnrollment: routes.revokeEnrollment,
-			reactivateEnrollment: routes.reactivateEnrollment,
-			createWorkgroup: routes.createWorkgroup,
-			listWorkgroups: routes.listWorkgroups,
-			updateWorkgroup: routes.updateWorkgroup,
-			deleteWorkgroup: routes.deleteWorkgroup,
+			createHost: routes.createHost,
+			listHosts: routes.listHosts,
+			getHost: routes.getHost,
+			revokeHost: routes.revokeHost,
+			reactivateHost: routes.reactivateHost,
 		},
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,

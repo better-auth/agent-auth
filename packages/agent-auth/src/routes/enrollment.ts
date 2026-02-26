@@ -7,14 +7,14 @@ import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
 import { findBlockedScopes } from "../scopes";
-import type { Agent, Enrollment, ResolvedAgentAuthOptions } from "../types";
+import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../types";
 
-const ENROLLMENT_TABLE = "agentEnrollment";
+const HOST_TABLE = "agentHost";
 const AGENT_TABLE = "agent";
 
-export function createEnrollment(opts: ResolvedAgentAuthOptions) {
+export function createHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
-		"/agent/enrollment/create",
+		"/agent/host/create",
 		{
 			method: "POST",
 			body: z.object({
@@ -25,13 +25,9 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 					)
 					.meta({
 						description:
-							"Enrollment Ed25519 public key as JWK. Client retains the private key.",
+							"Host Ed25519 public key as JWK. Client retains the private key.",
 					}),
-				appSource: z.string().optional().meta({
-					description:
-						'Upstream application identifier (e.g. "cursor", "claude-code")',
-				}),
-				baseScopes: z.array(z.string()).optional().meta({
+				scopes: z.array(z.string()).optional().meta({
 					description:
 						"Default scopes agents inherit. Reactivated agents reset to these.",
 				}),
@@ -39,7 +35,7 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Create or reactivate an enrollment. If a kid matches an existing enrollment for this user, that enrollment is reactivated (§4.3).",
+						"Create or reactivate an agent host. If a kid matches an existing host for this user, that host is reactivated (§4.3).",
 				},
 			},
 		},
@@ -64,10 +60,10 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 				});
 			}
 
-			const baseScopes = ctx.body.baseScopes ?? [];
+			const hostScopes = ctx.body.scopes ?? [];
 
-			if (baseScopes.length > 0 && opts.blockedScopes.length > 0) {
-				const blocked = findBlockedScopes(baseScopes, opts.blockedScopes);
+			if (hostScopes.length > 0 && opts.blockedScopes.length > 0) {
+				const blocked = findBlockedScopes(hostScopes, opts.blockedScopes);
 				if (blocked.length > 0) {
 					throw new APIError("BAD_REQUEST", {
 						message: `${ERROR_CODES.SCOPE_BLOCKED} Blocked: ${blocked.join(", ")}.`,
@@ -75,15 +71,15 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			if (baseScopes.length > 0 && opts.validateScopes) {
+			if (hostScopes.length > 0 && opts.validateScopes) {
 				if (typeof opts.validateScopes === "function") {
-					const valid = await opts.validateScopes(baseScopes);
+					const valid = await opts.validateScopes(hostScopes);
 					if (!valid) {
 						throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
 					}
 				} else if (opts.roles) {
 					const knownScopes = new Set(Object.values(opts.roles).flat());
-					const invalid = baseScopes.filter((s) => !knownScopes.has(s));
+					const invalid = hostScopes.filter((s) => !knownScopes.has(s));
 					if (invalid.length > 0) {
 						throw new APIError("BAD_REQUEST", {
 							message: `${ERROR_CODES.UNKNOWN_SCOPES} Unrecognized: ${invalid.join(", ")}.`,
@@ -101,8 +97,8 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 
 			// §4.3: Idempotent creation — if same kid+userId exists, reactivate it
 			if (kid) {
-				const existing = await ctx.context.adapter.findOne<Enrollment>({
-					model: ENROLLMENT_TABLE,
+				const existing = await ctx.context.adapter.findOne<AgentHost>({
+					model: HOST_TABLE,
 					where: [
 						{ field: "kid", value: kid },
 						{ field: "userId", value: session.user.id },
@@ -110,16 +106,15 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 				});
 
 				if (existing && existing.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 
 				if (existing) {
 					await ctx.context.adapter.update({
-						model: ENROLLMENT_TABLE,
+						model: HOST_TABLE,
 						where: [{ field: "id", value: existing.id }],
 						update: {
-							appSource: ctx.body.appSource ?? existing.appSource,
-							baseScopes: JSON.stringify(baseScopes),
+							scopes: JSON.stringify(hostScopes),
 							publicKey: JSON.stringify(publicKey),
 							status: "active",
 							activatedAt: now,
@@ -129,24 +124,22 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 					});
 
 					return ctx.json({
-						enrollmentId: existing.id,
-						appSource: ctx.body.appSource ?? existing.appSource,
-						baseScopes,
+						hostId: existing.id,
+						scopes: hostScopes,
 						status: "active",
 						reactivated: true,
 					});
 				}
 			}
 
-			const enrollment = await ctx.context.adapter.create<
+			const host = await ctx.context.adapter.create<
 				Record<string, string | Date | null>,
-				Enrollment
+				AgentHost
 			>({
-				model: ENROLLMENT_TABLE,
+				model: HOST_TABLE,
 				data: {
 					userId: session.user.id,
-					appSource: ctx.body.appSource ?? null,
-					baseScopes: JSON.stringify(baseScopes),
+					scopes: JSON.stringify(hostScopes),
 					publicKey: JSON.stringify(publicKey),
 					kid,
 					status: "active",
@@ -159,18 +152,17 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 			});
 
 			return ctx.json({
-				enrollmentId: enrollment.id,
-				appSource: ctx.body.appSource ?? null,
-				baseScopes,
+				hostId: host.id,
+				scopes: hostScopes,
 				status: "active",
 			});
 		},
 	);
 }
 
-export function listEnrollments() {
+export function listHosts() {
 	return createAuthEndpoint(
-		"/agent/enrollment/list",
+		"/agent/host/list",
 		{
 			method: "GET",
 			query: z
@@ -180,7 +172,7 @@ export function listEnrollments() {
 				.optional(),
 			metadata: {
 				openapi: {
-					description: "List enrollments for the current user.",
+					description: "List agent hosts for the current user.",
 				},
 			},
 		},
@@ -197,20 +189,17 @@ export function listEnrollments() {
 				where.push({ field: "status", value: ctx.query.status });
 			}
 
-			const enrollments = await ctx.context.adapter.findMany<Enrollment>({
-				model: ENROLLMENT_TABLE,
+			const hosts = await ctx.context.adapter.findMany<AgentHost>({
+				model: HOST_TABLE,
 				where,
 				sortBy: { field: "createdAt", direction: "desc" },
 			});
 
 			return ctx.json({
-				enrollments: enrollments.map((e) => ({
+				hosts: hosts.map((e) => ({
 					id: e.id,
-					appSource: e.appSource,
-					baseScopes:
-						typeof e.baseScopes === "string"
-							? JSON.parse(e.baseScopes)
-							: e.baseScopes,
+					scopes:
+						typeof e.scopes === "string" ? JSON.parse(e.scopes) : e.scopes,
 					status: e.status,
 					activatedAt: e.activatedAt,
 					expiresAt: e.expiresAt,
@@ -223,17 +212,17 @@ export function listEnrollments() {
 	);
 }
 
-export function getEnrollment() {
+export function getHost() {
 	return createAuthEndpoint(
-		"/agent/enrollment/get",
+		"/agent/host/get",
 		{
 			method: "GET",
 			query: z.object({
-				enrollmentId: z.string(),
+				hostId: z.string(),
 			}),
 			metadata: {
 				openapi: {
-					description: "Get a specific enrollment by ID.",
+					description: "Get a specific agent host by ID.",
 				},
 			},
 		},
@@ -243,48 +232,47 @@ export function getEnrollment() {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const enrollment = await ctx.context.adapter.findOne<Enrollment>({
-				model: ENROLLMENT_TABLE,
+			const host = await ctx.context.adapter.findOne<AgentHost>({
+				model: HOST_TABLE,
 				where: [
-					{ field: "id", value: ctx.query.enrollmentId },
+					{ field: "id", value: ctx.query.hostId },
 					{ field: "userId", value: session.user.id },
 				],
 			});
 
-			if (!enrollment) {
-				throw APIError.from("NOT_FOUND", ERROR_CODES.ENROLLMENT_NOT_FOUND);
+			if (!host) {
+				throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
 			}
 
 			return ctx.json({
-				id: enrollment.id,
-				appSource: enrollment.appSource,
-				baseScopes:
-					typeof enrollment.baseScopes === "string"
-						? JSON.parse(enrollment.baseScopes)
-						: enrollment.baseScopes,
-				status: enrollment.status,
-				activatedAt: enrollment.activatedAt,
-				expiresAt: enrollment.expiresAt,
-				lastUsedAt: enrollment.lastUsedAt,
-				createdAt: enrollment.createdAt,
-				updatedAt: enrollment.updatedAt,
+				id: host.id,
+				scopes:
+					typeof host.scopes === "string"
+						? JSON.parse(host.scopes)
+						: host.scopes,
+				status: host.status,
+				activatedAt: host.activatedAt,
+				expiresAt: host.expiresAt,
+				lastUsedAt: host.lastUsedAt,
+				createdAt: host.createdAt,
+				updatedAt: host.updatedAt,
 			});
 		},
 	);
 }
 
-export function revokeEnrollment() {
+export function revokeHost() {
 	return createAuthEndpoint(
-		"/agent/enrollment/revoke",
+		"/agent/host/revoke",
 		{
 			method: "POST",
 			body: z.object({
-				enrollmentId: z.string(),
+				hostId: z.string(),
 			}),
 			metadata: {
 				openapi: {
 					description:
-						"Revoke an enrollment (clears public key) and cascade to all agents under it (§9.3).",
+						"Revoke an agent host (clears public key) and cascade to all agents under it (§9.3).",
 				},
 			},
 		},
@@ -294,27 +282,27 @@ export function revokeEnrollment() {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const enrollment = await ctx.context.adapter.findOne<Enrollment>({
-				model: ENROLLMENT_TABLE,
+			const host = await ctx.context.adapter.findOne<AgentHost>({
+				model: HOST_TABLE,
 				where: [
-					{ field: "id", value: ctx.body.enrollmentId },
+					{ field: "id", value: ctx.body.hostId },
 					{ field: "userId", value: session.user.id },
 				],
 			});
 
-			if (!enrollment) {
-				throw APIError.from("NOT_FOUND", ERROR_CODES.ENROLLMENT_NOT_FOUND);
+			if (!host) {
+				throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
 			}
 
-			if (enrollment.status === "revoked") {
+			if (host.status === "revoked") {
 				return ctx.json({ success: true, revokedAgentCount: 0 });
 			}
 
 			const now = new Date();
 
 			await ctx.context.adapter.update({
-				model: ENROLLMENT_TABLE,
-				where: [{ field: "id", value: enrollment.id }],
+				model: HOST_TABLE,
+				where: [{ field: "id", value: host.id }],
 				update: {
 					status: "revoked",
 					publicKey: "",
@@ -326,7 +314,7 @@ export function revokeEnrollment() {
 			const agents = await ctx.context.adapter.findMany<Agent>({
 				model: AGENT_TABLE,
 				where: [
-					{ field: "enrollmentId", value: enrollment.id },
+					{ field: "hostId", value: host.id },
 					{ field: "status", value: "active" },
 				],
 			});
@@ -334,7 +322,7 @@ export function revokeEnrollment() {
 			const expiredAgents = await ctx.context.adapter.findMany<Agent>({
 				model: AGENT_TABLE,
 				where: [
-					{ field: "enrollmentId", value: enrollment.id },
+					{ field: "hostId", value: host.id },
 					{ field: "status", value: "expired" },
 				],
 			});
@@ -363,72 +351,72 @@ export function revokeEnrollment() {
 }
 
 /**
- * POST /agent/enrollment/reactivate
+ * POST /agent/host/reactivate
  *
- * Reactivate an expired enrollment via proof-of-possession.
- * The enrollment must be in "expired" state (public key retained).
+ * Reactivate an expired agent host via proof-of-possession.
+ * The host must be in "expired" state (public key retained).
  */
-export function reactivateEnrollment(
+export function reactivateHost(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiReplayCache,
 ) {
 	return createAuthEndpoint(
-		"/agent/enrollment/reactivate",
+		"/agent/host/reactivate",
 		{
 			method: "POST",
 			body: z.object({
-				enrollmentId: z.string(),
+				hostId: z.string(),
 				proof: z.string().meta({
 					description:
-						"A JWT signed by the enrollment's private key proving possession.",
+						"A JWT signed by the host's private key proving possession.",
 				}),
 			}),
 			metadata: {
 				openapi: {
 					description:
-						"Reactivate an expired enrollment via proof-of-possession (§7).",
+						"Reactivate an expired agent host via proof-of-possession (§7).",
 				},
 			},
 		},
 		async (ctx) => {
-			const enrollment = await ctx.context.adapter.findOne<Enrollment>({
-				model: ENROLLMENT_TABLE,
-				where: [{ field: "id", value: ctx.body.enrollmentId }],
+			const host = await ctx.context.adapter.findOne<AgentHost>({
+				model: HOST_TABLE,
+				where: [{ field: "id", value: ctx.body.hostId }],
 			});
 
-			if (!enrollment) {
-				throw APIError.from("NOT_FOUND", ERROR_CODES.ENROLLMENT_NOT_FOUND);
+			if (!host) {
+				throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
 			}
 
-			if (enrollment.status === "revoked") {
-				throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+			if (host.status === "revoked") {
+				throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 			}
 
-			if (enrollment.status === "active") {
+			if (host.status === "active") {
 				return ctx.json({
 					status: "active",
-					message: "Enrollment is already active.",
+					message: "Agent host is already active.",
 				});
 			}
 
-			if (!enrollment.publicKey) {
-				throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+			if (!host.publicKey) {
+				throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 			}
 
-			let enrollmentPubKey: AgentJWK;
+			let hostPubKey: AgentJWK;
 			try {
-				enrollmentPubKey = JSON.parse(enrollment.publicKey);
+				hostPubKey = JSON.parse(host.publicKey);
 			} catch {
 				throw APIError.from("FORBIDDEN", ERROR_CODES.INVALID_PUBLIC_KEY);
 			}
 
 			const payload = await verifyAgentJWT({
 				jwt: ctx.body.proof,
-				publicKey: enrollmentPubKey,
+				publicKey: hostPubKey,
 				maxAge: opts.jwtMaxAge,
 			});
 
-			if (!payload || payload.sub !== enrollment.id) {
+			if (!payload || payload.sub !== host.id) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
 			}
 
@@ -440,14 +428,13 @@ export function reactivateEnrollment(
 			}
 
 			// §9.2 absoluteLifetime — cannot reactivate past absolute lifetime
-			if (opts.absoluteLifetime > 0 && enrollment.createdAt) {
+			if (opts.absoluteLifetime > 0 && host.createdAt) {
 				const absoluteExpiry =
-					new Date(enrollment.createdAt).getTime() +
-					opts.absoluteLifetime * 1000;
+					new Date(host.createdAt).getTime() + opts.absoluteLifetime * 1000;
 				if (Date.now() >= absoluteExpiry) {
 					await ctx.context.adapter.update({
-						model: ENROLLMENT_TABLE,
-						where: [{ field: "id", value: enrollment.id }],
+						model: HOST_TABLE,
+						where: [{ field: "id", value: host.id }],
 						update: {
 							status: "revoked",
 							publicKey: "",
@@ -455,7 +442,7 @@ export function reactivateEnrollment(
 							updatedAt: new Date(),
 						},
 					});
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 			}
 
@@ -466,8 +453,8 @@ export function reactivateEnrollment(
 					: null;
 
 			await ctx.context.adapter.update({
-				model: ENROLLMENT_TABLE,
-				where: [{ field: "id", value: enrollment.id }],
+				model: HOST_TABLE,
+				where: [{ field: "id", value: host.id }],
 				update: {
 					status: "active",
 					activatedAt: now,
@@ -479,7 +466,7 @@ export function reactivateEnrollment(
 
 			return ctx.json({
 				status: "active",
-				enrollmentId: enrollment.id,
+				hostId: host.id,
 				activatedAt: now,
 			});
 		},

@@ -10,7 +10,7 @@ function parseJSON<T>(value: string): T {
 
 export const agentSchema = () =>
 	({
-		agentEnrollment: {
+		agentHost: {
 			fields: {
 				userId: {
 					type: "string",
@@ -19,12 +19,7 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-				appSource: {
-					type: "string",
-					required: false,
-					input: false,
-				},
-				baseScopes: {
+				scopes: {
 					type: "string",
 					required: false,
 					input: false,
@@ -95,57 +90,16 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-				enrollmentId: {
+				hostId: {
 					type: "string",
 					references: {
-						model: "agentEnrollment",
+						model: "agentHost",
 						field: "id",
 						onDelete: "cascade",
 					},
-					required: false,
+					required: true,
 					input: false,
 					index: true,
-				},
-				orgId: {
-					type: "string",
-					required: false,
-					input: false,
-					index: true,
-				},
-				workgroupId: {
-					type: "string",
-					references: {
-						model: "agentWorkgroup",
-						field: "id",
-						onDelete: "set null",
-					},
-					required: false,
-					input: false,
-					index: true,
-				},
-				source: {
-					type: "string",
-					required: false,
-					input: false,
-				},
-				scopes: {
-					type: "string",
-					required: false,
-					input: false,
-					transform: {
-						input(value: unknown) {
-							return JSON.stringify(value);
-						},
-						output(value: unknown) {
-							if (!value) return [];
-							return parseJSON<string[]>(value as string);
-						},
-					},
-				},
-				role: {
-					type: "string",
-					required: false,
-					input: false,
 				},
 				status: {
 					type: "string",
@@ -204,7 +158,7 @@ export const agentSchema = () =>
 				},
 			},
 		},
-		agentScopeRequest: {
+		agentPermission: {
 			fields: {
 				agentId: {
 					type: "string",
@@ -213,91 +167,28 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-				userId: {
+				scope: {
+					type: "string",
+					required: true,
+					input: false,
+				},
+				referenceId: {
+					type: "string",
+					required: false,
+					input: false,
+					index: true,
+				},
+				grantedBy: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },
 					required: true,
 					input: false,
 					index: true,
 				},
-				agentName: {
-					type: "string",
-					required: true,
-					input: false,
-				},
-				newName: {
-					type: "string",
-					required: false,
-					input: false,
-				},
-				reason: {
-					type: "string",
-					required: false,
-					input: false,
-				},
-				existingScopes: {
-					type: "string",
-					required: false,
-					input: false,
-					transform: {
-						input(value: unknown) {
-							return JSON.stringify(value);
-						},
-						output(value: unknown) {
-							if (!value) return [];
-							return parseJSON<string[]>(value as string);
-						},
-					},
-				},
-				requestedScopes: {
-					type: "string",
-					required: false,
-					input: false,
-					transform: {
-						input(value: unknown) {
-							return JSON.stringify(value);
-						},
-						output(value: unknown) {
-							if (!value) return [];
-							return parseJSON<string[]>(value as string);
-						},
-					},
-				},
-				status: {
-					type: "string",
-					required: true,
-					input: false,
-					defaultValue: "pending",
-				},
-				createdAt: {
-					type: "date",
-					required: true,
-					input: false,
-				},
 				expiresAt: {
 					type: "date",
-					required: true,
-					input: false,
-				},
-			},
-		},
-		agentWorkgroup: {
-			fields: {
-				name: {
-					type: "string",
-					required: true,
-					input: false,
-				},
-				description: {
-					type: "string",
 					required: false,
 					input: false,
-				},
-				orgId: {
-					type: "string",
-					required: false,
-					input: false,
-					index: true,
 				},
 				createdAt: {
 					type: "date",
@@ -307,6 +198,17 @@ export const agentSchema = () =>
 				updatedAt: {
 					type: "date",
 					required: true,
+					input: false,
+				},
+				status: {
+					type: "string",
+					required: true,
+					input: false,
+					defaultValue: "active",
+				},
+				reason: {
+					type: "string",
+					required: false,
 					input: false,
 				},
 			},

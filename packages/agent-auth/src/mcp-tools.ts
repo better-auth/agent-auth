@@ -12,7 +12,7 @@
 
 import * as z from "zod";
 import type { AgentJWK } from "./crypto";
-import { generateAgentKeypair, signAgentJWT } from "./crypto";
+import { generateAgentKeypair, hashRequestBody, signAgentJWT } from "./crypto";
 
 export interface AgentKeypair {
 	privateKey: AgentJWK;
@@ -330,7 +330,7 @@ export function createAgentMCPTools(
 					}
 
 					const data = (await res.json()) as {
-						orgId: string;
+						referenceId: string;
 						providers: Array<{
 							name: string;
 							displayName: string;
@@ -344,7 +344,7 @@ export function createAgentMCPTools(
 							content: [
 								{
 									type: "text" as const,
-									text: "No providers found for this organization. The user may need to connect services in the dashboard first.",
+									text: "No providers found. The user may need to connect services in the dashboard first.",
 								},
 							],
 						};
@@ -838,14 +838,17 @@ export function createAgentMCPTools(
 				}
 
 				const session = (await res.json()) as {
-					agent: { name: string; scopes: string[] };
+					agent: {
+						name: string;
+						permissions: Array<{ scope: string }>;
+					};
 					user: { name: string; email: string };
 				};
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `Healthy. Agent: ${session.agent.name} (${agentId}). User: ${session.user.name} (${session.user.email}). Scopes: ${session.agent.scopes.join(", ")}`,
+							text: `Healthy. Agent: ${session.agent.name} (${agentId}). User: ${session.user.name} (${session.user.email}). Permissions: ${session.agent.permissions.map((p) => p.scope).join(", ")}`,
 						},
 					],
 				};
@@ -915,9 +918,17 @@ export function createAgentMCPTools(
 					};
 				}
 
+				const requestPath = new URL(fullUrl).pathname;
+				const bodyHash = body ? await hashRequestBody(body) : undefined;
+
 				const jwt = await signAgentJWT({
 					agentId,
 					privateKey: connection.keypair.privateKey,
+					requestBinding: {
+						method,
+						path: requestPath,
+						bodyHash,
+					},
 				});
 
 				const headers: Record<string, string> = {

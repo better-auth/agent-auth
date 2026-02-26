@@ -5,11 +5,11 @@ import { cleanupAgents } from "./cleanup-agents";
 import { createAgent } from "./create-agent";
 import { discover } from "./discover";
 import {
-	createEnrollment,
-	getEnrollment,
-	listEnrollments,
-	reactivateEnrollment,
-	revokeEnrollment,
+	createHost,
+	getHost,
+	listHosts,
+	reactivateHost,
+	revokeHost,
 } from "./enrollment";
 import { getAgent } from "./get-agent";
 import { getAgentSession } from "./get-agent-session";
@@ -20,12 +20,6 @@ import { revokeAgent } from "./revoke-agent";
 import { rotateKey } from "./rotate-key";
 import { scopeRequestStatus } from "./scope-request-status";
 import { updateAgent } from "./update-agent";
-import {
-	createWorkgroup,
-	deleteWorkgroup,
-	listWorkgroups,
-	updateWorkgroup,
-} from "./workgroup";
 
 export function createAgentRoutes(
 	opts: ResolvedAgentAuthOptions,
@@ -35,7 +29,7 @@ export function createAgentRoutes(
 		createAgent: createAgent(opts, jtiCache),
 		listAgents: listAgents(),
 		getAgent: getAgent(),
-		updateAgent: updateAgent(opts),
+		updateAgent: updateAgent(),
 		revokeAgent: revokeAgent(opts),
 		rotateKey: rotateKey(opts),
 		reactivateAgent: reactivateAgent(opts, jtiCache),
@@ -45,14 +39,10 @@ export function createAgentRoutes(
 		scopeRequestStatus: scopeRequestStatus(),
 		approveScope: approveScope(opts),
 		discover: discover(opts),
-		createEnrollment: createEnrollment(opts),
-		listEnrollments: listEnrollments(),
-		getEnrollment: getEnrollment(),
-		revokeEnrollment: revokeEnrollment(),
-		reactivateEnrollment: reactivateEnrollment(opts, jtiCache),
-		createWorkgroup: createWorkgroup(),
-		listWorkgroups: listWorkgroups(),
-		updateWorkgroup: updateWorkgroup(),
-		deleteWorkgroup: deleteWorkgroup(),
+		createHost: createHost(opts),
+		listHosts: listHosts(),
+		getHost: getHost(),
+		revokeHost: revokeHost(),
+		reactivateHost: reactivateHost(opts, jtiCache),
 	};
 }

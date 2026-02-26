@@ -1,5 +1,5 @@
 import type { AgentJWK } from "./crypto";
-import { generateAgentKeypair, signAgentJWT } from "./crypto";
+import { generateAgentKeypair, hashRequestBody, signAgentJWT } from "./crypto";
 import type { AgentSession } from "./types";
 
 export type { AgentJWK } from "./crypto";
@@ -307,12 +307,18 @@ export function createAgentClient(options: AgentClientOptions) {
 
 	const base = baseURL.replace(/\/+$/, "");
 
-	async function getAuthHeader(): Promise<string> {
+	async function signRequest(
+		method: string,
+		path: string,
+		body?: string,
+	): Promise<string> {
+		const bodyHash = body ? await hashRequestBody(body) : undefined;
 		const jwt = await signAgentJWT({
 			agentId,
 			privateKey,
 			expiresIn: jwtExpiresIn,
 			format: jwtFormat,
+			requestBinding: { method: method.toUpperCase(), path, bodyHash },
 		});
 		return `Bearer ${jwt}`;
 	}
@@ -320,11 +326,16 @@ export function createAgentClient(options: AgentClientOptions) {
 	return {
 		/**
 		 * Make an authenticated fetch to the app.
-		 * Automatically signs a fresh JWT and attaches it as a Bearer token.
+		 * Automatically signs a request-bound JWT and attaches it as a Bearer token.
 		 */
 		async fetch(path: string, init?: RequestInit): Promise<Response> {
 			const url = path.startsWith("http") ? path : `${base}${path}`;
-			const auth = await getAuthHeader();
+			const requestPath = path.startsWith("http")
+				? new URL(path).pathname
+				: path;
+			const method = init?.method ?? "GET";
+			const body = typeof init?.body === "string" ? init.body : undefined;
+			const auth = await signRequest(method, requestPath, body);
 			return globalThis.fetch(url, {
 				...init,
 				headers: {
@@ -339,8 +350,9 @@ export function createAgentClient(options: AgentClientOptions) {
 		 * Returns the agent session or null if auth fails.
 		 */
 		async getSession(): Promise<AgentSession | null> {
-			const auth = await getAuthHeader();
-			const res = await globalThis.fetch(`${base}/api/auth/agent/get-session`, {
+			const sessionPath = "/api/auth/agent/get-session";
+			const auth = await signRequest("GET", sessionPath);
+			const res = await globalThis.fetch(`${base}${sessionPath}`, {
 				headers: { Authorization: auth },
 			});
 			if (!res.ok) return null;

@@ -45,17 +45,51 @@ export async function generateAgentKeypair(): Promise<{
 	};
 }
 
+export interface RequestBinding {
+	/** HTTP method (e.g. "POST"). Maps to DPoP `htm` claim. */
+	method: string;
+	/** Request path (e.g. "/api/emails/send"). Maps to DPoP `htu` claim. */
+	path: string;
+	/** SHA-256 hash of the request body. Maps to DPoP `ath` claim. Omit for bodyless requests. */
+	bodyHash?: string;
+}
+
 export interface SignAgentJWTOptions {
 	agentId: string;
 	privateKey: AgentJWK;
 	expiresIn?: number;
 	format?: "simple" | "aap";
 	additionalClaims?: Record<string, string | number | boolean>;
+	/** Bind this JWT to a specific HTTP request (DPoP-style). */
+	requestBinding?: RequestBinding;
+}
+
+/**
+ * Compute a SHA-256 hash of a request body for request binding.
+ * Returns a base64url-encoded digest.
+ */
+export async function hashRequestBody(
+	body: string | Uint8Array,
+): Promise<string> {
+	const data = typeof body === "string" ? new TextEncoder().encode(body) : body;
+	const digest = await globalThis.crypto.subtle.digest(
+		"SHA-256",
+		data.buffer as ArrayBuffer,
+	);
+	const bytes = new Uint8Array(digest);
+	let binary = "";
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	return btoa(binary)
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
 }
 
 /**
  * Sign a short-lived JWT with the agent's Ed25519 private key.
- * Encapsulates the simple vs AAP claim format logic.
+ * Optionally binds the JWT to a specific HTTP request via DPoP-style claims.
  */
 export async function signAgentJWT(options: SignAgentJWTOptions) {
 	const {
@@ -64,10 +98,20 @@ export async function signAgentJWT(options: SignAgentJWTOptions) {
 		expiresIn = 60,
 		format = "simple",
 		additionalClaims,
+		requestBinding,
 	} = options;
 
 	const key = await importJWK(privateKey, "EdDSA");
 	const now = Math.floor(Date.now() / 1000);
+
+	const bindingClaims: Record<string, string> = {};
+	if (requestBinding) {
+		bindingClaims.htm = requestBinding.method.toUpperCase();
+		bindingClaims.htu = requestBinding.path;
+		if (requestBinding.bodyHash) {
+			bindingClaims.ath = requestBinding.bodyHash;
+		}
+	}
 
 	return await new SignJWT({
 		...(format === "aap"
@@ -80,6 +124,7 @@ export async function signAgentJWT(options: SignAgentJWTOptions) {
 					...additionalClaims,
 				}
 			: additionalClaims),
+		...bindingClaims,
 	})
 		.setProtectedHeader({
 			alg: "EdDSA",

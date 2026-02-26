@@ -3,17 +3,21 @@ import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import { findBlockedScopes } from "../scopes";
-import type { AgentSession, ResolvedAgentAuthOptions } from "../types";
+import type {
+	AgentPermission,
+	AgentSession,
+	ResolvedAgentAuthOptions,
+} from "../types";
 
-const SCOPE_REQUEST_TABLE = "agentScopeRequest";
-const TTL_MS = 5 * 60 * 1000;
+const PERMISSION_TABLE = "agentPermission";
 
 /**
  * POST /agent/request-scope
  *
- * Called by an agent (authenticated via JWT) to request additional scopes
- * or a name change. Creates a pending scope request that the user must
- * approve in their browser. Returns a requestId and verificationUrl.
+ * Called by an agent (authenticated via JWT) to request additional scopes.
+ * Creates pending agentPermission rows that the user must approve in
+ * their browser. Returns the list of pending permission IDs and a
+ * verificationUrl.
  */
 export function requestScope(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -25,10 +29,6 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 					.array(z.string())
 					.min(1)
 					.describe("Scopes the agent wants to add"),
-				name: z
-					.string()
-					.optional()
-					.describe("New agent name reflecting expanded role"),
 				reason: z
 					.string()
 					.optional()
@@ -57,7 +57,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const { scopes, name, reason } = ctx.body;
+			const { scopes, reason } = ctx.body;
 
 			if (opts.blockedScopes.length > 0) {
 				const blocked = findBlockedScopes(scopes, opts.blockedScopes);
@@ -68,14 +68,23 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			const existingScopes = agentSession.agent.scopes ?? [];
-			const newOnly = scopes.filter((s: string) => !existingScopes.includes(s));
-			const hasNameChange = !!name && name !== agentSession.agent.name;
+			const existingPerms = await ctx.context.adapter.findMany<AgentPermission>(
+				{
+					model: PERMISSION_TABLE,
+					where: [{ field: "agentId", value: agentSession.agent.id }],
+				},
+			);
 
-			if (newOnly.length === 0 && !hasNameChange) {
+			const activeScopes = existingPerms
+				.filter((p) => p.status === "active")
+				.map((p) => p.scope);
+
+			const newOnly = scopes.filter((s: string) => !activeScopes.includes(s));
+
+			if (newOnly.length === 0) {
 				return ctx.json({
 					agentId: agentSession.agent.id,
-					scopes: existingScopes,
+					scopes: activeScopes,
 					added: [],
 					status: "approved",
 					message: "All requested scopes were already present.",
@@ -83,30 +92,34 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const now = new Date();
-			const expiresAt = new Date(now.getTime() + TTL_MS);
+			const pendingIds: string[] = [];
 
-			const scopeRequest = await ctx.context.adapter.create({
-				model: SCOPE_REQUEST_TABLE,
-				data: {
-					agentId: agentSession.agent.id,
-					userId: agentSession.user.id,
-					agentName: agentSession.agent.name,
-					newName: name || null,
-					reason: reason || null,
-					existingScopes,
-					requestedScopes: newOnly,
-					status: "pending",
-					createdAt: now,
-					expiresAt,
-				},
-			});
+			for (const scope of newOnly) {
+				const perm = await ctx.context.adapter.create<AgentPermission>({
+					model: PERMISSION_TABLE,
+					data: {
+						agentId: agentSession.agent.id,
+						scope,
+						referenceId: null,
+						grantedBy: agentSession.user.id,
+						expiresAt: null,
+						status: "pending",
+						reason: reason || null,
+						createdAt: now,
+						updatedAt: now,
+					},
+				});
+				pendingIds.push(perm.id);
+			}
 
 			const origin = new URL(ctx.context.baseURL).origin;
+			const requestId = agentSession.agent.id;
 
 			return ctx.json({
-				requestId: scopeRequest.id,
+				requestId,
+				pendingPermissionIds: pendingIds,
 				status: "pending",
-				verificationUrl: `${origin}/device/scopes?request_id=${scopeRequest.id}`,
+				verificationUrl: `${origin}/device/scopes?request_id=${pendingIds[0]}`,
 				message:
 					"Scope escalation requires user approval. Open the verificationUrl in a browser to approve.",
 			});

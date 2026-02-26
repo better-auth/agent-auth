@@ -573,7 +573,6 @@ describe("agent-auth enrollment", async () => {
 			headers,
 			body: {
 				publicKey: enrollmentKeypair.publicKey,
-				appSource: "cursor",
 				baseScopes: ["reports.read"],
 			},
 		});
@@ -592,7 +591,6 @@ describe("agent-auth enrollment", async () => {
 			(e: { id: string }) => e.id === enrollmentId,
 		);
 		expect(found).toBeDefined();
-		expect(found?.appSource).toBe("cursor");
 		expect(found?.status).toBe("active");
 	});
 
@@ -602,7 +600,6 @@ describe("agent-auth enrollment", async () => {
 			query: { enrollmentId },
 		});
 		expect(res.id).toBe(enrollmentId);
-		expect(res.appSource).toBe("cursor");
 		expect(res.baseScopes).toEqual(["reports.read"]);
 	});
 

@@ -5,17 +5,23 @@ import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
-import type { Agent, Enrollment, ResolvedAgentAuthOptions } from "../types";
+import type {
+	Agent,
+	AgentHost,
+	AgentPermission,
+	ResolvedAgentAuthOptions,
+} from "../types";
 
 const AGENT_TABLE = "agent";
-const ENROLLMENT_TABLE = "agentEnrollment";
+const HOST_TABLE = "agentHost";
+const PERMISSION_TABLE = "agentPermission";
 
 /**
  * POST /agent/reactivate
  *
  * Reactivate an expired agent via proof-of-possession (§7).
  * The agent must be in "expired" state (public key retained).
- * Scopes reset to the enrollment's baseScopes (scope decay §7.3).
+ * Permissions decay to the host's scopes (§7.3).
  * `activatedAt` and `maxLifetime` clock reset.
  */
 export function reactivateAgent(
@@ -36,7 +42,7 @@ export function reactivateAgent(
 			metadata: {
 				openapi: {
 					description:
-						"Reactivate an expired agent via proof-of-possession. Scopes decay to enrollment baseScopes.",
+						"Reactivate an expired agent via proof-of-possession. Permissions decay to host scopes.",
 				},
 			},
 		},
@@ -61,7 +67,6 @@ export function reactivateAgent(
 				});
 			}
 
-			// §7.2 absoluteLifetime — cannot reactivate past absolute lifetime
 			if (opts.absoluteLifetime > 0 && agent.createdAt) {
 				const absoluteExpiry =
 					new Date(agent.createdAt).getTime() + opts.absoluteLifetime * 1000;
@@ -101,7 +106,6 @@ export function reactivateAgent(
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
 			}
 
-			// §15.5 JTI replay detection
 			if (jtiCache && payload.jti) {
 				if (jtiCache.has(payload.jti)) {
 					throw APIError.from("UNAUTHORIZED", ERROR_CODES.JWT_REPLAY);
@@ -109,29 +113,54 @@ export function reactivateAgent(
 				jtiCache.add(payload.jti, opts.jwtMaxAge);
 			}
 
-			let baseScopes: string[] = [];
-			if (agent.enrollmentId) {
-				const enrollment = await ctx.context.adapter.findOne<Enrollment>({
-					model: ENROLLMENT_TABLE,
-					where: [{ field: "id", value: agent.enrollmentId }],
+			const now = new Date();
+
+			// Scope decay: if host exists, reset permissions to host scopes
+			if (agent.hostId) {
+				const host = await ctx.context.adapter.findOne<AgentHost>({
+					model: HOST_TABLE,
+					where: [{ field: "id", value: agent.hostId }],
 				});
 
-				if (!enrollment || enrollment.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+				if (!host || host.status === "revoked") {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 
-				baseScopes =
-					typeof enrollment.baseScopes === "string"
-						? JSON.parse(enrollment.baseScopes)
-						: enrollment.baseScopes;
-			} else {
-				baseScopes =
-					typeof agent.scopes === "string"
-						? JSON.parse(agent.scopes)
-						: agent.scopes;
-			}
+				const baseScopes: string[] =
+					typeof host.scopes === "string"
+						? JSON.parse(host.scopes)
+						: host.scopes;
 
-			const now = new Date();
+				const existingPerms =
+					await ctx.context.adapter.findMany<AgentPermission>({
+						model: PERMISSION_TABLE,
+						where: [{ field: "agentId", value: agent.id }],
+					});
+				for (const perm of existingPerms) {
+					await ctx.context.adapter.delete({
+						model: PERMISSION_TABLE,
+						where: [{ field: "id", value: perm.id }],
+					});
+				}
+				for (const scope of baseScopes) {
+					await ctx.context.adapter.create({
+						model: PERMISSION_TABLE,
+						data: {
+							agentId: agent.id,
+							scope,
+							referenceId: null,
+							grantedBy: agent.userId,
+							expiresAt: null,
+							status: "active",
+							reason: null,
+							createdAt: now,
+							updatedAt: now,
+						},
+					});
+				}
+			}
+			// If no host, keep existing permissions as-is
+
 			const expiresAt =
 				opts.agentSessionTTL > 0
 					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
@@ -142,7 +171,6 @@ export function reactivateAgent(
 				where: [{ field: "id", value: agent.id }],
 				update: {
 					status: "active",
-					scopes: JSON.stringify(baseScopes),
 					activatedAt: now,
 					expiresAt,
 					lastUsedAt: now,
@@ -150,10 +178,23 @@ export function reactivateAgent(
 				},
 			});
 
+			const permissions = await ctx.context.adapter.findMany<AgentPermission>({
+				model: PERMISSION_TABLE,
+				where: [{ field: "agentId", value: agent.id }],
+			});
+
+			const activePermissions = permissions.filter(
+				(p) => p.status === "active",
+			);
+
 			return ctx.json({
 				status: "active",
 				agentId: agent.id,
-				scopes: baseScopes,
+				permissions: activePermissions.map((p) => ({
+					scope: p.scope,
+					referenceId: p.referenceId,
+					grantedBy: p.grantedBy,
+				})),
 				activatedAt: now,
 			});
 		},

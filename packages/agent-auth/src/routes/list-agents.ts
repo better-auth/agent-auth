@@ -3,9 +3,10 @@ import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { Agent } from "../types";
+import type { Agent, AgentPermission } from "../types";
 
 const AGENT_TABLE = "agent";
+const PERMISSION_TABLE = "agentPermission";
 
 export function listAgents() {
 	return createAuthEndpoint(
@@ -14,11 +15,6 @@ export function listAgents() {
 			method: "GET",
 			query: z
 				.object({
-					orgId: z.string().optional(),
-					workgroupId: z
-						.string()
-						.meta({ description: "Filter by workgroup" })
-						.optional(),
 					status: z
 						.enum(["active", "expired", "revoked"])
 						.meta({ description: "Filter by status (default: all)" })
@@ -71,14 +67,6 @@ export function listAgents() {
 				{ field: "userId", value: session.user.id },
 			];
 
-			if (ctx.query?.orgId) {
-				where.push({ field: "orgId", value: ctx.query.orgId });
-			}
-
-			if (ctx.query?.workgroupId) {
-				where.push({ field: "workgroupId", value: ctx.query.workgroupId });
-			}
-
 			if (ctx.query?.status) {
 				where.push({ field: "status", value: ctx.query.status });
 			}
@@ -97,26 +85,37 @@ export function listAgents() {
 				}),
 			]);
 
+			const agentsWithPermissions = await Promise.all(
+				agents.map(async (agent) => {
+					const permissions =
+						await ctx.context.adapter.findMany<AgentPermission>({
+							model: PERMISSION_TABLE,
+							where: [{ field: "agentId", value: agent.id }],
+						});
+					return {
+						id: agent.id,
+						name: agent.name,
+						status: agent.status,
+						permissions: permissions.map((p) => ({
+							scope: p.scope,
+							referenceId: p.referenceId,
+							grantedBy: p.grantedBy,
+							status: p.status,
+							expiresAt: p.expiresAt,
+						})),
+						lastUsedAt: agent.lastUsedAt,
+						createdAt: agent.createdAt,
+						updatedAt: agent.updatedAt,
+						metadata:
+							typeof agent.metadata === "string"
+								? JSON.parse(agent.metadata)
+								: agent.metadata,
+					};
+				}),
+			);
+
 			return ctx.json({
-				agents: agents.map((agent) => ({
-					id: agent.id,
-					name: agent.name,
-					status: agent.status,
-					scopes:
-						typeof agent.scopes === "string"
-							? JSON.parse(agent.scopes)
-							: agent.scopes,
-					role: agent.role,
-					orgId: agent.orgId,
-					workgroupId: agent.workgroupId,
-					lastUsedAt: agent.lastUsedAt,
-					createdAt: agent.createdAt,
-					updatedAt: agent.updatedAt,
-					metadata:
-						typeof agent.metadata === "string"
-							? JSON.parse(agent.metadata)
-							: agent.metadata,
-				})),
+				agents: agentsWithPermissions,
 				total,
 				limit,
 				offset,

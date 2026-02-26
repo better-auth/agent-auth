@@ -2,40 +2,17 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import type { AgentPermission } from "../types";
 
-const SCOPE_REQUEST_TABLE = "agentScopeRequest";
-
-interface ScopeRequestRecord {
-	id: string;
-	agentId: string;
-	userId: string;
-	agentName: string;
-	newName: string | null;
-	existingScopes: string[] | string;
-	requestedScopes: string[] | string;
-	status: string;
-	createdAt: Date;
-	expiresAt: Date;
-}
-
-function parseScopes(val: unknown): string[] {
-	if (Array.isArray(val)) return val;
-	if (typeof val === "string") {
-		try {
-			return JSON.parse(val);
-		} catch {
-			return [];
-		}
-	}
-	return [];
-}
+const PERMISSION_TABLE = "agentPermission";
+const AGENT_TABLE = "agent";
 
 /**
  * GET /agent/scope-request-status
  *
- * Poll the status of a pending scope request. Used by the CLI / MCP
- * server to wait for user approval. No authentication required since
- * the requestId is unguessable.
+ * Poll the status of pending permission requests for an agent.
+ * Used by the CLI / MCP server to wait for user approval.
+ * The requestId is the agent ID.
  */
 export function scopeRequestStatus() {
 	return createAuthEndpoint(
@@ -47,42 +24,46 @@ export function scopeRequestStatus() {
 			}),
 			metadata: {
 				openapi: {
-					description: "Check the status of a pending scope request.",
+					description:
+						"Check the status of pending permission requests for an agent.",
 				},
 			},
 		},
 		async (ctx) => {
-			const { requestId } = ctx.query;
+			const { requestId: agentId } = ctx.query;
 
-			const scopeReq = await ctx.context.adapter.findOne<ScopeRequestRecord>({
-				model: SCOPE_REQUEST_TABLE,
-				where: [{ field: "id", value: requestId }],
+			const agent = await ctx.context.adapter.findOne<{
+				id: string;
+				name: string;
+			}>({
+				model: AGENT_TABLE,
+				where: [{ field: "id", value: agentId }],
 			});
 
-			if (!scopeReq) {
+			if (!agent) {
 				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
 			}
 
-			if (new Date(scopeReq.expiresAt) <= new Date()) {
-				throw APIError.from("NOT_FOUND", ERROR_CODES.SCOPE_REQUEST_NOT_FOUND);
-			}
+			const allPerms = await ctx.context.adapter.findMany<AgentPermission>({
+				model: PERMISSION_TABLE,
+				where: [{ field: "agentId", value: agentId }],
+			});
 
-			const existing = parseScopes(scopeReq.existingScopes);
-			const requested = parseScopes(scopeReq.requestedScopes);
+			const activePerms = allPerms.filter((p) => p.status === "active");
+			const pendingPerms = allPerms.filter((p) => p.status === "pending");
+
+			const hasPending = pendingPerms.length > 0;
+			const status = hasPending ? "pending" : "approved";
 
 			return ctx.json({
-				requestId: scopeReq.id,
-				status: scopeReq.status,
-				agentId: scopeReq.agentId,
-				agentName: scopeReq.agentName,
-				newName: scopeReq.newName || undefined,
-				existingScopes: existing,
-				requestedScopes: requested,
-				scopes:
-					scopeReq.status === "approved"
-						? [...new Set([...existing, ...requested])]
-						: undefined,
-				added: scopeReq.status === "approved" ? requested : undefined,
+				requestId: agentId,
+				status,
+				agentId,
+				agentName: agent.name,
+				existingScopes: activePerms.map((p) => p.scope),
+				requestedScopes: pendingPerms.map((p) => p.scope),
+				scopes: !hasPending ? activePerms.map((p) => p.scope) : undefined,
+				added: !hasPending ? [] : undefined,
 			});
 		},
 	);

@@ -3,31 +3,31 @@ title: Agent Auth
 description: Give AI agents their own identity and permissions.
 ---
 
-`AAP` `Ed25519` `Enrollments` `MCP`
+`Ed25519` `Hosts` `Permissions` `MCP`
 
-The Agent Auth plugin gives AI agent runtimes their own identity so they can act **for** users without impersonating them. Instead of sharing user tokens, each agent gets its own keypair, scopes, and role — following the [IETF Agent Authorization Profile](https://datatracker.ietf.org/doc/draft-ietf-oauth-agent-authorization/).
+The Agent Auth plugin gives AI agents their own cryptographic identity so they can act **for** users without sharing or impersonating user tokens. Each agent gets its own Ed25519 keypair, and permissions are granted per-agent by individual users — with support for multi-grantor authorization, resource scoping, and request-bound proof-of-possession.
 
 **Core principle:** Agents are tools we hire, not users we pretend to be.
 
 ## Features
 
 - Ed25519 keypair-based authentication (agent owns its private key)
-- [Enrollments](#enrollments) — persistent app-level consent for silent agent creation
+- [Hosts](#hosts) — persistent app-level consent for silent agent creation
 - [Three-state lifecycle](#three-state-lifecycle) — `active` → `expired` → `revoked` with proof-of-possession reactivation
 - [Transparent reactivation](#transparent-reactivation) — expired agents auto-reactivate on valid JWT
 - [Three lifetime clocks](#lifetime-clocks) — sliding TTL, max lifetime, absolute lifetime
-- [Scoped permissions](#roles-and-scopes) via roles, wildcard matching, and blocked scopes
+- [Permission-based authorization](#permissions-and-scopes) via roles, wildcard matching, and blocked scopes
 - [Scope escalation](#scope-escalation) with fresh session enforcement
+- [Request binding](#request-binding) — optional DPoP-style JWT claims for method, path, and body hash
 - [Discovery endpoint](#discovery) for capability negotiation
-- [JTI replay detection](#jti-replay-detection) for agent and enrollment JWTs
+- [JTI replay detection](#jti-replay-detection) for agent and host JWTs
 - [Device authorization connect flow](#connecting-an-agent) — user approves in browser, no manual tokens
 - [Key rotation](#rotate-key) without downtime
 - [Revocation](#revoke-an-agent) with credential wipe and cascade
-- [Workgroups](#workgroups) — group agents within an organization
 - [Agent SDK](#agent-sdk) for agent runtimes
 - [MCP server](#mcp-server) for Cursor, Claude Desktop, and other AI tools
 - [Pluggable storage](#storage-options) — memory (default), file, or database
-- [AAP-compatible JWT claims](#aap-format) (IETF Agent Authorization Profile)
+- [AAP-compatible JWT claims](#aap-format) (optional structured claim format)
 
 ## Installation
 
@@ -91,18 +91,27 @@ The Agent Auth plugin gives AI agent runtimes their own identity so they can act
 
 ## How It Works
 
-1. **Agent generates a keypair** — an Ed25519 keypair is generated client-side; the private key never leaves the agent
-2. **Agent connects** — via device authorization (user approves in browser) or enrollment (silent)
-3. **Public key is registered** — the server stores the public key
-4. **Agent signs JWTs** — for each request, the agent signs a short-lived JWT with its private key
-5. **Server verifies** — Better Auth verifies the JWT, resolves the agent session, and attaches it to the request
-6. **Auto-reactivation** — if the agent has expired, the server transparently reactivates it (no extra round-trip)
+Agent Auth follows an **Agent → Host → Server** architecture:
+
+- **Agent** — an AI identity with its own Ed25519 keypair
+- **Host** — a registered client runtime (Cursor, MCP server, CLI) with pre-authorized scope budget
+- **Server** — your app's auth backend running the Agent Auth plugin
+
+The flow:
+
+1. **User registers a host** — a persistent app-level consent record with a scope budget and its own keypair
+2. **Agent generates a keypair** — an Ed25519 keypair is generated client-side; the private key never leaves the agent
+3. **Agent connects** — via device authorization (user approves in browser) or host JWT (silent)
+4. **Public key is registered** — the server stores the agent's public key and creates permission rows from the host's scope budget
+5. **Agent signs JWTs** — for each request, the agent signs a short-lived JWT with its private key
+6. **Server verifies** — Better Auth verifies the JWT, resolves the agent session with active permissions, and attaches it to the request
+7. **Auto-reactivation** — if the agent has expired, the server transparently reactivates it (no extra round-trip)
 
 ## Agents
 
 ### Create an Agent
 
-<APIMethod path="/agent/create" method="POST" requireSession>
+<APIMethod path="/agent/create" method="POST">
 ```ts
 type createAgent = {
     /**
@@ -115,30 +124,18 @@ type createAgent = {
     publicKey: Record<string, string | boolean | string[]>
     /**
      * Scope strings the agent is granted. When used with
-     * enrollmentJWT, must be a subset of baseScopes.
+     * hostJWT, must be a subset of the host's scopes.
      */
     scopes?: string[]
     /**
-     * Role name for the agent.
+     * Role name to resolve scopes from.
      */
     role?: string
     /**
-     * Organization ID (if org-scoped).
+     * A JWT signed by the host's private key (sub = hostId).
+     * Enables silent agent creation without user session.
      */
-    orgId?: string
-    /**
-     * Workgroup ID within the org.
-     */
-    workgroupId?: string
-    /**
-     * Upstream application identifier (e.g. "cursor", "claude-code").
-     */
-    source?: string
-    /**
-     * A JWT signed by the enrollment's private key (sub = enrollmentId).
-     * Enables silent agent creation without user session (§6).
-     */
-    enrollmentJWT?: string
+    hostJWT?: string
     /**
      * Optional metadata.
      */
@@ -152,13 +149,12 @@ const { data } = await authClient.agent.create({
     name: "Finance Agent",
     publicKey: agentPublicKey,
     scopes: ["reports.read", "email.send"],
-    source: "cursor",
 }, { headers })
 // data.agentId — store this on the agent side
 ```
 
 <Callout type="info">
-When `enrollmentJWT` is provided, no user session is required. The agent is created under the enrollment's owner. Requested `scopes` must be a subset of the enrollment's `baseScopes` — if omitted, the full `baseScopes` are granted.
+When `hostJWT` is provided, no user session is required. The agent is created under the host's owner. Requested `scopes` must be a subset of the host's `scopes` — if omitted, the full host scopes are granted.
 </Callout>
 
 ### List Agents
@@ -171,15 +167,7 @@ type listAgents = {
      */
     status?: "active" | "expired" | "revoked"
     /**
-     * Filter by organization ID.
-     */
-    orgId?: string
-    /**
-     * Filter by workgroup ID.
-     */
-    workgroupId?: string
-    /**
-     * Maximum number of results.
+     * Maximum number of results (default 50, max 200).
      */
     limit?: number
     /**
@@ -189,7 +177,7 @@ type listAgents = {
     /**
      * Sort field.
      */
-    sortBy?: string
+    sortBy?: "createdAt" | "lastUsedAt" | "name"
     /**
      * Sort direction.
      */
@@ -225,6 +213,8 @@ const { data } = await authClient.agent.get({
 
 ### Update an Agent
 
+Updates an agent's name or metadata. Permissions are managed separately via the [scope escalation](#scope-escalation) flow.
+
 <APIMethod path="/agent/update" method="POST" requireSession>
 ```ts
 type updateAgent = {
@@ -237,13 +227,9 @@ type updateAgent = {
      */
     name?: string
     /**
-     * New scopes.
+     * New metadata.
      */
-    scopes?: string[]
-    /**
-     * New role.
-     */
-    role?: string
+    metadata?: Record<string, string | number | boolean | null>
 }
 ```
 </APIMethod>
@@ -252,7 +238,7 @@ type updateAgent = {
 await authClient.agent.update({
     agentId: "agent-id",
     name: "Renamed Agent",
-    scopes: ["reports.read", "calendar.write"],
+    metadata: { version: "2.0" },
 }, { headers })
 ```
 
@@ -356,56 +342,51 @@ const { data } = await authClient.agent.cleanup({}, { headers })
 // data.expired — number of agents transitioned to "expired"
 ```
 
-## Enrollments
+## Hosts
 
-Enrollments are persistent, app-level consent records that enable **silent agent creation** — agents can be registered without requiring a user session at the time of creation.
+Hosts are persistent, app-level consent records that represent a **registered client runtime** (Cursor, MCP server, CLI tool). They enable **silent agent creation** — agents can be registered without requiring a user session at the time of creation.
 
-Each enrollment has its own Ed25519 keypair (matching the agent model — no bearer tokens). When an agent is created via enrollment, it inherits the enrollment's `baseScopes`.
+Each host has its own Ed25519 keypair (matching the agent model — no bearer tokens). When an agent is created via a host JWT, it inherits the host's `scopes` as its initial permissions.
 
 <Callout type="info">
-If a `kid` in the public key matches an existing enrollment for the same user, the existing enrollment is reactivated and updated instead of creating a duplicate (idempotent creation per §4.3). If the existing enrollment is revoked, the request is rejected.
+If a `kid` in the public key matches an existing host for the same user, the existing host is reactivated and updated instead of creating a duplicate (idempotent creation). If the existing host is revoked, the request is rejected.
 </Callout>
 
-### Create an Enrollment
+### Create a Host
 
-<APIMethod path="/agent/enrollment/create" method="POST" requireSession>
+<APIMethod path="/agent/host/create" method="POST" requireSession>
 ```ts
-type createEnrollment = {
+type createHost = {
     /**
-     * Enrollment Ed25519 public key as JWK. Client retains the private key.
+     * Host Ed25519 public key as JWK. Client retains the private key.
      */
     publicKey: Record<string, string | boolean | string[]>
     /**
-     * Upstream application identifier (e.g. "cursor", "claude-code").
-     */
-    appSource?: string
-    /**
      * Default scopes agents inherit. Reactivated agents reset to these.
      */
-    baseScopes?: string[]
+    scopes?: string[]
 }
 ```
 </APIMethod>
 
 ```ts
-const { data } = await authClient.agent.enrollment.create({
-    publicKey: enrollmentPublicKey,
-    appSource: "cursor",
-    baseScopes: ["reports.read", "email.send"],
+const { data } = await authClient.agent.host.create({
+    publicKey: hostPublicKey,
+    scopes: ["reports.read", "email.send"],
 }, { headers })
-// data.enrollmentId — use this as the JWT `sub` claim
+// data.hostId — use this as the JWT `sub` claim
 ```
 
-### Create Agent via Enrollment (Silent)
+### Create Agent via Host (Silent)
 
-Sign a JWT with the enrollment's private key (`sub` = enrollmentId), then pass it as `enrollmentJWT`. No user session is required.
+Sign a JWT with the host's private key (`sub` = hostId), then pass it as `hostJWT`. No user session is required.
 
 ```ts title="agent-runtime.ts"
 import { signAgentJWT } from "@better-auth/agent-auth/crypto"
 
-const enrollmentJWT = await signAgentJWT({
-    agentId: enrollmentId,       // used as `sub` claim
-    privateKey: enrollmentPrivateKey,
+const hostJWT = await signAgentJWT({
+    agentId: hostId,       // used as `sub` claim
+    privateKey: hostPrivateKey,
 })
 
 const res = await fetch("/api/auth/agent/create", {
@@ -414,21 +395,21 @@ const res = await fetch("/api/auth/agent/create", {
     body: JSON.stringify({
         name: "Silent Agent",
         publicKey: agentPublicKey,
-        enrollmentJWT, // [!code highlight]
-        scopes: ["reports.read"], // optional subset of baseScopes
+        hostJWT, // [!code highlight]
+        scopes: ["reports.read"], // optional subset of host scopes
     }),
 })
 ```
 
 <Callout type="warn">
-When `scopes` is provided with `enrollmentJWT`, every scope must be a subset of the enrollment's `baseScopes`. Requesting scopes outside the enrollment's base is rejected. When `scopes` is omitted, the full `baseScopes` are granted.
+When `scopes` is provided with `hostJWT`, every scope must be a subset of the host's `scopes`. Requesting scopes outside the host's budget is rejected. When `scopes` is omitted, the full host scopes are granted.
 </Callout>
 
-### List Enrollments
+### List Hosts
 
-<APIMethod path="/agent/enrollment/list" method="GET" requireSession>
+<APIMethod path="/agent/host/list" method="GET" requireSession>
 ```ts
-type listEnrollments = {
+type listHosts = {
     /**
      * Filter by status.
      */
@@ -438,62 +419,62 @@ type listEnrollments = {
 </APIMethod>
 
 ```ts
-const { data } = await authClient.agent.enrollment.list({
+const { data } = await authClient.agent.host.list({
     query: { status: "active" }
 }, { headers })
 ```
 
-### Get Enrollment
+### Get Host
 
-<APIMethod path="/agent/enrollment/get" method="GET" requireSession>
+<APIMethod path="/agent/host/get" method="GET" requireSession>
 ```ts
-type getEnrollment = {
+type getHost = {
     /**
-     * The enrollment ID to retrieve.
+     * The host ID to retrieve.
      */
-    enrollmentId: string
+    hostId: string
 }
 ```
 </APIMethod>
 
 ```ts
-const { data } = await authClient.agent.enrollment.get({
-    query: { enrollmentId: "enr-id" }
+const { data } = await authClient.agent.host.get({
+    query: { hostId: "host-id" }
 }, { headers })
 ```
 
-### Revoke an Enrollment
+### Revoke a Host
 
-Revoking an enrollment clears its public key and cascades to all agents created under it — they are also revoked.
+Revoking a host clears its public key and cascades to all agents created under it — they are also revoked.
 
-<APIMethod path="/agent/enrollment/revoke" method="POST" requireSession>
+<APIMethod path="/agent/host/revoke" method="POST" requireSession>
 ```ts
-type revokeEnrollment = {
+type revokeHost = {
     /**
-     * The enrollment ID to revoke.
+     * The host ID to revoke.
      */
-    enrollmentId: string
+    hostId: string
 }
 ```
 </APIMethod>
 
 ```ts
-await authClient.agent.enrollment.revoke({
-    enrollmentId: "enr-id",
+await authClient.agent.host.revoke({
+    hostId: "host-id",
 }, { headers })
 ```
 
-### Reactivate an Expired Enrollment
+### Reactivate an Expired Host
 
-<APIMethod path="/agent/enrollment/reactivate" method="POST">
+<APIMethod path="/agent/host/reactivate" method="POST">
 ```ts
-type reactivateEnrollment = {
+type reactivateHost = {
     /**
-     * The enrollment ID to reactivate.
+     * The host ID to reactivate.
      */
-    enrollmentId: string
+    hostId: string
     /**
-     * A JWT signed by the enrollment's private key proving possession.
+     * A JWT signed by the host's private key proving possession.
      */
     proof: string
 }
@@ -501,15 +482,15 @@ type reactivateEnrollment = {
 </APIMethod>
 
 ```ts
-await authClient.agent.enrollment.reactivate({
-    enrollmentId: "enr-id",
+await authClient.agent.host.reactivate({
+    hostId: "host-id",
     proof: signedJwt,
 })
 ```
 
 ## Three-State Lifecycle
 
-Both agents and enrollments follow a three-state lifecycle:
+Both agents and hosts follow a three-state lifecycle:
 
 ```
       ┌────────────── proof-of-possession ──────────────┐
@@ -518,7 +499,7 @@ Both agents and enrollments follow a three-state lifecycle:
   ┌────────┐  ─────────────────────────────►  ┌─────────┴─┐
   │ active │                                  │  expired   │
   └────────┘  ◄─────────────────────────────  └───────────┘
-      │            (scopes decay to base)           │
+      │         (permissions decay to host)         │
       │                                             │
       │   absoluteLifetime / explicit revoke        │  absoluteLifetime / explicit revoke
       ▼                                             ▼
@@ -536,11 +517,11 @@ Both agents and enrollments follow a three-state lifecycle:
 
 When the middleware detects a request from an expired agent with a valid JWT signature, it **automatically reactivates** the agent — no separate API call needed. The response proceeds normally as if the agent were active.
 
-On reactivation, scopes decay to the enrollment's `baseScopes` (or the agent's current scopes if no enrollment exists). The `activatedAt` and `expiresAt` timestamps are reset.
+On reactivation, permissions decay to the host's `scopes` (if a host exists). If no host is associated, existing permissions are kept as-is. The `activatedAt` and `expiresAt` timestamps are reset.
 
 ### Lifetime Clocks
 
-Three independent clocks govern agent and enrollment lifetimes:
+Three independent clocks govern agent and host lifetimes:
 
 | Clock | Measured From | Resets On Reactivation | Effect When Elapsed |
 |---|---|---|---|
@@ -557,9 +538,11 @@ The plugin installs a `before` hook that intercepts every request. When a `Beare
 3. Checks the three-state lifecycle (revoked → reject, expired → attempt transparent reactivation)
 4. Verifies the JWT signature against the stored public key
 5. Checks for JTI replay
-6. Loads the user who owns the agent
-7. Attaches an `agentSession` to the request context
-8. Updates `lastUsedAt` and extends `expiresAt` (heartbeat)
+6. Verifies [request binding](#request-binding) claims if present (`htm`, `htu`, `ath`)
+7. Loads the user who owns the agent
+8. Loads active permissions from the `agentPermission` table
+9. Attaches an `agentSession` to the request context
+10. Updates `lastUsedAt` and extends `expiresAt` (heartbeat)
 
 ### Protecting API Routes
 
@@ -574,7 +557,10 @@ export async function GET(req: Request) {
     }
 
     if (agentSession) {
-        if (!agentSession.agent.scopes.includes("reports.read")) {
+        const hasScope = agentSession.agent.permissions.some(
+            (p) => p.scope === "reports.read"
+        )
+        if (!hasScope) {
             return new Response("Forbidden", { status: 403 })
         }
         const reports = await getReportsForUser(agentSession.user.id)
@@ -592,12 +578,13 @@ type AgentSession = {
     agent: {
         id: string
         name: string
-        scopes: string[]
-        role: string | null
-        orgId: string | null
-        workgroupId: string | null
-        enrollmentId: string | null
-        source: string | null
+        permissions: Array<{
+            scope: string
+            referenceId: string | null
+            grantedBy: string
+            status: string
+        }>
+        hostId: string
         createdAt: Date
         activatedAt: Date | null
         metadata: Record<string, unknown> | null
@@ -610,7 +597,11 @@ type AgentSession = {
 }
 ```
 
-## Roles and Scopes
+## Permissions and Scopes
+
+Authorization is managed through the `agentPermission` table. Each row represents a single scope grant, supporting multi-grantor permissions where different users can grant different scopes to the same agent.
+
+### Roles
 
 ```ts title="auth.ts"
 agentAuth({
@@ -623,7 +614,7 @@ agentAuth({
 })
 ```
 
-When creating an agent with a `role`, scopes are automatically resolved from the role config.
+When creating an agent with a `role`, scopes are automatically resolved from the role config and stored as individual permission rows.
 
 ### Wildcard Matching
 
@@ -644,11 +635,11 @@ agentAuth({
 })
 ```
 
-Blocked scopes are enforced on agent creation, enrollment creation, and scope escalation approval.
+Blocked scopes are enforced on agent creation, host creation, and scope escalation approval.
 
 ### Scope Escalation
 
-Agents can request additional scopes at runtime. The owner must approve the request.
+Agents can request additional permissions at runtime. The owner must approve the request. Scope requests create `pending` rows in the `agentPermission` table — approval transitions them to `active`, denial transitions them to `denied`.
 
 #### Request Scope
 
@@ -659,10 +650,6 @@ type requestScope = {
      * Scopes the agent wants to add.
      */
     scopes: string[]
-    /**
-     * Optional name change request.
-     */
-    name?: string
     /**
      * Human-readable reason for the request.
      */
@@ -676,7 +663,6 @@ await agent.fetch("/api/auth/agent/request-scope", {
     method: "POST",
     body: JSON.stringify({
         scopes: ["calendar.write"],
-        name: "Finance Agent v2",
         reason: "Need calendar access for scheduling",
     }),
 })
@@ -688,7 +674,7 @@ await agent.fetch("/api/auth/agent/request-scope", {
 ```ts
 type scopeRequestStatus = {
     /**
-     * The scope request ID (unguessable).
+     * The request ID (agent ID).
      */
     requestId: string
 }
@@ -705,7 +691,7 @@ No authentication is required for this endpoint — the request ID is unguessabl
 ```ts
 type approveScope = {
     /**
-     * The scope request ID.
+     * The request ID (agent ID whose pending permissions to resolve).
      */
     requestId: string
     /**
@@ -713,8 +699,8 @@ type approveScope = {
      */
     action: "approve" | "deny"
     /**
-     * When approving, the subset of requested scopes to grant.
-     * Omit to approve all requested scopes.
+     * When approving, the subset of pending scopes to grant.
+     * Omit to approve all pending scopes.
      */
     scopes?: string[]
 }
@@ -723,7 +709,7 @@ type approveScope = {
 
 ```ts title="dashboard.ts"
 await authClient.agent.approveScope({
-    requestId: "req-id",
+    requestId: "agent-id",
     action: "approve",
     scopes: ["calendar.write"],
 }, { headers })
@@ -733,9 +719,34 @@ await authClient.agent.approveScope({
 The `freshSessionWindow` option (default: 300 seconds) requires the approving user to have authenticated recently. If the session is too old, the request is rejected with `FRESH_SESSION_REQUIRED`.
 </Callout>
 
+## Request Binding
+
+Agent JWTs support optional DPoP-style request binding. When present, the server verifies that the JWT was intended for the specific request being made:
+
+| Claim | Description |
+|---|---|
+| `htm` | HTTP method (e.g. `"GET"`, `"POST"`) |
+| `htu` | HTTP path (e.g. `"/api/reports"`) |
+| `ath` | SHA-256 hash of the request body (Base64url-encoded) |
+
+If any of these claims are present in the JWT, the server verifies them against the actual request. A mismatch results in `REQUEST_BINDING_MISMATCH`.
+
+The Agent SDK automatically includes request binding claims when using `createAgentClient`:
+
+```ts title="agent-runtime.ts"
+const agent = createAgentClient({
+    baseURL: "https://your-app.com",
+    agentId: "agt_abc123",
+    privateKey,
+})
+
+// Every request automatically includes htm, htu, and ath claims
+const res = await agent.fetch("/api/reports/Q4")
+```
+
 ## JTI Replay Detection
 
-All proof-of-possession JWTs (agent requests, enrollment JWTs, and reactivation proofs) are checked against an in-memory JTI cache. If a JWT's `jti` claim has been seen within its `jwtMaxAge` window, the request is rejected with `JWT_REPLAY`.
+All proof-of-possession JWTs (agent requests, host JWTs, and reactivation proofs) are checked against an in-memory JTI cache. If a JWT's `jti` claim has been seen within its `jwtMaxAge` window, the request is rejected with `JWT_REPLAY`.
 
 ## Discovery
 
@@ -749,8 +760,12 @@ The discovery endpoint exposes the server's configuration for capability negotia
 
 ```json
 {
-    "supportedAlgorithms": ["Ed25519"],
-    "availableScopes": ["reports.read", "reports.write", "email.send"],
+    "algorithms": ["Ed25519"],
+    "scopes": [
+        { "name": "reports.read", "description": "reports.read" },
+        { "name": "reports.write", "description": "reports.write" },
+        { "name": "email.send", "description": "email.send" }
+    ],
     "roles": ["reader", "writer"],
     "jwtMaxAge": 60,
     "sessionTTL": 3600,
@@ -803,7 +818,7 @@ const result = await connectAgent({
 
 ## Agent SDK
 
-The Agent SDK is for **agent runtimes** — the process that makes API calls.
+The Agent SDK is for **agent runtimes** — the process that makes API calls. It automatically signs request-bound JWTs for every request.
 
 ```ts title="agent-runtime.ts"
 import {
@@ -869,38 +884,9 @@ const storage = createFileStorage({
 })
 ```
 
-## Workgroups
-
-Workgroups group agents by team, project, or department.
-
-```ts title="dashboard.ts"
-// Create
-await authClient.agent.workgroup.create({
-    name: "Finance Team",
-    orgId: "org_123",
-    description: "Agents for the finance department",
-}, { headers })
-
-// List
-const { data } = await authClient.agent.workgroup.list({
-    query: { orgId: "org_123" }
-}, { headers })
-
-// Update
-await authClient.agent.workgroup.update({
-    workgroupId: "wg_456",
-    name: "Finance & Accounting",
-}, { headers })
-
-// Delete (agents in the workgroup have workgroupId set to null)
-await authClient.agent.workgroup.delete({
-    workgroupId: "wg_456",
-}, { headers })
-```
-
 ## AAP Format
 
-Supports [IETF Agent Authorization Profile](https://datatracker.ietf.org/doc/draft-ietf-oauth-agent-authorization/) compatible JWT claims:
+Optionally uses structured JWT claims compatible with the [IETF Agent Authorization Profile](https://datatracker.ietf.org/doc/draft-ietf-oauth-agent-authorization/) draft. This is a claim format option, not a full implementation of the AAP spec.
 
 ```ts
 agentAuth({
@@ -912,7 +898,7 @@ agentAuth({
 
 `roles` <span className="opacity-70">`Record<string, string[]>`</span>
 
-Named roles mapping to scope arrays. When creating an agent with a `role`, scopes are automatically resolved.
+Named roles mapping to scope arrays. When creating an agent with a `role`, scopes are automatically resolved and stored as permission rows.
 
 `defaultRole` <span className="opacity-70">`string`</span>
 
@@ -924,7 +910,7 @@ Allowed key algorithms for agent keypairs. Use JWK curve names (`"Ed25519"`, not
 
 `jwtFormat` <span className="opacity-70">`"simple" | "aap"`</span>
 
-JWT claim format. `"simple"` uses flat claims (`sub`, `scopes`, `userId`, `role`). `"aap"` uses structured AAP-compatible claims. Default: `"simple"`.
+JWT claim format. `"simple"` uses flat claims. `"aap"` uses structured claims compatible with the AAP draft. Default: `"simple"`.
 
 `jwtMaxAge` <span className="opacity-70">`number`</span>
 
@@ -932,7 +918,7 @@ Maximum age for agent JWTs in seconds. Default: `60`.
 
 `agentSessionTTL` <span className="opacity-70">`number`</span>
 
-Sliding TTL for agent and enrollment sessions in seconds. Each authenticated request extends the deadline. Set to `0` to disable. Default: `3600` (1 hour).
+Sliding TTL for agent and host sessions in seconds. Each authenticated request extends the deadline. Set to `0` to disable. Default: `3600` (1 hour).
 
 `agentMaxLifetime` <span className="opacity-70">`number`</span>
 
@@ -968,9 +954,9 @@ Custom schema overrides for the agent tables.
 
 ## Schema
 
-### Agent Enrollment
+### Agent Host
 
-Table: `agentEnrollment`
+Table: `agentHost`
 
 <DatabaseTable
     fields={[
@@ -987,13 +973,7 @@ Table: `agentEnrollment`
             isForeignKey: true,
         },
         {
-            name: "appSource",
-            type: "string",
-            description: "Upstream app identifier (e.g. \"cursor\").",
-            isOptional: true,
-        },
-        {
-            name: "baseScopes",
+            name: "scopes",
             type: "string",
             description: "JSON array of default scopes agents inherit.",
             isOptional: true,
@@ -1029,7 +1009,7 @@ Table: `agentEnrollment`
         {
             name: "lastUsedAt",
             type: "Date",
-            description: "Last time an enrollment JWT was used.",
+            description: "Last time a host JWT was used.",
             isOptional: true,
         },
         {
@@ -1069,41 +1049,10 @@ Table: `agent`
             isForeignKey: true,
         },
         {
-            name: "enrollmentId",
+            name: "hostId",
             type: "string",
-            description: "Enrollment that created this agent.",
+            description: "Host that created this agent.",
             isForeignKey: true,
-            isOptional: true,
-        },
-        {
-            name: "orgId",
-            type: "string",
-            description: "Organization ID.",
-            isOptional: true,
-        },
-        {
-            name: "workgroupId",
-            type: "string",
-            description: "Workgroup ID.",
-            isForeignKey: true,
-            isOptional: true,
-        },
-        {
-            name: "source",
-            type: "string",
-            description: "Upstream app identifier.",
-            isOptional: true,
-        },
-        {
-            name: "scopes",
-            type: "string",
-            description: "JSON array of scope strings.",
-        },
-        {
-            name: "role",
-            type: "string",
-            description: "Role name.",
-            isOptional: true,
         },
         {
             name: "status",
@@ -1158,9 +1107,9 @@ Table: `agent`
     ]}
 />
 
-### Agent Scope Request
+### Agent Permission
 
-Table: `agentScopeRequest`
+Table: `agentPermission`
 
 <DatabaseTable
     fields={[
@@ -1173,87 +1122,41 @@ Table: `agentScopeRequest`
         {
             name: "agentId",
             type: "string",
-            description: "Agent requesting escalation.",
+            description: "Agent this permission belongs to.",
             isForeignKey: true,
         },
         {
-            name: "userId",
+            name: "scope",
             type: "string",
-            description: "Owner user ID.",
+            description: "Permission scope string (e.g. \"reports.read\").",
+        },
+        {
+            name: "referenceId",
+            type: "string",
+            description: "Resource this permission applies to. Null = unrestricted.",
+            isOptional: true,
+        },
+        {
+            name: "grantedBy",
+            type: "string",
+            description: "User who granted this permission.",
             isForeignKey: true,
-        },
-        {
-            name: "agentName",
-            type: "string",
-            description: "Agent name at time of request.",
-        },
-        {
-            name: "newName",
-            type: "string",
-            description: "Requested name change.",
-            isOptional: true,
-        },
-        {
-            name: "reason",
-            type: "string",
-            description: "Human-readable reason for the request.",
-            isOptional: true,
-        },
-        {
-            name: "existingScopes",
-            type: "string",
-            description: "JSON array of current scopes.",
-        },
-        {
-            name: "requestedScopes",
-            type: "string",
-            description: "JSON array of requested new scopes.",
         },
         {
             name: "status",
             type: "string",
-            description: "\"pending\", \"approved\", or \"denied\".",
+            description: "\"active\", \"pending\", or \"denied\".",
         },
         {
-            name: "createdAt",
-            type: "Date",
-            description: "Request timestamp.",
+            name: "reason",
+            type: "string",
+            description: "Human-readable reason for a pending request.",
+            isOptional: true,
         },
         {
             name: "expiresAt",
             type: "Date",
-            description: "Request expiration.",
-        },
-    ]}
-/>
-
-### Agent Workgroup
-
-Table: `agentWorkgroup`
-
-<DatabaseTable
-    fields={[
-        {
-            name: "id",
-            type: "string",
-            description: "Unique identifier.",
-            isPrimaryKey: true,
-        },
-        {
-            name: "name",
-            type: "string",
-            description: "Workgroup name.",
-        },
-        {
-            name: "description",
-            type: "string",
-            description: "Description.",
-            isOptional: true,
-        },
-        {
-            name: "orgId",
-            type: "string",
-            description: "Organization ID.",
+            description: "Permission expiration.",
             isOptional: true,
         },
         {
@@ -1287,14 +1190,15 @@ Table: `agentWorkgroup`
 | `INVALID_SCOPES` | Scopes must be an array of strings. |
 | `UNKNOWN_SCOPES` | One or more requested scopes are not recognized. |
 | `AGENT_LIMIT_REACHED` | Maximum number of active agents reached. |
-| `SCOPE_REQUEST_NOT_FOUND` | Scope request not found or expired. |
-| `SCOPE_REQUEST_OWNER_MISMATCH` | This scope request belongs to a different user. |
-| `SCOPE_REQUEST_ALREADY_RESOLVED` | Scope request has already been resolved. |
-| `NO_SCOPE_CHANGES` | No new scopes or name changes requested. |
-| `ENROLLMENT_NOT_FOUND` | Enrollment not found. |
-| `ENROLLMENT_REVOKED` | Enrollment has been revoked. |
-| `ENROLLMENT_EXPIRED` | Enrollment has expired. Reactivate it via proof-of-possession. |
-| `ENROLLMENT_REQUIRED` | An active enrollment is required to create agents. |
+| `SCOPE_REQUEST_NOT_FOUND` | No pending permission requests found for this agent. |
+| `SCOPE_REQUEST_OWNER_MISMATCH` | This agent belongs to a different user. |
+| `SCOPE_REQUEST_ALREADY_RESOLVED` | All permission requests have already been resolved. |
+| `NO_SCOPE_CHANGES` | No new scopes requested. |
+| `HOST_NOT_FOUND` | Agent host not found. |
+| `HOST_REVOKED` | Agent host has been revoked. |
+| `HOST_EXPIRED` | Agent host has expired. Reactivate it via proof-of-possession. |
+| `HOST_REQUIRED` | An active agent host is required to create agents. |
+| `REQUEST_BINDING_MISMATCH` | JWT request binding does not match the actual request. |
 
 Error codes are exported from both the server and client packages:
 
