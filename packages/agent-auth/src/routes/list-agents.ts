@@ -20,7 +20,7 @@ export function listAgents() {
 						.meta({ description: "Filter by workgroup" })
 						.optional(),
 					status: z
-						.enum(["active", "revoked"])
+						.enum(["active", "expired", "revoked"])
 						.meta({ description: "Filter by status (default: all)" })
 						.optional(),
 					limit: z

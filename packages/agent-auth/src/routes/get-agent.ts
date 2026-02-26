@@ -49,7 +49,10 @@ export function getAgent() {
 						: agent.scopes,
 				role: agent.role,
 				orgId: agent.orgId,
+				enrollmentId: agent.enrollmentId ?? null,
+				source: agent.source ?? null,
 				lastUsedAt: agent.lastUsedAt,
+				activatedAt: agent.activatedAt ?? null,
 				createdAt: agent.createdAt,
 				updatedAt: agent.updatedAt,
 				metadata:

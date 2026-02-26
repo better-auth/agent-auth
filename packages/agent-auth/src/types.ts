@@ -74,14 +74,38 @@ export interface AgentAuthOptions {
 	 */
 	maxAgentsPerUser?: number;
 	/**
-	 * Maximum absolute lifetime for agent sessions in seconds,
-	 * measured from `createdAt`. Even if the sliding TTL keeps
-	 * extending, the agent is rejected once this cap is reached.
+	 * Maximum lifetime for agent sessions in seconds,
+	 * measured from `activatedAt`. Resets on each reactivation.
+	 * When elapsed the agent transitions to "expired" (reactivatable).
 	 *
-	 * Set to `0` or omit to disable (no hard cap).
+	 * Set to `0` or omit to disable (no cap).
 	 * @default 86400 (24 hours)
 	 */
 	agentMaxLifetime?: number;
+	/**
+	 * Absolute lifetime for agents in seconds, measured from `createdAt`.
+	 * Never resets. When elapsed the agent is **revoked** (not expired),
+	 * meaning it cannot be reactivated and must be re-created.
+	 *
+	 * Set to `0` or omit to disable (no absolute cap).
+	 * @default 0 (disabled)
+	 */
+	absoluteLifetime?: number;
+	/**
+	 * Time window in seconds within which the user must have
+	 * authenticated for sensitive operations (approve-scope).
+	 * If the session is older than this, re-authentication is required.
+	 *
+	 * Set to `0` to disable fresh session enforcement.
+	 * @default 300 (5 minutes)
+	 */
+	freshSessionWindow?: number;
+	/**
+	 * Scopes that are always blocked from being granted or escalated.
+	 * Any scope request containing a blocked scope is rejected.
+	 * @default []
+	 */
+	blockedScopes?: string[];
 	/**
 	 * Rate limiting configuration for agent endpoints.
 	 * Set to `false` to disable plugin-level rate limiting entirely.
@@ -107,20 +131,44 @@ export interface AgentAuthOptions {
 }
 
 /**
+ * An enrollment record — persistent, app-level consent.
+ * Uses Ed25519 keypair for proof-of-possession (no bearer tokens — §4).
+ * Three-state lifecycle matching agents (§9.1).
+ */
+export interface Enrollment {
+	id: string;
+	userId: string;
+	appSource: string | null;
+	baseScopes: string[];
+	publicKey: string;
+	kid: string | null;
+	status: "active" | "expired" | "revoked";
+	activatedAt: Date | null;
+	expiresAt: Date | null;
+	lastUsedAt: Date | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
  * An agent record as stored in the database.
+ * Three-state lifecycle: active → expired → (reactivate) → active, or → revoked.
  */
 export interface Agent {
 	id: string;
 	name: string;
 	userId: string;
+	enrollmentId: string | null;
 	orgId: string | null;
 	workgroupId: string | null;
+	source: string | null;
 	scopes: string[];
 	role: string | null;
-	status: "active" | "revoked";
+	status: "active" | "expired" | "revoked";
 	publicKey: string;
 	kid: string | null;
 	lastUsedAt: Date | null;
+	activatedAt: Date | null;
 	expiresAt: Date | null;
 	metadata: AgentMetadata | null;
 	createdAt: Date;
@@ -155,7 +203,10 @@ export interface AgentSession {
 		role: string | null;
 		orgId: string | null;
 		workgroupId: string | null;
+		enrollmentId: string | null;
+		source: string | null;
 		createdAt: Date;
+		activatedAt: Date | null;
 		metadata: AgentMetadata | null;
 	};
 	user: {
@@ -178,6 +229,9 @@ export type ResolvedAgentAuthOptions = Required<
 		| "agentSessionTTL"
 		| "agentMaxLifetime"
 		| "maxAgentsPerUser"
+		| "absoluteLifetime"
+		| "freshSessionWindow"
+		| "blockedScopes"
 	>
 > &
 	AgentAuthOptions;

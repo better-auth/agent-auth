@@ -6,12 +6,14 @@ import { decodeJwt } from "jose";
 import type { AgentJWK } from "./crypto";
 import { verifyAgentJWT } from "./crypto";
 import { AGENT_AUTH_ERROR_CODES } from "./error-codes";
+import { JtiReplayCache } from "./jti-cache";
 import { createAgentRoutes } from "./routes";
 import { agentSchema } from "./schema";
 import type {
 	Agent,
 	AgentAuthOptions,
 	AgentSession,
+	Enrollment,
 	ResolvedAgentAuthOptions,
 } from "./types";
 
@@ -26,6 +28,9 @@ declare module "@better-auth/core" {
 export { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 
 const AGENT_TABLE = "agent";
+const ENROLLMENT_TABLE = "agentEnrollment";
+
+const jtiCache = new JtiReplayCache();
 
 function buildRateLimits(config: AgentAuthOptions["rateLimit"]) {
 	if (config === false) return [];
@@ -59,6 +64,76 @@ function buildRateLimits(config: AgentAuthOptions["rateLimit"]) {
 	];
 }
 
+/**
+ * Transparently reactivate an expired agent (§7.1).
+ * Scopes decay to enrollment's baseScopes if enrollment exists (§7.3).
+ * Returns the updated agent record or null if reactivation is not possible.
+ */
+async function tryTransparentReactivation(
+	agent: Agent,
+	opts: ResolvedAgentAuthOptions,
+	adapter: {
+		findOne: <T>(args: {
+			model: string;
+			where: { field: string; value: string }[];
+		}) => Promise<T | null>;
+		update: (args: {
+			model: string;
+			where: { field: string; value: string }[];
+			update: Record<string, unknown>;
+		}) => Promise<unknown>;
+	},
+): Promise<Agent | null> {
+	if (!agent.publicKey) return null;
+
+	let baseScopes: string[];
+	if (agent.enrollmentId) {
+		const enrollment = await adapter.findOne<Enrollment>({
+			model: ENROLLMENT_TABLE,
+			where: [{ field: "id", value: agent.enrollmentId }],
+		});
+		if (!enrollment || enrollment.status === "revoked") return null;
+		baseScopes =
+			typeof enrollment.baseScopes === "string"
+				? JSON.parse(enrollment.baseScopes)
+				: enrollment.baseScopes;
+	} else {
+		baseScopes =
+			typeof agent.scopes === "string"
+				? JSON.parse(agent.scopes)
+				: agent.scopes;
+	}
+
+	const now = new Date();
+	const expiresAt =
+		opts.agentSessionTTL > 0
+			? new Date(now.getTime() + opts.agentSessionTTL * 1000)
+			: null;
+
+	await adapter.update({
+		model: AGENT_TABLE,
+		where: [{ field: "id", value: agent.id }],
+		update: {
+			status: "active",
+			scopes: JSON.stringify(baseScopes),
+			activatedAt: now,
+			expiresAt,
+			lastUsedAt: now,
+			updatedAt: now,
+		},
+	});
+
+	return {
+		...agent,
+		status: "active",
+		scopes: baseScopes,
+		activatedAt: now,
+		expiresAt,
+		lastUsedAt: now,
+		updatedAt: now,
+	};
+}
+
 export const agentAuth = (options?: AgentAuthOptions) => {
 	const opts: ResolvedAgentAuthOptions = {
 		...options,
@@ -68,6 +143,9 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		agentSessionTTL: options?.agentSessionTTL ?? 3600,
 		agentMaxLifetime: options?.agentMaxLifetime ?? 86400,
 		maxAgentsPerUser: options?.maxAgentsPerUser ?? 25,
+		absoluteLifetime: options?.absoluteLifetime ?? 0,
+		freshSessionWindow: options?.freshSessionWindow ?? 300,
+		blockedScopes: options?.blockedScopes ?? [],
 	};
 
 	const schema = mergeSchema(agentSchema(), opts.schema);
@@ -94,14 +172,14 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 
 						let agentId: string;
 						try {
-							const payload = decodeJwt(bearer);
-							if (!payload.sub) {
+							const decodedPayload = decodeJwt(bearer);
+							if (!decodedPayload.sub) {
 								throw APIError.from(
 									"UNAUTHORIZED",
 									AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 								);
 							}
-							agentId = payload.sub;
+							agentId = decodedPayload.sub;
 						} catch {
 							throw APIError.from(
 								"UNAUTHORIZED",
@@ -109,7 +187,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							);
 						}
 
-						const agent = await ctx.context.adapter.findOne<Agent>({
+						let agent = await ctx.context.adapter.findOne<Agent>({
 							model: AGENT_TABLE,
 							where: [{ field: "id", value: agentId }],
 						});
@@ -121,39 +199,19 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							);
 						}
 
-						if (agent.status !== "active") {
+						if (agent.status === "revoked") {
 							throw APIError.from(
 								"UNAUTHORIZED",
 								AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
 							);
 						}
 
-						if (agent.expiresAt && new Date(agent.expiresAt) <= new Date()) {
-							ctx.context.runInBackground(
-								ctx.context.adapter
-									.update({
-										model: AGENT_TABLE,
-										where: [{ field: "id", value: agent.id }],
-										update: {
-											status: "revoked",
-											publicKey: "",
-											kid: null,
-											updatedAt: new Date(),
-										},
-									})
-									.catch(() => {}),
-							);
-							throw APIError.from(
-								"UNAUTHORIZED",
-								AGENT_AUTH_ERROR_CODES.AGENT_EXPIRED,
-							);
-						}
-
-						if (opts.agentMaxLifetime > 0 && agent.createdAt) {
-							const maxExpiry =
+						// §9.2 absoluteLifetime — measured from createdAt, results in revocation (not expiration)
+						if (opts.absoluteLifetime > 0 && agent.createdAt) {
+							const absoluteExpiry =
 								new Date(agent.createdAt).getTime() +
-								opts.agentMaxLifetime * 1000;
-							if (Date.now() >= maxExpiry) {
+								opts.absoluteLifetime * 1000;
+							if (Date.now() >= absoluteExpiry) {
 								ctx.context.runInBackground(
 									ctx.context.adapter
 										.update({
@@ -170,11 +228,34 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								);
 								throw APIError.from(
 									"UNAUTHORIZED",
-									AGENT_AUTH_ERROR_CODES.AGENT_EXPIRED,
+									AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
 								);
 							}
 						}
 
+						// Detect if agent needs expiration (but don't reject yet — try reactivation)
+						let needsReactivation = agent.status === "expired";
+
+						if (
+							!needsReactivation &&
+							agent.expiresAt &&
+							new Date(agent.expiresAt) <= new Date()
+						) {
+							needsReactivation = true;
+						}
+
+						if (!needsReactivation && opts.agentMaxLifetime > 0) {
+							const anchor = agent.activatedAt ?? agent.createdAt;
+							if (anchor) {
+								const maxExpiry =
+									new Date(anchor).getTime() + opts.agentMaxLifetime * 1000;
+								if (Date.now() >= maxExpiry) {
+									needsReactivation = true;
+								}
+							}
+						}
+
+						// Verify the JWT against the stored public key first
 						let publicKey: AgentJWK;
 						try {
 							publicKey = JSON.parse(agent.publicKey);
@@ -195,6 +276,34 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								"UNAUTHORIZED",
 								AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 							);
+						}
+
+						// §7.1: Transparent reactivation — if expired but JWT is valid,
+						// auto-reactivate with scope decay instead of rejecting.
+						if (needsReactivation) {
+							const reactivated = await tryTransparentReactivation(
+								agent,
+								opts,
+								ctx.context.adapter,
+							);
+							if (!reactivated) {
+								throw APIError.from(
+									"UNAUTHORIZED",
+									AGENT_AUTH_ERROR_CODES.AGENT_EXPIRED,
+								);
+							}
+							agent = reactivated;
+						}
+
+						// §15.5, §9.4 JTI replay detection
+						if (payload.jti) {
+							if (jtiCache.has(payload.jti)) {
+								throw APIError.from(
+									"UNAUTHORIZED",
+									AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
+								);
+							}
+							jtiCache.add(payload.jti, opts.jwtMaxAge);
 						}
 
 						const user = await ctx.context.internalAdapter.findUserById(
@@ -218,7 +327,10 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								role: agent.role,
 								orgId: agent.orgId,
 								workgroupId: agent.workgroupId ?? null,
+								enrollmentId: agent.enrollmentId ?? null,
+								source: agent.source ?? null,
 								createdAt: agent.createdAt,
+								activatedAt: agent.activatedAt ?? null,
 								metadata:
 									typeof agent.metadata === "string"
 										? JSON.parse(agent.metadata)
@@ -234,29 +346,44 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						(ctx.context as { agentSession?: AgentSession }).agentSession =
 							agentSession;
 
-						const now = new Date();
-						const heartbeatUpdate: { lastUsedAt: Date; expiresAt?: Date } = {
-							lastUsedAt: now,
-						};
-						if (opts.agentSessionTTL > 0) {
-							let newExpiry = now.getTime() + opts.agentSessionTTL * 1000;
-							if (opts.agentMaxLifetime > 0 && agent.createdAt) {
-								const hardCap =
-									new Date(agent.createdAt).getTime() +
-									opts.agentMaxLifetime * 1000;
-								newExpiry = Math.min(newExpiry, hardCap);
+						// Heartbeat update (skip if we just reactivated — that already set timestamps)
+						if (!needsReactivation) {
+							const now = new Date();
+							const heartbeatUpdate: {
+								lastUsedAt: Date;
+								expiresAt?: Date;
+							} = {
+								lastUsedAt: now,
+							};
+							if (opts.agentSessionTTL > 0) {
+								let newExpiry = now.getTime() + opts.agentSessionTTL * 1000;
+
+								const anchor = agent.activatedAt ?? agent.createdAt;
+								if (opts.agentMaxLifetime > 0 && anchor) {
+									const hardCap =
+										new Date(anchor).getTime() + opts.agentMaxLifetime * 1000;
+									newExpiry = Math.min(newExpiry, hardCap);
+								}
+
+								if (opts.absoluteLifetime > 0 && agent.createdAt) {
+									const absoluteCap =
+										new Date(agent.createdAt).getTime() +
+										opts.absoluteLifetime * 1000;
+									newExpiry = Math.min(newExpiry, absoluteCap);
+								}
+
+								heartbeatUpdate.expiresAt = new Date(newExpiry);
 							}
-							heartbeatUpdate.expiresAt = new Date(newExpiry);
+							ctx.context.runInBackground(
+								ctx.context.adapter
+									.update({
+										model: AGENT_TABLE,
+										where: [{ field: "id", value: agent.id }],
+										update: heartbeatUpdate,
+									})
+									.catch(() => {}),
+							);
 						}
-						ctx.context.runInBackground(
-							ctx.context.adapter
-								.update({
-									model: AGENT_TABLE,
-									where: [{ field: "id", value: agent.id }],
-									update: heartbeatUpdate,
-								})
-								.catch(() => {}),
-						);
 
 						if (ctx.path === "/agent/get-session") {
 							return agentSession;
@@ -274,11 +401,17 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			updateAgent: routes.updateAgent,
 			revokeAgent: routes.revokeAgent,
 			rotateKey: routes.rotateKey,
+			reactivateAgent: routes.reactivateAgent,
 			getAgentSession: routes.getAgentSession,
 			cleanupAgents: routes.cleanupAgents,
 			requestScope: routes.requestScope,
 			scopeRequestStatus: routes.scopeRequestStatus,
 			approveScope: routes.approveScope,
+			discover: routes.discover,
+			createEnrollment: routes.createEnrollment,
+			listEnrollments: routes.listEnrollments,
+			getEnrollment: routes.getEnrollment,
+			revokeEnrollment: routes.revokeEnrollment,
 			createWorkgroup: routes.createWorkgroup,
 			listWorkgroups: routes.listWorkgroups,
 			updateWorkgroup: routes.updateWorkgroup,

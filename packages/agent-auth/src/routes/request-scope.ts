@@ -2,7 +2,8 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { AgentSession } from "../types";
+import { findBlockedScopes } from "../scopes";
+import type { AgentSession, ResolvedAgentAuthOptions } from "../types";
 
 const SCOPE_REQUEST_TABLE = "agentScopeRequest";
 const TTL_MS = 5 * 60 * 1000;
@@ -14,7 +15,7 @@ const TTL_MS = 5 * 60 * 1000;
  * or a name change. Creates a pending scope request that the user must
  * approve in their browser. Returns a requestId and verificationUrl.
  */
-export function requestScope() {
+export function requestScope(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/request-scope",
 		{
@@ -28,6 +29,12 @@ export function requestScope() {
 					.string()
 					.optional()
 					.describe("New agent name reflecting expanded role"),
+				reason: z
+					.string()
+					.optional()
+					.describe(
+						"Human-readable reason for the request (displayed verbatim to user)",
+					),
 			}),
 			requireHeaders: true,
 			metadata: {
@@ -50,7 +57,15 @@ export function requestScope() {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const { scopes, name } = ctx.body;
+			const { scopes, name, reason } = ctx.body;
+
+			if (opts.blockedScopes.length > 0) {
+				const blocked = findBlockedScopes(scopes, opts.blockedScopes);
+				if (blocked.length > 0) {
+					throw APIError.from("BAD_REQUEST", ERROR_CODES.SCOPE_BLOCKED);
+				}
+			}
+
 			const existingScopes = agentSession.agent.scopes ?? [];
 			const newOnly = scopes.filter((s: string) => !existingScopes.includes(s));
 			const hasNameChange = !!name && name !== agentSession.agent.name;
@@ -75,6 +90,7 @@ export function requestScope() {
 					userId: agentSession.user.id,
 					agentName: agentSession.agent.name,
 					newName: name || null,
+					reason: reason || null,
 					existingScopes,
 					requestedScopes: newOnly,
 					status: "pending",

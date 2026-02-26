@@ -3,6 +3,8 @@ import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import { findBlockedScopes, mergeScopes } from "../scopes";
+import type { ResolvedAgentAuthOptions } from "../types";
 
 const SCOPE_REQUEST_TABLE = "agentScopeRequest";
 const AGENT_TABLE = "agent";
@@ -32,7 +34,7 @@ function parseScopes(val: unknown): string[] {
 	return [];
 }
 
-export function approveScope() {
+export function approveScope(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/approve-scope",
 		{
@@ -47,7 +49,8 @@ export function approveScope() {
 			}),
 			metadata: {
 				openapi: {
-					description: "Approve or deny a pending scope escalation request.",
+					description:
+						"Approve or deny a pending scope escalation request. Requires a fresh session (§15.2).",
 				},
 			},
 		},
@@ -55,6 +58,16 @@ export function approveScope() {
 			const session = await getSessionFromCtx(ctx);
 			if (!session) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
+			}
+
+			if (opts.freshSessionWindow > 0) {
+				const sessionCreated = session.session?.createdAt
+					? new Date(session.session.createdAt).getTime()
+					: 0;
+				const age = (Date.now() - sessionCreated) / 1000;
+				if (age > opts.freshSessionWindow) {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.FRESH_SESSION_REQUIRED);
+				}
 			}
 
 			const { requestId, action, scopes: userScopes } = ctx.body;
@@ -100,7 +113,15 @@ export function approveScope() {
 			}
 
 			const approved = userScopes ?? requested;
-			const merged = [...new Set([...existing, ...approved])];
+
+			if (opts.blockedScopes.length > 0) {
+				const blocked = findBlockedScopes(approved, opts.blockedScopes);
+				if (blocked.length > 0) {
+					throw APIError.from("BAD_REQUEST", ERROR_CODES.SCOPE_BLOCKED);
+				}
+			}
+
+			const merged = mergeScopes(existing, approved);
 
 			const agentUpdate: Record<string, unknown> = {
 				scopes: merged,

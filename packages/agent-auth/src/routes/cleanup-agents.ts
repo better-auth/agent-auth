@@ -7,9 +7,9 @@ import type { Agent } from "../types";
 const AGENT_TABLE = "agent";
 
 /**
- * Batch-revoke agents whose expiresAt has passed.
- * Requires an authenticated user session — only cleans up
- * agents belonging to the calling user.
+ * Batch-transition agents whose expiresAt has passed to "expired" state.
+ * Per §9.1, expired agents retain their public key and can be reactivated
+ * via proof-of-possession. Use the revoke endpoint to permanently revoke.
  */
 export function cleanupAgents() {
 	return createAuthEndpoint(
@@ -19,7 +19,7 @@ export function cleanupAgents() {
 			metadata: {
 				openapi: {
 					description:
-						"Revoke all expired agents for the current user. Returns the count of agents revoked.",
+						"Expire all overdue agents for the current user. Returns the count of agents expired.",
 					responses: {
 						"200": { description: "Cleanup result" },
 					},
@@ -49,9 +49,7 @@ export function cleanupAgents() {
 						model: AGENT_TABLE,
 						where: [{ field: "id", value: agent.id }],
 						update: {
-							status: "revoked",
-							publicKey: "",
-							kid: null,
+							status: "expired",
 							updatedAt: now,
 						},
 					}),
