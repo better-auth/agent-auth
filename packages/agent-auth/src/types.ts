@@ -141,6 +141,7 @@ export interface AgentHost {
 	scopes: string[];
 	publicKey: string;
 	kid: string | null;
+	jwksUrl: string | null;
 	status: "active" | "expired" | "revoked";
 	activatedAt: Date | null;
 	expiresAt: Date | null;

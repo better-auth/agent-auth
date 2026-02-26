@@ -27,10 +27,10 @@ The fundamental guarantee: **the server always knows exactly which agent perform
 
 - **Every action traces to an agent.** The server never sees "a host did this" — it sees "agent X, created through host Y, with permissions granted by users A and B, made this request." The host is the transport layer; the agent is the identity.
 - **Agents are not users.** An agent acts for a user, but has its own identity and constrained permissions.
-- **Proof-of-possession over bearer tokens.** Agents sign every request with their private key. No replayable secrets traverse the wire.
+- **Proof-of-possession over bearer tokens.** The host signs every request with the agent's private key. No replayable secrets traverse the wire.
 - **Separation of identity and authorization.** The agent table is pure identity. Permissions are a separate concern with their own lifecycle.
 - **Multi-grantor by default.** An agent can accumulate permissions from multiple users, each independently revocable.
-- **Host as trust anchor.** Every agent is created through a registered host, providing a verifiable chain of trust. But the host never acts on behalf of agents — agents authenticate directly.
+- **Host as trust anchor.** Every agent is created through a registered host, providing a verifiable chain of trust. The agent's keypair lives inside the host, but the server attributes every request to the agent identity — not the host.
 
 ## 2. Architecture
 
@@ -46,11 +46,11 @@ The protocol defines three actors:
 
 ### 2.2 Communication Flow
 
-**Registration:** Agent → Host → Server (the host facilitates agent creation)
+**Registration:** Host authenticates with its own key → creates the agent on the server
 
-**Authentication:** Agent → Server (the agent authenticates directly — the host is not in the request path)
+**Request time:** Host signs with the agent's key → server attributes the request to the agent
 
-This is a critical distinction. The host is involved at **creation time** — it's how the agent gets registered. But at **request time**, the agent signs its own JWT and sends it directly to the server. The host is not a proxy. The server always knows which specific agent is making the request.
+The agent's keypair lives inside the host runtime — the host is the process that signs JWTs and sends requests. But the server resolves every request to the **agent** identity, not the host. The JWT's `sub` claim is the agent ID, and the server looks up the agent's public key. This means the server always knows exactly which agent made the request, even though the host is the runtime executing it.
 
 ### 2.3 Consent Flow
 
@@ -68,9 +68,9 @@ For pre-authorized scopes (within the host's scope budget), no consent flow is n
 ### 2.4 Trust Model
 
 - The **server** trusts hosts it has registered (verified by public key)
-- The **host** facilitates agent creation but does NOT proxy agent requests — agents authenticate directly with the server
+- The **host** holds both its own keypair (for registration) and the agent's keypair (for requests). It signs and sends all requests, but the server resolves them to the agent identity.
 - **Users** grant permissions to agents — either pre-authorized via the host's scope budget, or explicitly approved per request
-- The **agent** never holds the user's credentials — only its own keypair
+- The **agent** never holds the user's credentials — only its own keypair (managed by the host)
 - Every request is attributable to a **specific agent**, never to a host or client
 
 ## 3. Entities

@@ -10,9 +10,11 @@ import {
 	listHosts,
 	reactivateHost,
 	revokeHost,
+	updateHost,
 } from "./enrollment";
 import { getAgent } from "./get-agent";
 import { getAgentSession } from "./get-agent-session";
+import { grantPermission } from "./grant-permission";
 import { listAgents } from "./list-agents";
 import { reactivateAgent } from "./reactivate-agent";
 import { requestScope } from "./request-scope";
@@ -44,5 +46,7 @@ export function createAgentRoutes(
 		getHost: getHost(),
 		revokeHost: revokeHost(),
 		reactivateHost: reactivateHost(opts, jtiCache),
+		updateHost: updateHost(opts),
+		grantPermission: grantPermission(opts),
 	};
 }

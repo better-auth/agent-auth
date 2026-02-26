@@ -23,10 +23,15 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 						z.string(),
 						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
 					)
+					.optional()
 					.meta({
 						description:
-							"Host Ed25519 public key as JWK. Client retains the private key.",
+							"Host Ed25519 public key as JWK. Client retains the private key. Optional when jwksUrl is provided.",
 					}),
+				jwksUrl: z.string().url().optional().meta({
+					description:
+						"JWKS URL for remote key discovery. If provided, publicKey is optional.",
+				}),
 				scopes: z.array(z.string()).optional().meta({
 					description:
 						"Default scopes agents inherit. Reactivated agents reset to these.",
@@ -45,19 +50,25 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const { publicKey } = ctx.body;
+			const { publicKey, jwksUrl } = ctx.body;
 
-			if (!publicKey.kty || !publicKey.x) {
+			if (!publicKey && !jwksUrl) {
 				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
 			}
 
-			const kty = publicKey.kty as string;
-			const crv = (publicKey.crv as string) ?? null;
-			const keyAlg = crv ? `${crv}` : kty;
-			if (!opts.allowedKeyAlgorithms.includes(keyAlg)) {
-				throw new APIError("BAD_REQUEST", {
-					message: `Key algorithm "${keyAlg}" is not allowed. Accepted: ${opts.allowedKeyAlgorithms.join(", ")}`,
-				});
+			if (publicKey) {
+				if (!publicKey.kty || !publicKey.x) {
+					throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
+				}
+
+				const kty = publicKey.kty as string;
+				const crv = (publicKey.crv as string) ?? null;
+				const keyAlg = crv ? `${crv}` : kty;
+				if (!opts.allowedKeyAlgorithms.includes(keyAlg)) {
+					throw new APIError("BAD_REQUEST", {
+						message: `Key algorithm "${keyAlg}" is not allowed. Accepted: ${opts.allowedKeyAlgorithms.join(", ")}`,
+					});
+				}
 			}
 
 			const hostScopes = ctx.body.scopes ?? [];
@@ -89,7 +100,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const now = new Date();
-			const kid = (publicKey.kid as string) ?? null;
+			const kid = publicKey ? ((publicKey.kid as string) ?? null) : null;
 			const expiresAt =
 				opts.agentSessionTTL > 0
 					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
@@ -115,7 +126,8 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 						where: [{ field: "id", value: existing.id }],
 						update: {
 							scopes: JSON.stringify(hostScopes),
-							publicKey: JSON.stringify(publicKey),
+							publicKey: publicKey ? JSON.stringify(publicKey) : "",
+							jwksUrl: jwksUrl ?? null,
 							status: "active",
 							activatedAt: now,
 							expiresAt,
@@ -140,8 +152,9 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				data: {
 					userId: session.user.id,
 					scopes: JSON.stringify(hostScopes),
-					publicKey: JSON.stringify(publicKey),
+					publicKey: publicKey ? JSON.stringify(publicKey) : "",
 					kid,
+					jwksUrl: jwksUrl ?? null,
 					status: "active",
 					activatedAt: now,
 					expiresAt,
@@ -468,6 +481,140 @@ export function reactivateHost(
 				status: "active",
 				hostId: host.id,
 				activatedAt: now,
+			});
+		},
+	);
+}
+
+export function updateHost(opts: ResolvedAgentAuthOptions) {
+	return createAuthEndpoint(
+		"/agent/host/update",
+		{
+			method: "POST",
+			body: z.object({
+				hostId: z.string().meta({ description: "ID of the host to update" }),
+				publicKey: z
+					.record(
+						z.string(),
+						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+					)
+					.optional()
+					.meta({ description: "New static public key as JWK" }),
+				jwksUrl: z
+					.string()
+					.url()
+					.optional()
+					.meta({ description: "New JWKS URL for remote key discovery" }),
+				scopes: z
+					.array(z.string())
+					.optional()
+					.meta({ description: "Update pre-authorized scopes" }),
+			}),
+			metadata: {
+				openapi: {
+					description:
+						"Update an agent host's public key, JWKS URL, or scopes. Requires user session.",
+				},
+			},
+		},
+		async (ctx) => {
+			const session = await getSessionFromCtx(ctx);
+			if (!session) {
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
+			}
+
+			const host = await ctx.context.adapter.findOne<AgentHost>({
+				model: HOST_TABLE,
+				where: [
+					{ field: "id", value: ctx.body.hostId },
+					{ field: "userId", value: session.user.id },
+				],
+			});
+
+			if (!host) {
+				throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
+			}
+
+			if (host.status === "revoked") {
+				throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
+			}
+
+			const { publicKey, jwksUrl, scopes } = ctx.body;
+
+			const update: Record<string, unknown> = {
+				updatedAt: new Date(),
+			};
+
+			if (publicKey) {
+				if (!publicKey.kty || !publicKey.x) {
+					throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
+				}
+				const kty = publicKey.kty as string;
+				const crv = (publicKey.crv as string) ?? null;
+				const keyAlg = crv ? `${crv}` : kty;
+				if (!opts.allowedKeyAlgorithms.includes(keyAlg)) {
+					throw new APIError("BAD_REQUEST", {
+						message: `Key algorithm "${keyAlg}" is not allowed. Accepted: ${opts.allowedKeyAlgorithms.join(", ")}`,
+					});
+				}
+				update.publicKey = JSON.stringify(publicKey);
+				update.kid = (publicKey.kid as string) ?? null;
+			}
+
+			if (jwksUrl !== undefined) {
+				update.jwksUrl = jwksUrl;
+			}
+
+			if (scopes !== undefined) {
+				if (scopes.length > 0 && opts.blockedScopes.length > 0) {
+					const blocked = findBlockedScopes(scopes, opts.blockedScopes);
+					if (blocked.length > 0) {
+						throw new APIError("BAD_REQUEST", {
+							message: `${ERROR_CODES.SCOPE_BLOCKED} Blocked: ${blocked.join(", ")}.`,
+						});
+					}
+				}
+
+				if (scopes.length > 0 && opts.validateScopes) {
+					if (typeof opts.validateScopes === "function") {
+						const valid = await opts.validateScopes(scopes);
+						if (!valid) {
+							throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
+						}
+					} else if (opts.roles) {
+						const knownScopes = new Set(Object.values(opts.roles).flat());
+						const invalid = scopes.filter((s) => !knownScopes.has(s));
+						if (invalid.length > 0) {
+							throw new APIError("BAD_REQUEST", {
+								message: `${ERROR_CODES.UNKNOWN_SCOPES} Unrecognized: ${invalid.join(", ")}.`,
+							});
+						}
+					}
+				}
+
+				update.scopes = JSON.stringify(scopes);
+			}
+
+			await ctx.context.adapter.update({
+				model: HOST_TABLE,
+				where: [{ field: "id", value: host.id }],
+				update,
+			});
+
+			const updated = await ctx.context.adapter.findOne<AgentHost>({
+				model: HOST_TABLE,
+				where: [{ field: "id", value: host.id }],
+			});
+
+			return ctx.json({
+				id: updated!.id,
+				scopes:
+					typeof updated!.scopes === "string"
+						? JSON.parse(updated!.scopes)
+						: updated!.scopes,
+				jwksUrl: updated!.jwksUrl,
+				status: updated!.status,
+				updatedAt: updated!.updatedAt,
 			});
 		},
 	);

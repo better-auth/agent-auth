@@ -1,14 +1,17 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
-import { decodeJwt } from "jose";
+import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
-import { findBlockedScopes, isSubsetOf } from "../scopes";
+import { JWKSCache } from "../jwks-cache";
+import { findBlockedScopes, hasScope } from "../scopes";
 import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../types";
+
+const jwksCache = new JWKSCache();
 
 const AGENT_TABLE = "agent";
 const HOST_TABLE = "agentHost";
@@ -40,6 +43,16 @@ const createAgentBodySchema = z.object({
 				"A JWT signed by the host's private key (sub = hostId). Enables silent agent creation without user session (§6).",
 		})
 		.optional(),
+	hostPublicKey: z
+		.record(
+			z.string(),
+			z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+		)
+		.meta({
+			description:
+				"Host's public key for dynamic host registration. When provided with a user session (no hostJWT), the server registers the host automatically.",
+		})
+		.optional(),
 	metadata: z
 		.record(
 			z.string(),
@@ -67,7 +80,11 @@ async function createPermissionRows(
 	agentId: string,
 	scopes: string[],
 	grantedBy: string,
-	opts?: { clearExisting?: boolean },
+	opts?: {
+		clearExisting?: boolean;
+		status?: "active" | "pending";
+		reason?: string | null;
+	},
 ) {
 	if (opts?.clearExisting) {
 		const existing = await adapter.findMany<{ id: string }>({
@@ -92,8 +109,8 @@ async function createPermissionRows(
 				referenceId: null,
 				grantedBy,
 				expiresAt: null,
-				status: "active",
-				reason: null,
+				status: opts?.status ?? "active",
+				reason: opts?.reason ?? null,
 				createdAt: now,
 				updatedAt: now,
 			},
@@ -123,7 +140,15 @@ export function createAgent(
 			},
 		},
 		async (ctx) => {
-			const { name, publicKey, scopes, role, hostJWT, metadata } = ctx.body;
+			const {
+				name,
+				publicKey,
+				scopes,
+				role,
+				hostJWT,
+				hostPublicKey,
+				metadata,
+			} = ctx.body;
 
 			let userId: string;
 			let hostId: string | null = null;
@@ -205,15 +230,27 @@ export function createAgent(
 					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_EXPIRED);
 				}
 
-				if (!host.publicKey) {
+				if (!host.publicKey && !host.jwksUrl) {
 					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 
 				let hostPubKey: AgentJWK;
-				try {
-					hostPubKey = JSON.parse(host.publicKey);
-				} catch {
-					throw APIError.from("FORBIDDEN", ERROR_CODES.INVALID_PUBLIC_KEY);
+				if (host.jwksUrl) {
+					const header = await decodeProtectedHeader(hostJWT);
+					if (!header.kid) {
+						throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
+					}
+					const key = await jwksCache.getKeyByKid(host.jwksUrl, header.kid);
+					if (!key) {
+						throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_PUBLIC_KEY);
+					}
+					hostPubKey = key;
+				} else {
+					try {
+						hostPubKey = JSON.parse(host.publicKey);
+					} catch {
+						throw APIError.from("FORBIDDEN", ERROR_CODES.INVALID_PUBLIC_KEY);
+					}
 				}
 
 				const payload = await verifyAgentJWT({
@@ -307,6 +344,74 @@ export function createAgent(
 						// device code lookup is best-effort
 					}
 				}
+
+				if (hostPublicKey) {
+					const hostKid = (hostPublicKey.kid as string) ?? null;
+					let existingHost: AgentHost | null = null;
+					if (hostKid) {
+						existingHost = await ctx.context.adapter.findOne<AgentHost>({
+							model: HOST_TABLE,
+							where: [
+								{ field: "kid", value: hostKid },
+								{ field: "userId", value: userId },
+							],
+						});
+					}
+					if (existingHost) {
+						hostId = existingHost.id;
+						hostBaseScopes =
+							typeof existingHost.scopes === "string"
+								? JSON.parse(existingHost.scopes)
+								: existingHost.scopes;
+					} else {
+						const hostNow = new Date();
+						const newHost = await ctx.context.adapter.create<
+							Record<string, string | Date | null>,
+							AgentHost
+						>({
+							model: HOST_TABLE,
+							data: {
+								userId,
+								publicKey: JSON.stringify(hostPublicKey),
+								kid: hostKid,
+								jwksUrl: null,
+								scopes: JSON.stringify([]),
+								status: "active",
+								activatedAt: hostNow,
+								expiresAt: null,
+								lastUsedAt: null,
+								createdAt: hostNow,
+								updatedAt: hostNow,
+							},
+						});
+						hostId = newHost.id;
+						hostBaseScopes = [];
+					}
+				} else {
+					try {
+						const hosts = await ctx.context.adapter.findMany<AgentHost>({
+							model: HOST_TABLE,
+							where: [
+								{ field: "userId", value: userId },
+								{ field: "status", value: "active" },
+							],
+							sortBy: { field: "createdAt", direction: "desc" },
+							limit: 1,
+						});
+						if (hosts.length > 0 && hosts[0]) {
+							hostId = hosts[0].id;
+							hostBaseScopes =
+								typeof hosts[0].scopes === "string"
+									? JSON.parse(hosts[0].scopes)
+									: hosts[0].scopes;
+						}
+					} catch {
+						// host lookup is best-effort
+					}
+					if (!hostId) {
+						throw APIError.from("BAD_REQUEST", ERROR_CODES.HOST_REQUIRED);
+					}
+				}
 			}
 
 			if (!publicKey.kty || !publicKey.x) {
@@ -338,18 +443,15 @@ export function createAgent(
 			const roleScopes = role && opts.roles?.[role] ? opts.roles[role] : [];
 
 			let resolvedScopes: string[];
+			let pendingScopes: string[] = [];
 
 			if (hostBaseScopes !== null) {
+				const budget = hostBaseScopes;
 				if (scopes && scopes.length > 0) {
-					if (!isSubsetOf(scopes, hostBaseScopes)) {
-						throw new APIError("BAD_REQUEST", {
-							message:
-								"Requested scopes must be a subset of the host's scopes.",
-						});
-					}
-					resolvedScopes = scopes;
+					resolvedScopes = scopes.filter((s: string) => hasScope(budget, s));
+					pendingScopes = scopes.filter((s: string) => !hasScope(budget, s));
 				} else {
-					resolvedScopes = hostBaseScopes;
+					resolvedScopes = budget;
 				}
 			} else {
 				resolvedScopes = scopes ?? roleScopes;
@@ -385,6 +487,7 @@ export function createAgent(
 
 			if (deviceApprovedScopes !== null && deviceApprovedScopes.length > 0) {
 				resolvedScopes = deviceApprovedScopes;
+				pendingScopes = [];
 			}
 
 			const now = new Date();
@@ -427,12 +530,31 @@ export function createAgent(
 						{ clearExisting: true },
 					);
 
-					return ctx.json({
+					if (pendingScopes.length > 0) {
+						await createPermissionRows(
+							ctx.context.adapter,
+							existing.id,
+							pendingScopes,
+							userId,
+							{
+								status: "pending",
+								reason: "Scope not pre-authorized by host",
+							},
+						);
+					}
+
+					const response: Record<string, unknown> = {
 						agentId: existing.id,
 						name,
 						scopes: resolvedScopes,
 						hostId,
-					});
+					};
+					if (pendingScopes.length > 0) {
+						const origin = new URL(ctx.context.baseURL).origin;
+						response.pendingScopes = pendingScopes;
+						response.verificationUrl = `${origin}/device/scopes?agent_id=${existing.id}`;
+					}
+					return ctx.json(response);
 				}
 			}
 
@@ -464,12 +586,31 @@ export function createAgent(
 				userId,
 			);
 
-			return ctx.json({
+			if (pendingScopes.length > 0) {
+				await createPermissionRows(
+					ctx.context.adapter,
+					agent.id,
+					pendingScopes,
+					userId,
+					{
+						status: "pending",
+						reason: "Scope not pre-authorized by host",
+					},
+				);
+			}
+
+			const response: Record<string, unknown> = {
 				agentId: agent.id,
 				name: agent.name,
 				scopes: resolvedScopes,
 				hostId,
-			});
+			};
+			if (pendingScopes.length > 0) {
+				const origin = new URL(ctx.context.baseURL).origin;
+				response.pendingScopes = pendingScopes;
+				response.verificationUrl = `${origin}/device/scopes?agent_id=${agent.id}`;
+			}
+			return ctx.json(response);
 		},
 	);
 }

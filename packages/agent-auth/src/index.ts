@@ -512,6 +512,8 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			getHost: routes.getHost,
 			revokeHost: routes.revokeHost,
 			reactivateHost: routes.reactivateHost,
+			updateHost: routes.updateHost,
+			grantPermission: routes.grantPermission,
 		},
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,

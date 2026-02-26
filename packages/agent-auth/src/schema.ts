@@ -43,6 +43,11 @@ export const agentSchema = () =>
 					required: false,
 					input: false,
 				},
+				jwksUrl: {
+					type: "string",
+					required: false,
+					input: false,
+				},
 				status: {
 					type: "string",
 					required: true,

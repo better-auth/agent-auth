@@ -4,44 +4,44 @@
   "type": "module",
   "description": "AI agent authentication and authorization plugin for Better Auth",
   "license": "MIT",
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
       }
     },
     "./client": {
       "import": {
-        "types": "./dist/client.d.mts",
-        "default": "./dist/client.mjs"
+        "types": "./dist/client.d.ts",
+        "default": "./dist/client.js"
       }
     },
     "./agent-client": {
       "import": {
-        "types": "./dist/agent-client.d.mts",
-        "default": "./dist/agent-client.mjs"
+        "types": "./dist/agent-client.d.ts",
+        "default": "./dist/agent-client.js"
       }
     },
     "./mcp-tools": {
       "import": {
-        "types": "./dist/mcp-tools.d.mts",
-        "default": "./dist/mcp-tools.mjs"
+        "types": "./dist/mcp-tools.d.ts",
+        "default": "./dist/mcp-tools.js"
       }
     },
     "./mcp-storage-fs": {
       "import": {
-        "types": "./dist/mcp-storage-fs.d.mts",
-        "default": "./dist/mcp-storage-fs.mjs"
+        "types": "./dist/mcp-storage-fs.d.ts",
+        "default": "./dist/mcp-storage-fs.js"
       }
     },
     "./mcp-storage-memory": {
       "import": {
-        "types": "./dist/mcp-storage-memory.d.mts",
-        "default": "./dist/mcp-storage-memory.mjs"
+        "types": "./dist/mcp-storage-memory.d.ts",
+        "default": "./dist/mcp-storage-memory.js"
       }
     }
   },
