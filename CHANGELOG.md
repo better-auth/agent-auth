@@ -145,3 +145,102 @@ createdAt, updatedAt
 | `ENROLLMENT_REVOKED` | `HOST_REVOKED` |
 | `ENROLLMENT_EXPIRED` | `HOST_EXPIRED` |
 | `ENROLLMENT_REQUIRED` | `HOST_REQUIRED` |
+
+### Protocol Specification
+
+New `docs/spec.mdx` — a standalone protocol specification covering the full
+Agent Auth design:
+
+- Problem statement and design principles
+- Actor model (Agent, Host, Server) and communication flow
+- Entity definitions with field-level invariants
+- Authentication: keypair generation, JWT signing, request binding
+- Three-state lifecycle (active → expired → revoked) with reactivation
+- Authorization model: opaque scopes, resource scoping, multi-grantor,
+  scope escalation, host pre-authorization
+- Host registration: dynamic (first-use), explicit, and remote JWKS
+- Agent creation flows: first-time (unknown host), silent (via host JWT),
+  and scope-exceeds-pre-authorization
+- Key rotation for agents and hosts (including JWKS-based)
+- Auditability and security considerations
+
+### Agent Session Shape
+
+The `AgentSession` type has changed. The flat fields (`scopes`, `role`, `orgId`,
+`workgroupId`, `enrollmentId`, `source`) are replaced with a `permissions` array
+and `hostId`:
+
+```ts
+// Before
+agent.scopes        // string[]
+agent.role           // string | null
+agent.orgId          // string | null
+agent.workgroupId    // string | null
+agent.enrollmentId   // string | null
+agent.source         // string | null
+
+// After
+agent.permissions    // Array<{ scope, referenceId, grantedBy, status }>
+agent.hostId         // string
+```
+
+### Agent Client: Automatic Request Binding
+
+`createAgentClient` now includes DPoP-style request binding (`htm`, `htu`,
+`ath`) in every JWT it signs. The internal `getAuthHeader()` has been replaced
+with `signRequest(method, path, body)`. Every call to `agent.fetch()` and
+`agent.getSession()` automatically binds the JWT to the exact request.
+
+### MCP Tools: Request Binding
+
+The MCP tool `make_authenticated_request` now includes request binding claims
+when making authenticated requests.
+
+### New Crypto Exports
+
+- `hashRequestBody(body)` — compute a SHA-256 base64url digest for request
+  binding's `ath` claim. Exported from `@better-auth/agent-auth/crypto`.
+- `RequestBinding` interface — `{ method, path, bodyHash? }`.
+- `signAgentJWT` now accepts an optional `requestBinding` parameter.
+
+### Update Agent Simplified
+
+`updateAgent` only accepts `name` and `metadata`. The `scopes` and `role`
+parameters have been removed — permissions are now managed exclusively through
+the scope escalation flow (`request-scope` → `approve-scope`).
+
+### Scope Escalation Flow Changes
+
+- **`request-scope`** no longer accepts a `name` parameter. The `requestId`
+  returned is now the agent ID (not a separate scope request record ID).
+  Response includes `pendingPermissionIds` array.
+- **`approve-scope`** `requestId` is now the agent ID. The endpoint resolves
+  all pending `agentPermission` rows for that agent. Response no longer includes
+  merged `scopes` — only `added` (the scopes that were approved).
+- **`scope-request-status`** queries the `agentPermission` table directly.
+  The `requestId` is the agent ID. Returns `existingScopes` (active) and
+  `requestedScopes` (pending).
+
+### Permission Decay on Reactivation
+
+When an expired agent is reactivated (transparent or explicit), all existing
+permissions are deleted and re-created from the host's `scopes` budget
+(scope decay). If no host is associated, existing permissions are kept as-is.
+
+### List / Get Agent Response Changes
+
+- `listAgents` and `getAgent` now return a `permissions` array instead of
+  flat `scopes`, `role`, `orgId`, `workgroupId` fields.
+- `listAgents` removed `orgId` and `workgroupId` query filters.
+- `listAgents` `sortBy` is now a strict enum: `"createdAt" | "lastUsedAt" | "name"`.
+
+### Discovery Endpoint Changes
+
+- `supportedAlgorithms` renamed to `algorithms`
+- `availableScopes` renamed to `scopes` and now returns objects
+  (`{ name, description }`) instead of plain strings.
+
+### Client Plugin
+
+- Removed workgroup client routes (`/agent/workgroup/*`).
+- Renamed enrollment routes to host routes (`/agent/host/*`).
