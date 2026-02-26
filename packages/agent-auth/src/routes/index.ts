@@ -1,3 +1,4 @@
+import type { JtiReplayCache } from "../jti-cache";
 import type { ResolvedAgentAuthOptions } from "../types";
 import { approveScope } from "./approve-scope";
 import { cleanupAgents } from "./cleanup-agents";
@@ -7,6 +8,7 @@ import {
 	createEnrollment,
 	getEnrollment,
 	listEnrollments,
+	reactivateEnrollment,
 	revokeEnrollment,
 } from "./enrollment";
 import { getAgent } from "./get-agent";
@@ -25,9 +27,12 @@ import {
 	updateWorkgroup,
 } from "./workgroup";
 
-export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
+export function createAgentRoutes(
+	opts: ResolvedAgentAuthOptions,
+	jtiCache?: JtiReplayCache,
+) {
 	return {
-		createAgent: createAgent(opts),
+		createAgent: createAgent(opts, jtiCache),
 		listAgents: listAgents(),
 		getAgent: getAgent(),
 		updateAgent: updateAgent(opts),
@@ -44,6 +49,7 @@ export function createAgentRoutes(opts: ResolvedAgentAuthOptions) {
 		listEnrollments: listEnrollments(),
 		getEnrollment: getEnrollment(),
 		revokeEnrollment: revokeEnrollment(),
+		reactivateEnrollment: reactivateEnrollment(opts, jtiCache),
 		createWorkgroup: createWorkgroup(),
 		listWorkgroups: listWorkgroups(),
 		updateWorkgroup: updateWorkgroup(),

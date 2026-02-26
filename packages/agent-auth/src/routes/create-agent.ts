@@ -6,6 +6,7 @@ import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import type { JtiReplayCache } from "../jti-cache";
 import { findBlockedScopes, isSubsetOf } from "../scopes";
 import type { Agent, Enrollment, ResolvedAgentAuthOptions } from "../types";
 
@@ -59,7 +60,10 @@ const createAgentBodySchema = z.object({
 		.optional(),
 });
 
-export function createAgent(opts: ResolvedAgentAuthOptions) {
+export function createAgent(
+	opts: ResolvedAgentAuthOptions,
+	jtiCache?: JtiReplayCache,
+) {
 	return createAuthEndpoint(
 		"/agent/create",
 		{
@@ -118,8 +122,23 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 				if (enrollment.status === "revoked") {
 					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
 				}
+
+				// Transition active → expired when expiresAt has passed
+				if (
+					enrollment.status === "active" &&
+					enrollment.expiresAt &&
+					new Date(enrollment.expiresAt) <= new Date()
+				) {
+					await ctx.context.adapter.update({
+						model: ENROLLMENT_TABLE,
+						where: [{ field: "id", value: enrollment.id }],
+						update: { status: "expired", updatedAt: new Date() },
+					});
+					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_EXPIRED);
+				}
+
 				if (enrollment.status === "expired") {
-					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_EXPIRED);
 				}
 
 				if (!enrollment.publicKey) {
@@ -143,6 +162,13 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 					throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
 				}
 
+				if (jtiCache && payload.jti) {
+					if (jtiCache.has(payload.jti)) {
+						throw APIError.from("UNAUTHORIZED", ERROR_CODES.JWT_REPLAY);
+					}
+					jtiCache.add(payload.jti, opts.jwtMaxAge);
+				}
+
 				userId = enrollment.userId;
 				enrollmentId = enrollment.id;
 				enrollmentBaseScopes =
@@ -150,12 +176,21 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 						? JSON.parse(enrollment.baseScopes)
 						: enrollment.baseScopes;
 
+				// TTL heartbeat: update lastUsedAt and extend expiresAt
+				const heartbeatUpdate: Record<string, Date> = {
+					lastUsedAt: new Date(),
+				};
+				if (opts.agentSessionTTL > 0) {
+					heartbeatUpdate.expiresAt = new Date(
+						Date.now() + opts.agentSessionTTL * 1000,
+					);
+				}
 				ctx.context.runInBackground(
 					ctx.context.adapter
 						.update({
 							model: ENROLLMENT_TABLE,
 							where: [{ field: "id", value: enrollment.id }],
-							update: { lastUsedAt: new Date() },
+							update: heartbeatUpdate,
 						})
 						.catch(() => {}),
 				);
@@ -310,15 +345,12 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 				});
 
 				if (existing) {
-					const reactivationScopes =
-						enrollmentBaseScopes !== null ? resolvedScopes : resolvedScopes;
-
 					await ctx.context.adapter.update({
 						model: AGENT_TABLE,
 						where: [{ field: "id", value: existing.id }],
 						update: {
 							name,
-							scopes: JSON.stringify(reactivationScopes),
+							scopes: JSON.stringify(resolvedScopes),
 							role: resolvedRole,
 							status: "active",
 							publicKey: JSON.stringify(publicKey),
@@ -334,7 +366,7 @@ export function createAgent(opts: ResolvedAgentAuthOptions) {
 					return ctx.json({
 						agentId: existing.id,
 						name,
-						scopes: reactivationScopes,
+						scopes: resolvedScopes,
 						role: resolvedRole,
 						enrollmentId,
 					});

@@ -23,5 +23,7 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 	NO_SCOPE_CHANGES: "No new scopes or name changes requested.",
 	ENROLLMENT_NOT_FOUND: "Enrollment not found.",
 	ENROLLMENT_REVOKED: "Enrollment has been revoked.",
+	ENROLLMENT_EXPIRED:
+		"Enrollment has expired. Reactivate it via proof-of-possession.",
 	ENROLLMENT_REQUIRED: "An active enrollment is required to create agents.",
 });

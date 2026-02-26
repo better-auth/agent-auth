@@ -2,7 +2,10 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
+import type { AgentJWK } from "../crypto";
+import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import type { JtiReplayCache } from "../jti-cache";
 import { findBlockedScopes } from "../scopes";
 import type { Agent, Enrollment, ResolvedAgentAuthOptions } from "../types";
 
@@ -36,7 +39,7 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Create an enrollment — persistent app-level consent with Ed25519 keypair (§4). No bearer tokens.",
+						"Create or reactivate an enrollment. If a kid matches an existing enrollment for this user, that enrollment is reactivated (§4.3).",
 				},
 			},
 		},
@@ -89,6 +92,49 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 
 			const now = new Date();
 			const kid = (publicKey.kid as string) ?? null;
+			const expiresAt =
+				opts.agentSessionTTL > 0
+					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
+					: null;
+
+			// §4.3: Idempotent creation — if same kid+userId exists, reactivate it
+			if (kid) {
+				const existing = await ctx.context.adapter.findOne<Enrollment>({
+					model: ENROLLMENT_TABLE,
+					where: [
+						{ field: "kid", value: kid },
+						{ field: "userId", value: session.user.id },
+					],
+				});
+
+				if (existing && existing.status === "revoked") {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+				}
+
+				if (existing) {
+					await ctx.context.adapter.update({
+						model: ENROLLMENT_TABLE,
+						where: [{ field: "id", value: existing.id }],
+						update: {
+							appSource: ctx.body.appSource ?? existing.appSource,
+							baseScopes: JSON.stringify(baseScopes),
+							publicKey: JSON.stringify(publicKey),
+							status: "active",
+							activatedAt: now,
+							expiresAt,
+							updatedAt: now,
+						},
+					});
+
+					return ctx.json({
+						enrollmentId: existing.id,
+						appSource: ctx.body.appSource ?? existing.appSource,
+						baseScopes,
+						status: "active",
+						reactivated: true,
+					});
+				}
+			}
 
 			const enrollment = await ctx.context.adapter.create<
 				Record<string, string | Date | null>,
@@ -103,7 +149,7 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 					kid,
 					status: "active",
 					activatedAt: now,
-					expiresAt: null,
+					expiresAt,
 					lastUsedAt: null,
 					createdAt: now,
 					updatedAt: now,
@@ -165,6 +211,7 @@ export function listEnrollments() {
 							: e.baseScopes,
 					status: e.status,
 					activatedAt: e.activatedAt,
+					expiresAt: e.expiresAt,
 					lastUsedAt: e.lastUsedAt,
 					createdAt: e.createdAt,
 					updatedAt: e.updatedAt,
@@ -215,6 +262,7 @@ export function getEnrollment() {
 						: enrollment.baseScopes,
 				status: enrollment.status,
 				activatedAt: enrollment.activatedAt,
+				expiresAt: enrollment.expiresAt,
 				lastUsedAt: enrollment.lastUsedAt,
 				createdAt: enrollment.createdAt,
 				updatedAt: enrollment.updatedAt,
@@ -303,6 +351,110 @@ export function revokeEnrollment() {
 			return ctx.json({
 				success: true,
 				revokedAgentCount: allAgents.length,
+			});
+		},
+	);
+}
+
+/**
+ * POST /agent/enrollment/reactivate
+ *
+ * Reactivate an expired enrollment via proof-of-possession.
+ * The enrollment must be in "expired" state (public key retained).
+ */
+export function reactivateEnrollment(
+	opts: ResolvedAgentAuthOptions,
+	jtiCache?: JtiReplayCache,
+) {
+	return createAuthEndpoint(
+		"/agent/enrollment/reactivate",
+		{
+			method: "POST",
+			body: z.object({
+				enrollmentId: z.string(),
+				proof: z.string().meta({
+					description:
+						"A JWT signed by the enrollment's private key proving possession.",
+				}),
+			}),
+			metadata: {
+				openapi: {
+					description:
+						"Reactivate an expired enrollment via proof-of-possession (§7).",
+				},
+			},
+		},
+		async (ctx) => {
+			const enrollment = await ctx.context.adapter.findOne<Enrollment>({
+				model: ENROLLMENT_TABLE,
+				where: [{ field: "id", value: ctx.body.enrollmentId }],
+			});
+
+			if (!enrollment) {
+				throw APIError.from("NOT_FOUND", ERROR_CODES.ENROLLMENT_NOT_FOUND);
+			}
+
+			if (enrollment.status === "revoked") {
+				throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+			}
+
+			if (enrollment.status === "active") {
+				return ctx.json({
+					status: "active",
+					message: "Enrollment is already active.",
+				});
+			}
+
+			if (!enrollment.publicKey) {
+				throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+			}
+
+			let enrollmentPubKey: AgentJWK;
+			try {
+				enrollmentPubKey = JSON.parse(enrollment.publicKey);
+			} catch {
+				throw APIError.from("FORBIDDEN", ERROR_CODES.INVALID_PUBLIC_KEY);
+			}
+
+			const payload = await verifyAgentJWT({
+				jwt: ctx.body.proof,
+				publicKey: enrollmentPubKey,
+				maxAge: opts.jwtMaxAge,
+			});
+
+			if (!payload || payload.sub !== enrollment.id) {
+				throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
+			}
+
+			if (jtiCache && payload.jti) {
+				if (jtiCache.has(payload.jti)) {
+					throw APIError.from("UNAUTHORIZED", ERROR_CODES.JWT_REPLAY);
+				}
+				jtiCache.add(payload.jti, opts.jwtMaxAge);
+			}
+
+			const now = new Date();
+			const expiresAt =
+				opts.agentSessionTTL > 0
+					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
+					: null;
+
+			await ctx.context.adapter.update({
+				model: ENROLLMENT_TABLE,
+				where: [{ field: "id", value: enrollment.id }],
+				update: {
+					status: "active",
+					activatedAt: now,
+					expiresAt,
+					lastUsedAt: now,
+					updatedAt: now,
+				},
+			});
+
+			return ctx.json({
+				status: "active",
+				enrollmentId: enrollment.id,
+				activatedAt: now,
 			});
 		},
 	);

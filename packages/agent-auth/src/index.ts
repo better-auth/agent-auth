@@ -150,7 +150,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 
 	const schema = mergeSchema(agentSchema(), opts.schema);
 
-	const routes = createAgentRoutes(opts);
+	const routes = createAgentRoutes(opts, jtiCache);
 
 	return {
 		id: "agent-auth",
@@ -412,6 +412,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			listEnrollments: routes.listEnrollments,
 			getEnrollment: routes.getEnrollment,
 			revokeEnrollment: routes.revokeEnrollment,
+			reactivateEnrollment: routes.reactivateEnrollment,
 			createWorkgroup: routes.createWorkgroup,
 			listWorkgroups: routes.listWorkgroups,
 			updateWorkgroup: routes.updateWorkgroup,

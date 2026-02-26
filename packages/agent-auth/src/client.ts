@@ -19,6 +19,7 @@ export const agentAuthClient = () => {
 			"/agent/approve-scope": "POST",
 			"/agent/enrollment/create": "POST",
 			"/agent/enrollment/revoke": "POST",
+			"/agent/enrollment/reactivate": "POST",
 			"/agent/workgroup/create": "POST",
 			"/agent/workgroup/update": "POST",
 			"/agent/workgroup/delete": "POST",

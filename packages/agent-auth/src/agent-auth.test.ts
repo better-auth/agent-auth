@@ -636,15 +636,7 @@ describe("agent-auth enrollment", async () => {
 	});
 
 	it("should allow requesting a scope subset via enrollmentJWT", async () => {
-		const enrRes = await auth.api.createEnrollment({
-			headers,
-			body: {
-				publicKey: (await generateAgentKeypair()).publicKey,
-				baseScopes: ["reports.read", "reports.write", "email.send"],
-			},
-		});
 		const enrKp = await generateAgentKeypair();
-		// We need the enrollment's keypair for signing. Re-create with known keypair.
 		const enr2 = await auth.api.createEnrollment({
 			headers,
 			body: {
@@ -783,6 +775,242 @@ describe("agent-auth enrollment", async () => {
 			query: { agentId: agent2.agentId },
 		});
 		expect(a2.status).toBe("revoked");
+	});
+});
+
+describe("agent-auth enrollment lifetime", async () => {
+	const { auth, db, signInWithTestUser } = await getTestInstance(
+		{
+			plugins: [
+				agentAuth({
+					agentSessionTTL: 3600,
+					roles: {
+						reader: ["reports.read"],
+					},
+				}),
+			],
+		},
+		{ clientOptions: { plugins: [agentAuthClient()] } },
+	);
+
+	const { headers } = await signInWithTestUser();
+
+	it("should reject agent creation when enrollment expiresAt has passed (ENROLLMENT_EXPIRED)", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		await db.update({
+			model: "agentEnrollment",
+			where: [{ field: "id", value: enr.enrollmentId }],
+			update: { expiresAt: new Date("2020-01-01T00:00:00Z") },
+		});
+
+		const jwt = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		const agentKp = await generateAgentKeypair();
+		try {
+			await auth.api.createAgent({
+				body: {
+					name: "Expired Enrollment Agent",
+					publicKey: agentKp.publicKey,
+					enrollmentJWT: jwt,
+				},
+			});
+			expect.unreachable();
+		} catch (e: unknown) {
+			const err = e as { status: string; body?: { message?: string } };
+			expect(err.status).toBe("FORBIDDEN");
+		}
+	});
+
+	it("should reactivate expired enrollment via proof-of-possession", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		await db.update({
+			model: "agentEnrollment",
+			where: [{ field: "id", value: enr.enrollmentId }],
+			update: { status: "expired" },
+		});
+
+		const proof = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		const res = await auth.api.reactivateEnrollment({
+			body: {
+				enrollmentId: enr.enrollmentId,
+				proof,
+			},
+		});
+
+		expect(res.status).toBe("active");
+		expect(res.enrollmentId).toBe(enr.enrollmentId);
+
+		const jwt = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+		const agentKp = await generateAgentKeypair();
+		const agent = await auth.api.createAgent({
+			body: {
+				name: "Post-Reactivation Agent",
+				publicKey: agentKp.publicKey,
+				enrollmentJWT: jwt,
+			},
+		});
+		expect(agent.agentId).toBeDefined();
+	});
+
+	it("should not reactivate a revoked enrollment", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		await auth.api.revokeEnrollment({
+			headers,
+			body: { enrollmentId: enr.enrollmentId },
+		});
+
+		const proof = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		try {
+			await auth.api.reactivateEnrollment({
+				body: { enrollmentId: enr.enrollmentId, proof },
+			});
+			expect.unreachable();
+		} catch (e: unknown) {
+			const err = e as { status: string };
+			expect(err.status).toBe("FORBIDDEN");
+		}
+	});
+
+	it("should idempotently reactivate enrollment when same kid is resubmitted (§4.3)", async () => {
+		const enrKp = await generateAgentKeypair();
+		const first = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		await db.update({
+			model: "agentEnrollment",
+			where: [{ field: "id", value: first.enrollmentId }],
+			update: { status: "expired" },
+		});
+
+		const second = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read", "reports.write"],
+			},
+		});
+
+		expect(second.enrollmentId).toBe(first.enrollmentId);
+		expect(second.status).toBe("active");
+		expect(second.reactivated).toBe(true);
+		expect(second.baseScopes).toEqual(["reports.read", "reports.write"]);
+	});
+
+	it("should reject replayed enrollment JWTs (JTI cache)", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		const jwt = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		const agentKp1 = await generateAgentKeypair();
+		await auth.api.createAgent({
+			body: {
+				name: "First Use",
+				publicKey: agentKp1.publicKey,
+				enrollmentJWT: jwt,
+			},
+		});
+
+		const agentKp2 = await generateAgentKeypair();
+		try {
+			await auth.api.createAgent({
+				body: {
+					name: "Replayed Use",
+					publicKey: agentKp2.publicKey,
+					enrollmentJWT: jwt,
+				},
+			});
+			expect.unreachable();
+		} catch (e: unknown) {
+			const err = e as { status: string };
+			expect(err.status).toBe("UNAUTHORIZED");
+		}
+	});
+
+	it("should update enrollment lastUsedAt and expiresAt on use (TTL heartbeat)", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		const jwt = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		const agentKp = await generateAgentKeypair();
+		await auth.api.createAgent({
+			body: {
+				name: "Heartbeat Agent",
+				publicKey: agentKp.publicKey,
+				enrollmentJWT: jwt,
+			},
+		});
+
+		await new Promise((r) => setTimeout(r, 200));
+
+		const updated = await auth.api.getEnrollment({
+			headers,
+			query: { enrollmentId: enr.enrollmentId },
+		});
+		expect(updated.lastUsedAt).not.toBeNull();
+		expect(updated.expiresAt).not.toBeNull();
 	});
 });
 
