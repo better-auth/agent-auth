@@ -56,7 +56,7 @@ export function cleanupAgents() {
 				),
 			);
 
-			return ctx.json({ revoked: expired.length });
+			return ctx.json({ expired: expired.length });
 		},
 	);
 }

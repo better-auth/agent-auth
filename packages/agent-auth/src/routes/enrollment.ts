@@ -69,7 +69,9 @@ export function createEnrollment(opts: ResolvedAgentAuthOptions) {
 			if (baseScopes.length > 0 && opts.blockedScopes.length > 0) {
 				const blocked = findBlockedScopes(baseScopes, opts.blockedScopes);
 				if (blocked.length > 0) {
-					throw APIError.from("BAD_REQUEST", ERROR_CODES.SCOPE_BLOCKED);
+					throw new APIError("BAD_REQUEST", {
+						message: `${ERROR_CODES.SCOPE_BLOCKED} Blocked: ${blocked.join(", ")}.`,
+					});
 				}
 			}
 
@@ -302,6 +304,10 @@ export function revokeEnrollment() {
 
 			if (!enrollment) {
 				throw APIError.from("NOT_FOUND", ERROR_CODES.ENROLLMENT_NOT_FOUND);
+			}
+
+			if (enrollment.status === "revoked") {
+				return ctx.json({ success: true, revokedAgentCount: 0 });
 			}
 
 			const now = new Date();

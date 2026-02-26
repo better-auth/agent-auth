@@ -20,13 +20,16 @@ export function discover(opts: ResolvedAgentAuthOptions) {
 			},
 		},
 		async (ctx) => {
-			const allScopes = opts.roles
+			const allScopeNames = opts.roles
 				? [...new Set(Object.values(opts.roles).flat())]
 				: [];
 
 			return ctx.json({
-				supportedAlgorithms: opts.allowedKeyAlgorithms,
-				availableScopes: allScopes,
+				algorithms: opts.allowedKeyAlgorithms,
+				scopes: allScopeNames.map((name) => ({
+					name,
+					description: name,
+				})),
 				roles: opts.roles ? Object.keys(opts.roles) : [],
 				jwtMaxAge: opts.jwtMaxAge,
 				sessionTTL: opts.agentSessionTTL,

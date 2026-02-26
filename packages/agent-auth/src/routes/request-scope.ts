@@ -62,7 +62,9 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			if (opts.blockedScopes.length > 0) {
 				const blocked = findBlockedScopes(scopes, opts.blockedScopes);
 				if (blocked.length > 0) {
-					throw APIError.from("BAD_REQUEST", ERROR_CODES.SCOPE_BLOCKED);
+					throw new APIError("BAD_REQUEST", {
+						message: `${ERROR_CODES.SCOPE_BLOCKED} Blocked: ${blocked.join(", ")}.`,
+					});
 				}
 			}
 

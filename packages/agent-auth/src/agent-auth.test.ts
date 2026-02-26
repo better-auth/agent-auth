@@ -414,7 +414,7 @@ describe("agent-auth", async () => {
 
 		const cleanupRes = await client.agent.cleanup({}, { headers });
 		expect(cleanupRes.error).toBeNull();
-		expect(cleanupRes.data?.revoked).toBeGreaterThanOrEqual(1);
+		expect(cleanupRes.data?.expired).toBeGreaterThanOrEqual(1);
 
 		const getRes = await client.agent.get(
 			{ query: { agentId: created.agentId } },
@@ -1484,9 +1484,15 @@ describe("agent-auth discovery", async () => {
 
 	it("should return configuration via discovery endpoint", async () => {
 		const res = await auth.api.discover({});
-		expect(res.supportedAlgorithms).toEqual(["Ed25519", "P-256"]);
-		expect(res.availableScopes).toContain("reports.read");
-		expect(res.availableScopes).toContain("reports.write");
+		expect(res.algorithms).toEqual(["Ed25519", "P-256"]);
+		expect(res.scopes).toContainEqual({
+			name: "reports.read",
+			description: "reports.read",
+		});
+		expect(res.scopes).toContainEqual({
+			name: "reports.write",
+			description: "reports.write",
+		});
 		expect(res.roles).toEqual(["reader", "writer"]);
 		expect(res.blockedScopes).toEqual(["admin.delete"]);
 		expect(typeof res.jwtMaxAge).toBe("number");

@@ -4,6 +4,7 @@ import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import type { JtiReplayCache } from "../jti-cache";
 import type { Agent, Enrollment, ResolvedAgentAuthOptions } from "../types";
 
 const AGENT_TABLE = "agent";
@@ -17,7 +18,10 @@ const ENROLLMENT_TABLE = "agentEnrollment";
  * Scopes reset to the enrollment's baseScopes (scope decay §7.3).
  * `activatedAt` and `maxLifetime` clock reset.
  */
-export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
+export function reactivateAgent(
+	opts: ResolvedAgentAuthOptions,
+	jtiCache?: JtiReplayCache,
+) {
 	return createAuthEndpoint(
 		"/agent/reactivate",
 		{
@@ -57,6 +61,25 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				});
 			}
 
+			// §7.2 absoluteLifetime — cannot reactivate past absolute lifetime
+			if (opts.absoluteLifetime > 0 && agent.createdAt) {
+				const absoluteExpiry =
+					new Date(agent.createdAt).getTime() + opts.absoluteLifetime * 1000;
+				if (Date.now() >= absoluteExpiry) {
+					await ctx.context.adapter.update({
+						model: AGENT_TABLE,
+						where: [{ field: "id", value: agent.id }],
+						update: {
+							status: "revoked",
+							publicKey: "",
+							kid: null,
+							updatedAt: new Date(),
+						},
+					});
+					throw APIError.from("FORBIDDEN", ERROR_CODES.AGENT_REVOKED);
+				}
+			}
+
 			if (!agent.publicKey) {
 				throw APIError.from("FORBIDDEN", ERROR_CODES.AGENT_REVOKED);
 			}
@@ -76,6 +99,14 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 
 			if (!payload || payload.sub !== agent.id) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.INVALID_JWT);
+			}
+
+			// §15.5 JTI replay detection
+			if (jtiCache && payload.jti) {
+				if (jtiCache.has(payload.jti)) {
+					throw APIError.from("UNAUTHORIZED", ERROR_CODES.JWT_REPLAY);
+				}
+				jtiCache.add(payload.jti, opts.jwtMaxAge);
 			}
 
 			let baseScopes: string[] = [];

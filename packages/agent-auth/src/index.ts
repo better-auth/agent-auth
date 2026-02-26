@@ -272,10 +272,35 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						});
 
 						if (!payload) {
+							// §9.4 SHOULD: if the JWT is invalid and the session has
+							// lapsed, lazily transition agent to "expired" so the
+							// database reflects reality.
+							if (needsReactivation && agent.status === "active") {
+								ctx.context.adapter
+									.update({
+										model: AGENT_TABLE,
+										where: [{ field: "id", value: agent.id }],
+										update: { status: "expired", updatedAt: new Date() },
+									})
+									.catch(() => {});
+							}
 							throw APIError.from(
 								"UNAUTHORIZED",
 								AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 							);
+						}
+
+						// §9.4 JTI replay detection — must run before transparent
+						// reactivation to prevent a replayed JWT from triggering
+						// reactivation side-effects.
+						if (payload.jti) {
+							if (jtiCache.has(payload.jti)) {
+								throw APIError.from(
+									"UNAUTHORIZED",
+									AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
+								);
+							}
+							jtiCache.add(payload.jti, opts.jwtMaxAge);
 						}
 
 						// §7.1: Transparent reactivation — if expired but JWT is valid,
@@ -293,17 +318,6 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								);
 							}
 							agent = reactivated;
-						}
-
-						// §15.5, §9.4 JTI replay detection
-						if (payload.jti) {
-							if (jtiCache.has(payload.jti)) {
-								throw APIError.from(
-									"UNAUTHORIZED",
-									AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
-								);
-							}
-							jtiCache.add(payload.jti, opts.jwtMaxAge);
 						}
 
 						const user = await ctx.context.internalAdapter.findUserById(

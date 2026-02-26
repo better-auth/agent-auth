@@ -83,6 +83,7 @@ export async function signAgentJWT(options: SignAgentJWTOptions) {
 	})
 		.setProtectedHeader({
 			alg: "EdDSA",
+			typ: "JWT",
 			kid: privateKey.kid as string | undefined,
 		})
 		.setSubject(agentId)
