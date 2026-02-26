@@ -1014,6 +1014,174 @@ describe("agent-auth enrollment lifetime", async () => {
 	});
 });
 
+describe("agent-auth enrollment lifetime clocks", async () => {
+	const { auth, db, signInWithTestUser } = await getTestInstance(
+		{
+			plugins: [
+				agentAuth({
+					agentSessionTTL: 3600,
+					agentMaxLifetime: 86400,
+					absoluteLifetime: 172800,
+					roles: { reader: ["reports.read"] },
+				}),
+			],
+		},
+		{ clientOptions: { plugins: [agentAuthClient()] } },
+	);
+
+	const { headers } = await signInWithTestUser();
+
+	it("should revoke enrollment when absoluteLifetime elapses (§9.2)", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		await db.update({
+			model: "agentEnrollment",
+			where: [{ field: "id", value: enr.enrollmentId }],
+			update: { createdAt: new Date("2020-01-01T00:00:00Z") },
+		});
+
+		const jwt = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		const agentKp = await generateAgentKeypair();
+		try {
+			await auth.api.createAgent({
+				body: {
+					name: "AbsoluteLifetime Agent",
+					publicKey: agentKp.publicKey,
+					enrollmentJWT: jwt,
+				},
+			});
+			expect.unreachable();
+		} catch (e: unknown) {
+			const err = e as { status: string };
+			expect(err.status).toBe("FORBIDDEN");
+		}
+
+		const enrollment = await auth.api.getEnrollment({
+			headers,
+			query: { enrollmentId: enr.enrollmentId },
+		});
+		expect(enrollment.status).toBe("revoked");
+	});
+
+	it("should expire enrollment when agentMaxLifetime elapses and allow reactivation (§9.2)", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		await db.update({
+			model: "agentEnrollment",
+			where: [{ field: "id", value: enr.enrollmentId }],
+			update: { activatedAt: new Date("2020-01-01T00:00:00Z") },
+		});
+
+		const jwt = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		const agentKp = await generateAgentKeypair();
+		try {
+			await auth.api.createAgent({
+				body: {
+					name: "MaxLifetime Agent",
+					publicKey: agentKp.publicKey,
+					enrollmentJWT: jwt,
+				},
+			});
+			expect.unreachable();
+		} catch (e: unknown) {
+			const err = e as { status: string };
+			expect(err.status).toBe("FORBIDDEN");
+		}
+
+		const expired = await auth.api.getEnrollment({
+			headers,
+			query: { enrollmentId: enr.enrollmentId },
+		});
+		expect(expired.status).toBe("expired");
+
+		const proof = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+		const res = await auth.api.reactivateEnrollment({
+			body: { enrollmentId: enr.enrollmentId, proof },
+		});
+		expect(res.status).toBe("active");
+
+		const jwt2 = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+		const agentKp2 = await generateAgentKeypair();
+		const agent = await auth.api.createAgent({
+			body: {
+				name: "Post-MaxLifetime Agent",
+				publicKey: agentKp2.publicKey,
+				enrollmentJWT: jwt2,
+			},
+		});
+		expect(agent.agentId).toBeDefined();
+	});
+
+	it("should reject reactivateEnrollment when absoluteLifetime has elapsed (§9.2)", async () => {
+		const enrKp = await generateAgentKeypair();
+		const enr = await auth.api.createEnrollment({
+			headers,
+			body: {
+				publicKey: enrKp.publicKey,
+				baseScopes: ["reports.read"],
+			},
+		});
+
+		await db.update({
+			model: "agentEnrollment",
+			where: [{ field: "id", value: enr.enrollmentId }],
+			update: {
+				status: "expired",
+				createdAt: new Date("2020-01-01T00:00:00Z"),
+			},
+		});
+
+		const proof = await signAgentJWT({
+			agentId: enr.enrollmentId,
+			privateKey: enrKp.privateKey,
+		});
+
+		try {
+			await auth.api.reactivateEnrollment({
+				body: { enrollmentId: enr.enrollmentId, proof },
+			});
+			expect.unreachable();
+		} catch (e: unknown) {
+			const err = e as { status: string };
+			expect(err.status).toBe("FORBIDDEN");
+		}
+
+		const enrollment = await auth.api.getEnrollment({
+			headers,
+			query: { enrollmentId: enr.enrollmentId },
+		});
+		expect(enrollment.status).toBe("revoked");
+	});
+});
+
 describe("agent-auth three-state lifecycle", async () => {
 	const { auth, db, customFetchImpl, signInWithTestUser } =
 		await getTestInstance(

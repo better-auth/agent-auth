@@ -433,6 +433,26 @@ export function reactivateEnrollment(
 				jtiCache.add(payload.jti, opts.jwtMaxAge);
 			}
 
+			// §9.2 absoluteLifetime — cannot reactivate past absolute lifetime
+			if (opts.absoluteLifetime > 0 && enrollment.createdAt) {
+				const absoluteExpiry =
+					new Date(enrollment.createdAt).getTime() +
+					opts.absoluteLifetime * 1000;
+				if (Date.now() >= absoluteExpiry) {
+					await ctx.context.adapter.update({
+						model: ENROLLMENT_TABLE,
+						where: [{ field: "id", value: enrollment.id }],
+						update: {
+							status: "revoked",
+							publicKey: "",
+							kid: null,
+							updatedAt: new Date(),
+						},
+					});
+					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+				}
+			}
+
 			const now = new Date();
 			const expiresAt =
 				opts.agentSessionTTL > 0

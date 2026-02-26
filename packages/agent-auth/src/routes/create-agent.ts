@@ -123,6 +123,43 @@ export function createAgent(
 					throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
 				}
 
+				// §9.2 absoluteLifetime — results in revocation, not expiration
+				if (opts.absoluteLifetime > 0 && enrollment.createdAt) {
+					const absoluteExpiry =
+						new Date(enrollment.createdAt).getTime() +
+						opts.absoluteLifetime * 1000;
+					if (Date.now() >= absoluteExpiry) {
+						await ctx.context.adapter.update({
+							model: ENROLLMENT_TABLE,
+							where: [{ field: "id", value: enrollment.id }],
+							update: {
+								status: "revoked",
+								publicKey: "",
+								kid: null,
+								updatedAt: new Date(),
+							},
+						});
+						throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_REVOKED);
+					}
+				}
+
+				// §9.2 maxLifetime — measured from activatedAt, results in expiration (reactivatable)
+				if (opts.agentMaxLifetime > 0) {
+					const anchor = enrollment.activatedAt ?? enrollment.createdAt;
+					if (anchor) {
+						const maxExpiry =
+							new Date(anchor).getTime() + opts.agentMaxLifetime * 1000;
+						if (Date.now() >= maxExpiry) {
+							await ctx.context.adapter.update({
+								model: ENROLLMENT_TABLE,
+								where: [{ field: "id", value: enrollment.id }],
+								update: { status: "expired", updatedAt: new Date() },
+							});
+							throw APIError.from("FORBIDDEN", ERROR_CODES.ENROLLMENT_EXPIRED);
+						}
+					}
+				}
+
 				// Transition active → expired when expiresAt has passed
 				if (
 					enrollment.status === "active" &&
