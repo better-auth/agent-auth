@@ -23,7 +23,98 @@ Agent Auth gives each AI agent its own cryptographic identity (Ed25519 keypair) 
 
 The fundamental guarantee: **the server always knows exactly which agent performed an action, what permissions it had, and who authorized each permission.** Actions are never attributed to a host or client — they're attributed to the specific agent that made the request.
 
-### 1.3 Design Principles
+### 1.3 End-to-End Flow
+
+1. host_jwt (signed by host's private key)
+2. host_public_key (Ed25519 public key) -> 
+2. agent_public_key
+3. scopes_requested
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. DISCOVERY                                                       │
+│                                                                     │
+│  User: "Send email via Gmail"                                       │
+│       ↓                                                             │
+│  Agent fetches gmail.com/.well-known/agent-configuration            │
+│       ↓                                                             │
+│  ┌─ Scopes public? ────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  YES → agent gets: issuer, endpoints, algorithms, scopes    │    │
+│  │         agent selects scopes → skip to REGISTRATION          │    │
+│  │                                                              │    │
+│  │  NO  → agent gets: issuer, endpoints, algorithms (no scopes)│    │
+│  │         agent asks host to discover scopes (see below)       │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│  2. SCOPE DISCOVERY (only if scopes require auth)                   │
+│                                                                     │
+│  Agent → Host: "discover scopes on auth.google.com"                 │
+│       ↓                                                             │
+│  Host signs JWT → sends to auth server's config endpoint            │
+│       ↓                                                             │
+│  ┌─ Host known? ───────────────────────────────────────────────┐    │
+│  │  YES → server returns scopes for this user                   │    │
+│  │  NO  → server triggers device auth → user approves host      │    │
+│  │         → server returns scopes                              │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│       ↓                                                             │
+│  Host returns scopes to agent → agent selects what it needs         │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│  3. REGISTRATION                                                    │
+│                                                                     │
+│  Agent generates a keypair for this service                         │
+│       ↓                                                             │
+│  Agent → Host: "register me with these scopes"                      │
+│       ↓                                                             │
+│  Host → Auth Server: POST /agent/create + host_jwt + agent_key      │
+│       ↓                                                             │
+│  ┌─ Host known? ───────────────────────────────────────────────┐    │
+│  │  YES → ┌─ Scopes in host's pre-auth? ─────────────────┐     │    │
+│  │        │  ALL  → agent created, permissions active      │     │    │
+│  │        │  SOME → matched active, rest pending           │     │    │
+│  │        │  NONE → all pending → user approves            │     │    │
+│  │        └────────────────────────────────────────────────┘     │    │
+│  │  NO  → device auth → user approves host + agent               │    │
+│  │        user optionally trusts host with default scopes        │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│       ↓                                                             │
+│  Agent receives agent_id                                            │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│  4. AUTHENTICATED REQUESTS                                          │
+│                                                                     │
+│  Agent signs JWT with its private key (sub = agent_id)              │
+│       ↓                                                             │
+│  Agent → Resource Server: request + Authorization: Bearer <jwt>     │
+│       ↓                                                             │
+│  Auth Server verifies JWT → resolves permissions → builds session   │
+│       ↓                                                             │
+│  Resource Server checks permissions                                 │
+│       ↓                                                             │
+│  YES → process request    NO → 403 (agent can escalate scopes)     │
+└─────────────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│  5. SCOPE ESCALATION (if needed mid-task)                           │
+│                                                                     │
+│  Agent needs more permissions than it started with                  │
+│       ↓                                                             │
+│  Agent → Auth Server: request-scope + reason                        │
+│       ↓                                                             │
+│  In host's pre-auth? YES → active immediately                       │
+│                      NO  → pending → user approves                  │
+│       ↓                                                             │
+│  Agent continues with new permissions                               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.4 Design Principles
 
 - **Every action traces to an agent.** The server never sees "a host did this" — it sees "agent X, registered through host Y, with permissions granted by users A and B, made this request." The host registers agents; the agent authenticates directly.
 - **Agents are not users or clients.** An agent acts for a user, but has its own identity and constrained permissions.
@@ -91,7 +182,7 @@ A host is a registered client runtime. It has:
 | `scopes` | string[] | Pre-authorized scope budget — agents created through this host can be auto-approved for these scopes |
 | `public_key` | string? | Ed25519 public key as JWK JSON (required if no `jwks_url`) |
 | `jwks_url` | string? | JWKS URL for remote key discovery (required if no `public_key`) |
-| `status` | enum | `"active"`, `"expired"`, or `"revoked"` |
+| `status` | enum | `"pending"`, `"active"`, `"expired"`, or `"revoked"` |
 | `activated_at` | datetime? | Last activation timestamp |
 | `expires_at` | datetime? | Current TTL deadline |
 | `last_used_at` | datetime? | Last time a host JWT was used |
@@ -113,7 +204,7 @@ An agent is a cryptographic identity. It has:
 | `id` | string | Unique identifier |
 | `user_id` | string (FK → user) | The user this agent acts for |
 | `host_id` | string (FK → host) | The host that created this agent (**required**) |
-| `status` | enum | `"active"`, `"expired"`, or `"revoked"` |
+| `status` | enum | `"pending"`, `"active"`, `"expired"`, or `"revoked"` |
 | `public_key` | string | Ed25519 public key as JWK JSON |
 | `last_used_at` | datetime? | Last authenticated request |
 | `activated_at` | datetime? | Last activation timestamp |
@@ -277,11 +368,102 @@ Revocation is permanent. When an agent or host is revoked:
 - Status is set to `"revoked"`
 - For hosts: all agents created under the host are also revoked (cascade)
 
-## 6. Making Authorized Requests
+## 6. Discovery
+
+Before an agent can request permissions or make authenticated calls, it needs to discover what a service supports and where its endpoints are.
+
+### 6.1 Agent Configuration Endpoint
+
+Services implementing Agent Auth MUST expose a configuration document at:
+
+```
+GET /.well-known/agent-configuration
+```
+
+This follows the same convention as [OpenID Connect Discovery](https://openid.net/specs/openid-connect-discovery-1_0.html) (`.well-known/openid-configuration`).
+
+The response is a JSON document:
+
+```json
+{
+  "issuer": "https://auth.example.com",
+  "scopes": [
+    { "name": "email.read", "description": "Read emails" },
+    { "name": "email.send", "description": "Send emails" },
+    { "name": "contacts.read", "description": "Read contacts" }
+  ],
+  "algorithms": ["Ed25519"],
+  "request_binding": "optional",
+  "session_ttl": 3600,
+  "endpoints": {
+    "host_registration": "/agent/host/create",
+    "host_update": "/agent/host/update",
+    "agent_creation": "/agent/create",
+    "agent_revocation": "/agent/revoke",
+    "scope_escalation": "/agent/request-scope",
+    "scope_approval": "/agent/approve-scope",
+    "agent_session": "/agent/get-session",
+    "device_authorization": "/device/code",
+    "device_token": "/device/token",
+    "key_rotation": "/agent/rotate-key"
+  }
+}
+```
+
+**Always public (no auth required):**
+- `issuer` — the authorization server's base URL. May differ from the service URL (e.g. `gmail.com` serves email but `auth.google.com` handles auth).
+- `algorithms` — supported key algorithms.
+- `endpoints` — where to call for each operation. All paths are relative to the `issuer`.
+- `request_binding` — `"required"`, `"optional"`, or `"none"`. Default: `"optional"`.
+- `session_ttl` — default TTL in seconds for agent sessions.
+
+**Returned only with authentication:**
+- `scopes` — available scopes with human-readable descriptions. Servers MAY require authentication (host JWT or user session) to return scopes, since the available capabilities could be sensitive. When authentication is provided, the server returns scopes relevant to the authenticated user.
+
+This means an unauthenticated request to `.well-known/agent-configuration` returns enough to register (endpoints, algorithms) but not what to request (scopes). The agent registers a host first, then discovers scopes using the host's credentials.
+
+### 6.2 Discovery Flow
+
+**Path A: Scopes are public**
+
+1. Agent fetches `https://service.example.com/.well-known/agent-configuration`
+2. Response includes scopes — agent reads them, selects what it needs
+3. Agent tells the host: "register me on this service with these scopes" (passes issuer, endpoints, selected scopes, agent public key)
+4. Host handles registration (see Section 10)
+
+**Path B: Scopes require authentication**
+
+1. Agent fetches `https://service.example.com/.well-known/agent-configuration`
+2. Response has no scopes (auth required) — but has issuer, endpoints, algorithms
+3. Agent tells the host: "discover scopes on this service for me"
+4. Host signs a JWT with its keypair, sends it to the config endpoint
+5. If the host is known → server returns scopes for this user
+6. If the host is unknown → server triggers device auth → user approves the host → server returns scopes
+7. Host returns scopes to the agent → agent selects what it needs
+8. Agent tells the host: "now register me with these scopes"
+9. Host handles registration (see Section 10)
+
+In both paths, the host identifies itself by its keypair — the server verifies the JWT signature against the registered public key (or fetches from JWKS URL). The host doesn't need to store a per-service ID; its keypair is its identity everywhere.
+
+### 6.3 Assisted Discovery
+
+Not every agent has access to web search or HTTP fetching. Discovery can be assisted by tools:
+
+- **MCP tools** — a `discover_service` tool that fetches `.well-known/agent-configuration` for a given URL and returns the parsed result
+- **Agent skills** — pre-configured knowledge about known services ("gmail.com uses auth.google.com, here are the scopes")
+- **Service registries** — an identity provider or directory that maps service names to their agent-configuration URLs
+
+The protocol does not prescribe how the agent discovers the service URL itself. It only requires that the service publishes a `.well-known/agent-configuration` document and that the agent (or an assisting tool) can fetch it.
+
+### 6.4 Discovery Without `.well-known`
+
+If the agent already knows the authorization server and endpoint URLs (e.g. from a pre-configured skill or hardcoded integration), discovery is not required. The `.well-known/agent-configuration` endpoint is for dynamic, portable discovery — not a mandatory step.
+
+## 7. Making Authorized Requests
 
 Once an agent is registered and has permissions, it makes requests to the server's API:
 
-### 6.1 Request Flow
+### 7.1 Request Flow
 
 1. **Agent signs a JWT** with its private key. The JWT contains `sub` (agent ID), `jti` (unique nonce), `iat`, `exp`, and optionally request binding claims (`htm`, `htu`, `ath`).
 2. **Agent sends the request** to the resource server with the JWT in the `Authorization: Bearer <jwt>` header.
@@ -291,7 +473,7 @@ Once an agent is registered and has permissions, it makes requests to the server
 6. **Authorization server builds the agent session** — the agent's identity plus its effective permissions — and attaches it to the request context.
 7. **Resource server checks permissions.** The route handler inspects the agent session to decide if the agent is authorized for this specific action. This check is application-defined — the protocol provides the permissions, the resource server enforces them.
 
-### 6.2 Permission Enforcement
+### 7.2 Permission Enforcement
 
 The authorization server stores and delivers permissions. It does NOT enforce them — that's the resource server's job. The authorization server provides the agent session containing the agent's active permissions. The resource server's route handlers decide:
 
@@ -301,7 +483,7 @@ The authorization server stores and delivers permissions. It does NOT enforce th
 
 This keeps the protocol generic. It works with any authorization model — simple scope checks, RBAC, ABAC, policy engines — because it provides the data, not the decision.
 
-### 6.3 What the Server Knows Per Request
+### 7.3 What the Server Knows Per Request
 
 For every authorized request, the authorization server provides:
 
@@ -312,9 +494,9 @@ For every authorized request, the authorization server provides:
 - **Which user it acts for** (`user_id` on the agent)
 - **What specific request it's making** (if request binding is used: method, path, body hash)
 
-## 7. Permissions
+## 8. Permissions
 
-### 7.1 Permission Model
+### 8.1 Permission Model
 
 Permissions are stored separately from agent identity. Each permission row represents one scope grant from one user.
 
@@ -327,7 +509,7 @@ WHERE agent_id = :agent_id
   AND (expires_at IS NULL OR expires_at > NOW())
 ```
 
-### 7.2 Scope Format
+### 8.2 Scope Format
 
 The `scope` field is opaque to the protocol. The application defines the format:
 
@@ -337,7 +519,7 @@ The `scope` field is opaque to the protocol. The application defines the format:
 
 The protocol stores, matches, and returns scope strings without parsing them.
 
-### 7.3 Reference ID
+### 8.3 Reference ID
 
 The `reference_id` field on permissions is an optional identifier for grouping or filtering permissions. It has no authorization semantics in the protocol — the server does not use it for access control decisions. It's purely a convenience for applications to associate permissions with an external entity (an organization, workspace, project, user, etc.).
 
@@ -349,7 +531,7 @@ The `reference_id` field on permissions is an optional identifier for grouping o
 
 Applications can query permissions by `reference_id` to answer questions like "what permissions does this agent have for this organization?" but the protocol itself treats it as opaque metadata.
 
-### 7.4 Multi-Grantor Authorization
+### 8.4 Multi-Grantor Authorization
 
 Different users can grant different permissions to the same agent:
 
@@ -359,7 +541,7 @@ Different users can grant different permissions to the same agent:
 
 Each grant is independently revocable. Revoking Bekacru's grant does not affect Alice's.
 
-### 7.5 Scope Escalation
+### 8.5 Scope Escalation
 
 An agent is created with an initial set of permissions (from the host's pre-authorized scopes or user approval). But as the agent works on a task, it may discover it needs permissions it wasn't initially granted. Scope escalation lets the agent request additional permissions without being re-created.
 
@@ -375,7 +557,7 @@ The flow:
 
 The agent keeps its identity, its existing permissions, and its keypair. Only the permissions change. This means an agent can grow its capabilities over time as the task demands, without being re-created.
 
-### 7.6 Host Pre-Authorization
+### 8.6 Host Pre-Authorization
 
 Hosts carry a `scopes` array — the pre-authorized scope budget. When an agent is created through a host:
 
@@ -389,15 +571,15 @@ Host scopes are server-side policy — the host itself doesn't know or control w
 - A user can restrict a host's scopes if concerned ("remove `billing.write` from this host")
 - The server can programmatically adjust scopes based on policy
 
-## 8. Host Registration
+## 9. Host Registration
 
-### 8.1 Dynamic Host Registration
+### 9.1 Dynamic Host Registration
 
 Hosts can be registered dynamically as part of the agent creation flow. The first time an unknown host tries to create an agent:
 
 1. Host sends an agent creation request, including its public key
 2. Server checks: is this host already registered?
-   - **Known host** → proceed with normal agent creation (Section 9)
+   - **Known host** → proceed with normal agent creation (Section 10)
    - **Unknown host** → trigger device authorization flow for user approval
 3. User sees: "A new host wants to create agents on your behalf. Approve?"
 4. User approves → server registers the host AND creates the agent in one flow
@@ -405,7 +587,7 @@ Hosts can be registered dynamically as part of the agent creation flow. The firs
 
 This eliminates the need for a separate host registration step. The user never has to think about "registering a host" — they just approve or deny when an agent needs access.
 
-### 8.2 Explicit Host Registration
+### 9.2 Explicit Host Registration
 
 Hosts MAY also be registered explicitly via a dedicated endpoint. This is useful when:
 - An admin wants to pre-register hosts before they're used
@@ -416,7 +598,7 @@ The user provides:
 - An Ed25519 public key (the host retains the private key), OR a JWKS URL for remote key discovery
 - Optional pre-authorized scopes
 
-### 8.3 Remote JWKS for Hosts
+### 9.3 Remote JWKS for Hosts
 
 Hosts that are services (rather than local tools) MAY register with a JWKS URL ([RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517)) instead of a static public key:
 
@@ -433,20 +615,20 @@ If no `jwks_url` is provided, the server uses the static `public_key` (the defau
 
 The server SHOULD cache JWKS responses and refresh them periodically (RECOMMENDED: every 5 minutes or on `kid` miss).
 
-### 8.4 Host as Trust Anchor
+### 9.4 Host as Trust Anchor
 
 Every agent MUST be created through a registered host. This ensures:
 - The server has seen and approved the client runtime
 - Unknown hosts trigger user approval (and optionally 2FA)
 - Every agent traces back to a verifiable client
 
-### 8.5 Idempotent Host Creation
+### 9.5 Idempotent Host Creation
 
 If a host registration request includes the host's `id` from a previous registration, the server SHOULD reactivate and update the existing host instead of creating a duplicate. The host is responsible for persisting its own ID between sessions.
 
-## 9. Agent Creation
+## 10. Agent Creation
 
-### 9.1 First-Time Flow (Unknown Host)
+### 10.1 First-Time Flow (Unknown Host)
 
 When an agent needs to be created through a host the server hasn't seen before, the full flow is:
 
@@ -466,7 +648,7 @@ How the server handles host trust is implementation-defined. Some options:
 
 The server MAY require additional verification for new hosts (e.g. 2FA).
 
-### 9.2 Via Host JWT (Silent)
+### 10.2 Via Host JWT (Silent)
 
 For known hosts with pre-authorized scopes, agent creation is silent — no user interaction needed.
 
@@ -490,7 +672,7 @@ The server:
 
 No user session, no approval screen, no round-trip. This is the fast path for repeat usage.
 
-### 9.3 Scope Exceeds Pre-Authorization
+### 10.3 Scope Exceeds Pre-Authorization
 
 When an agent requests scopes beyond the host's pre-authorized budget:
 
@@ -500,9 +682,9 @@ When an agent requests scopes beyond the host's pre-authorized budget:
 4. Host receives confirmation and begins authenticating
 
 
-## 10. Key Rotation
+## 11. Key Rotation
 
-### 10.1 Agent Key Rotation
+### 11.1 Agent Key Rotation
 
 An agent's public key can be rotated without creating a new agent:
 
@@ -512,11 +694,11 @@ An agent's public key can be rotated without creating a new agent:
 
 This enables key rotation without losing the agent's identity, permissions, or history.
 
-### 10.2 Host Key Rotation
+### 11.2 Host Key Rotation
 
 For hosts registered with a static public key, key rotation follows the same pattern as agents — the owner provides a new public key via the host update endpoint.
 
-For hosts registered with a JWKS URL (Section 8.3), key rotation is handled by the host itself:
+For hosts registered with a JWKS URL (Section 9.3), key rotation is handled by the host itself:
 
 1. The host publishes a new key to its JWKS endpoint (keeping the old key active)
 2. The host starts signing new JWTs with the new key
@@ -525,7 +707,7 @@ For hosts registered with a JWKS URL (Section 8.3), key rotation is handled by t
 
 No server-side action is needed. The host manages its own key lifecycle.
 
-## 11. Auditability
+## 12. Auditability
 
 Every request in the Agent Auth protocol produces a complete attribution chain:
 
@@ -543,32 +725,32 @@ For any action, the server can answer:
 
 This is fundamentally different from OAuth token sharing, where the answer to "which agent did this?" is "we don't know — some agent using the client's token."
 
-## 12. Security Considerations
+## 13. Security Considerations
 
-### 12.1 Private Key Protection
+### 13.1 Private Key Protection
 
 Agent and host private keys MUST never be transmitted to or stored on the server. The server only stores public keys.
 
-### 12.2 JWT Lifetime
+### 13.2 JWT Lifetime
 
 JWTs SHOULD have a maximum age of 60 seconds. Short lifetimes limit the window for token misuse even without request binding.
 
-### 12.3 Request Binding
+### 13.3 Request Binding
 
 For sensitive operations, clients SHOULD use request binding (Section 4.3) to cryptographically bind each JWT to the specific HTTP request. This prevents a stolen JWT from being used for unintended requests.
 
-### 12.4 Replay Protection
+### 13.4 Replay Protection
 
 All JWTs MUST include a unique `jti` claim. Servers MUST maintain a JTI replay cache and reject duplicate `jti` values within the JWT's lifetime window.
 
-### 12.5 Revocation Cascade
+### 13.5 Revocation Cascade
 
 When a host is revoked, all agents created under it MUST also be revoked. When an agent is revoked, all its permissions MUST be deleted.
 
-### 12.6 Fresh Session Enforcement
+### 13.6 Fresh Session Enforcement
 
 Sensitive operations (approving scope escalations) SHOULD require the user to have authenticated recently. The `fresh_session_window` parameter defines the maximum session age for these operations.
 
-### 12.7 Scope Validation
+### 13.7 Scope Validation
 
 Servers MAY validate requested scopes against a known set before granting them. Servers SHOULD support a blocked scopes list to prevent specific scopes from ever being granted.
