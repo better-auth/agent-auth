@@ -112,6 +112,12 @@ export const agentSchema = () =>
 					input: false,
 					defaultValue: "active",
 				},
+				mode: {
+					type: "string",
+					required: true,
+					input: false,
+					defaultValue: "behalf_of",
+				},
 				publicKey: {
 					type: "string",
 					required: true,

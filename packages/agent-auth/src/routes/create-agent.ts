@@ -53,6 +53,13 @@ const createAgentBodySchema = z.object({
 				"Host's public key for dynamic host registration. When provided with a user session (no hostJWT), the server registers the host automatically.",
 		})
 		.optional(),
+	mode: z
+		.enum(["behalf_of", "autonomous"])
+		.meta({
+			description:
+				'Agent operating mode. "behalf_of" (default) acts on behalf of a user; "autonomous" operates independently.',
+		})
+		.optional(),
 	metadata: z
 		.record(
 			z.string(),
@@ -147,8 +154,10 @@ export function createAgent(
 				role,
 				hostJWT,
 				hostPublicKey,
+				mode: rawMode,
 				metadata,
 			} = ctx.body;
+			const mode = rawMode ?? "behalf_of";
 
 			let userId: string;
 			let hostId: string | null = null;
@@ -513,6 +522,7 @@ export function createAgent(
 						update: {
 							name,
 							status: "active",
+							mode,
 							publicKey: JSON.stringify(publicKey),
 							hostId,
 							activatedAt: now,
@@ -546,6 +556,7 @@ export function createAgent(
 					const response: Record<string, unknown> = {
 						agentId: existing.id,
 						name,
+						mode,
 						scopes: resolvedScopes,
 						hostId,
 					};
@@ -568,6 +579,7 @@ export function createAgent(
 					userId,
 					hostId,
 					status: "active",
+					mode,
 					publicKey: JSON.stringify(publicKey),
 					kid,
 					lastUsedAt: null,
@@ -602,6 +614,7 @@ export function createAgent(
 			const response: Record<string, unknown> = {
 				agentId: agent.id,
 				name: agent.name,
+				mode: agent.mode,
 				scopes: resolvedScopes,
 				hostId,
 			};

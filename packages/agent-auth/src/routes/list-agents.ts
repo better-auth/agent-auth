@@ -96,6 +96,7 @@ export function listAgents() {
 						id: agent.id,
 						name: agent.name,
 						status: agent.status,
+						mode: agent.mode,
 						permissions: permissions.map((p) => ({
 							scope: p.scope,
 							referenceId: p.referenceId,

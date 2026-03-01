@@ -4,7 +4,7 @@ import type { ResolvedAgentAuthOptions } from "../types";
 /**
  * GET /agent/discover
  *
- * Discovery endpoint (§12, §17.4). Returns available scopes,
+ * Discovery endpoint. Returns available scopes,
  * supported key algorithms, and other configuration.
  */
 export function discover(opts: ResolvedAgentAuthOptions) {
@@ -25,6 +25,7 @@ export function discover(opts: ResolvedAgentAuthOptions) {
 				: [];
 
 			return ctx.json({
+				protocol_version: "1.0-draft",
 				algorithms: opts.allowedKeyAlgorithms,
 				scopes: allScopeNames.map((name) => ({
 					name,

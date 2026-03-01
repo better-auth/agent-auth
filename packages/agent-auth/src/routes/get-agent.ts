@@ -49,6 +49,7 @@ export function getAgent() {
 				id: agent.id,
 				name: agent.name,
 				status: agent.status,
+				mode: agent.mode,
 				permissions: permissions.map((p) => ({
 					id: p.id,
 					scope: p.scope,

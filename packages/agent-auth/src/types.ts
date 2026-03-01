@@ -161,6 +161,7 @@ export interface Agent {
 	userId: string;
 	hostId: string;
 	status: "active" | "expired" | "revoked";
+	mode: "behalf_of" | "autonomous";
 	publicKey: string;
 	kid: string | null;
 	lastUsedAt: Date | null;
@@ -203,6 +204,7 @@ export interface AgentSession {
 	agent: {
 		id: string;
 		name: string;
+		mode: "behalf_of" | "autonomous";
 		permissions: Array<{
 			scope: string;
 			referenceId: string | null;

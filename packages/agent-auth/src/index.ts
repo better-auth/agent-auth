@@ -421,6 +421,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							agent: {
 								id: agent.id,
 								name: agent.name,
+								mode: agent.mode,
 								permissions: activePermissions.map((p) => ({
 									scope: p.scope,
 									referenceId: p.referenceId,
