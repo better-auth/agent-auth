@@ -484,6 +484,7 @@ This endpoint enables generic clients to work with any Agent Auth server. Purpos
     "revoke_host": "/agent/revoke-host",
     "rotate_key": "/agent/rotate-key",
     "rotate_host_key": "/agent/rotate-host-key",
+    "introspect": "/agent/introspect",
     "device_authorization": "/device/code",
     "device_token": "/device/token"
   },
@@ -544,6 +545,7 @@ The `host_jwt` is a JWT signed by the host's private key with the following payl
 {
   "host_public_key": { "kty": "OKP", "crv": "Ed25519", "x": "..." },
   "agent_public_key": { "kty": "OKP", "crv": "Ed25519", "x": "..." },
+  "aud": "https://auth.bank.com",
   "iat": 1730000000,
   "exp": 1730000060,
   "jti": "unique-nonce"
@@ -565,6 +567,7 @@ The `host_jwt` is a JWT signed by the host's private key with the following payl
   "host_jwks_url": "https://client.example/.well-known/host-jwks.json",
   "agent_jwks_url": "https://client.example/.well-known/agent-jwks.json",
   "agent_kid": "agent-key-001",
+  "aud": "https://auth.bank.com",
   "iat": 1730000000,
   "exp": 1730000060,
   "jti": "unique-nonce"
@@ -580,6 +583,7 @@ The JWT header `kid` is always for the **host** key — the server uses it to ve
 | `agent_public_key` | JWK | Conditional | Inline agent public key. Required (for registration) unless `agent_jwks_url` is provided. |
 | `agent_jwks_url` | string | Conditional | JWKS URL for the agent's public keys. Required (for registration) unless `agent_public_key` is provided. |
 | `agent_kid` | string | Conditional | Key ID for the agent's key in the agent JWKS. Required when `agent_jwks_url` is provided. |
+| `aud` | string | Yes | The server's `issuer` URL (from discovery). Prevents cross-server replay. |
 | `iat` | number | Yes | Issued-at (Unix seconds) |
 | `exp` | number | Yes | Expiration (Unix seconds) |
 | `jti` | string | Yes | Unique nonce (replay detection) |
@@ -620,6 +624,7 @@ When the host JWT is used outside of registration (e.g. `GET /agent/capabilities
 ```json
 {
   "host_public_key": { "kty": "OKP", "crv": "Ed25519", "x": "..." },
+  "aud": "https://auth.bank.com",
   "iat": 1730000000,
   "exp": 1730000060,
   "jti": "unique-nonce"
@@ -631,6 +636,7 @@ Or with JWKS (JWT header includes `kid`):
 ```json
 {
   "host_jwks_url": "https://client.example/.well-known/jwks.json",
+  "aud": "https://auth.bank.com",
   "iat": 1730000000,
   "exp": 1730000060,
   "jti": "unique-nonce"
@@ -1305,6 +1311,76 @@ Content-Type: application/json
 
 The server replaces the stored public key. Future host JWTs must be signed with the new key. Existing agents, scopes, `user_id`, and trust are unaffected.
 
+### 2.12 Introspect
+
+```
+POST /agent/introspect
+```
+
+Validates an agent JWT and returns the agent's current status and scopes. This endpoint enables **resource servers** (MCP servers, HTTP APIs, etc.) that are separate from the auth server to verify agent JWTs without needing direct access to agent public keys or the auth server's database.
+
+Inspired by [RFC 7662 (OAuth 2.0 Token Introspection)](https://datatracker.ietf.org/doc/html/rfc7662).
+
+**When to use:** When the execution endpoint (MCP server, HTTP API) is a separate service from the Agent Auth server. If both are the same process, direct database access is simpler.
+
+**Request headers:**
+
+```
+Content-Type: application/json
+```
+
+**Request body:**
+
+```json
+{
+  "token": "eyJhbGciOiJFZERTQSIs..."
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `token` | string | Yes | The agent JWT to validate |
+
+**Response (active):**
+
+```json
+{
+  "active": true,
+  "agent_id": "agt_abc123",
+  "host_id": "hst_xyz789",
+  "user_id": "user_alice",
+  "scopes": ["check_balance", "transfer_domestic"],
+  "mode": "behalf_of",
+  "expires_at": "2026-02-28T14:30:00Z"
+}
+```
+
+**Response (inactive):**
+
+```json
+{
+  "active": false
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `active` | boolean | `true` if the JWT is valid, the agent is active, and the signature verified. `false` for any reason (expired JWT, revoked agent, bad signature, unknown agent). |
+| `agent_id` | string | Agent ID (from JWT `sub` claim). Only present when `active: true`. |
+| `host_id` | string | Host that created this agent. Only present when `active: true`. |
+| `user_id` | string? | Linked user, if any. Only present when `active: true`. |
+| `scopes` | string[] | Currently granted scopes. If the JWT contained a `scopes` claim, this is the intersection of the JWT's scopes and the agent's granted scopes. Only present when `active: true`. |
+| `mode` | string | `"behalf_of"` or `"autonomous"`. Only present when `active: true`. |
+| `expires_at` | string? | Agent session expiry (ISO 8601). Only present when `active: true`. |
+
+The auth server performs the full verification flow (§3.4) — signature check, status check, expiry, replay detection — and returns a simple active/inactive response. The resource server does not need the agent's public key.
+
+**Security considerations:**
+
+- **Authentication of the introspection caller.** Servers SHOULD authenticate introspection requests to prevent unauthorized parties from probing agent status. Authentication methods are server-defined (e.g. shared secret, mTLS, IP allowlist between auth server and resource server). Unauthenticated introspection endpoints MUST NOT be exposed publicly.
+- **Caching.** Resource servers MAY cache introspection responses for a short TTL (e.g. 5–30 seconds) to reduce load on the auth server. The trade-off is the same as §3.4's agent cache — revocation propagation is delayed by at most the cache TTL.
+- **Inactive response opacity.** The `active: false` response intentionally does not include a reason. This prevents information leakage — the caller does not learn whether the agent was revoked, expired, or never existed.
+
 ## 3. Authentication
 
 ### 3.1 Keypairs
@@ -1334,6 +1410,7 @@ Agents authenticate by signing short-lived JWTs.
 | Claim | Description |
 |---|---|
 | `sub` | Agent ID |
+| `aud` | The server's `issuer` URL (from discovery). Prevents cross-server replay — a JWT intended for `bank.com` cannot be used on `shopping.com`. |
 | `iat` | Issued-at (Unix seconds) |
 | `exp` | Expiration (Unix seconds) |
 | `jti` | Unique nonce (replay detection) |
@@ -1377,14 +1454,15 @@ When present, the server MUST verify all binding claims against the actual reque
 ### 3.4 Verification
 
 1. Extract `sub` from JWT (agent ID)
-2. Look up agent
-3. Check status (revoked → reject, expired → reject, pending → reject)
-4. Verify JWT signature against stored public key (or JWKS)
-5. Check `exp`, `iat`, `jti` replay
-6. If `htm`/`htu`/`ath` present, verify against request
-7. Resolve agent's granted scopes
-8. If `scopes` claim present in JWT, intersect with granted scopes — reject if the requested operation is not in the JWT's `scopes` list
-9. Process the request
+2. Verify `aud` matches the server's own `issuer` URL — reject if it doesn't
+3. Look up agent
+4. Check status (revoked → reject, expired → reject, pending → reject)
+5. Verify JWT signature against stored public key (or JWKS)
+6. Check `exp`, `iat`, `jti` replay
+7. If `htm`/`htu`/`ath` present, verify against request
+8. Resolve agent's granted scopes
+9. If `scopes` claim present in JWT, intersect with granted scopes — reject if the requested operation is not in the JWT's `scopes` list
+10. Process the request
 
 **Performance considerations**
 - **In-memory agent cache with short TTL.** Cache agent status, public key, and granted scopes in memory (e.g. 5–30 second TTL). Revocation propagation is delayed by at most the TTL — acceptable for most use cases since JWTs already have a 60s lifetime.
