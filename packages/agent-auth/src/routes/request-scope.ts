@@ -2,22 +2,33 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import { findBlockedScopes } from "../scopes";
+import { findBlockedScopes, hasScope } from "../scopes";
 import type {
+	AgentHost,
 	AgentPermission,
 	AgentSession,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
+const HOST_TABLE = "agentHost";
 const PERMISSION_TABLE = "agentPermission";
+
+function generateUserCode(): string {
+	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+	let code = "";
+	for (let i = 0; i < 8; i++) {
+		if (i === 4) code += "-";
+		code += chars[Math.floor(Math.random() * chars.length)];
+	}
+	return code;
+}
 
 /**
  * POST /agent/request-scope
  *
- * Called by an agent (authenticated via JWT) to request additional scopes.
- * Creates pending agentPermission rows that the user must approve in
- * their browser. Returns the list of pending permission IDs and a
- * verificationUrl.
+ * Called by an agent (authenticated via JWT) to request additional scopes (§2.4).
+ * Auto-approves scopes within the host's pre-authorized set; creates pending
+ * permission rows for scopes outside the budget.
  */
 export function requestScope(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -40,10 +51,11 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Request additional scopes for an agent. Requires user approval.",
+						"Request additional scopes for an agent (§2.4). Auto-approves within host pre-auth.",
 					responses: {
 						200: {
-							description: "Scope request created, pending user approval",
+							description:
+								"Scopes granted immediately or pending user approval",
 						},
 					},
 				},
@@ -79,29 +91,75 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				.filter((p) => p.status === "active")
 				.map((p) => p.scope);
 
-			const newOnly = scopes.filter((s: string) => !activeScopes.includes(s));
+			const pendingScopes = existingPerms
+				.filter((p) => p.status === "pending")
+				.map((p) => p.scope);
+
+			const alreadyTracked = new Set([...activeScopes, ...pendingScopes]);
+			const newOnly = scopes.filter((s: string) => !alreadyTracked.has(s));
 
 			if (newOnly.length === 0) {
-				return ctx.json({
-					agentId: agentSession.agent.id,
-					scopes: activeScopes,
-					added: [],
-					status: "approved",
-					message: "All requested scopes were already present.",
+				throw APIError.from("CONFLICT", ERROR_CODES.ALREADY_GRANTED);
+			}
+
+			// §2.4: Check host pre-auth budget for auto-approval
+			let hostBudget: string[] = [];
+			if (agentSession.agent.hostId) {
+				const host = await ctx.context.adapter.findOne<AgentHost>({
+					model: HOST_TABLE,
+					where: [{ field: "id", value: agentSession.agent.hostId }],
+				});
+				if (host) {
+					hostBudget =
+						typeof host.scopes === "string"
+							? JSON.parse(host.scopes)
+							: host.scopes;
+				}
+			}
+
+			const autoApprove = newOnly.filter((s: string) =>
+				hasScope(hostBudget, s),
+			);
+			const needsApproval = newOnly.filter(
+				(s: string) => !hasScope(hostBudget, s),
+			);
+
+			const now = new Date();
+
+			for (const scope of autoApprove) {
+				await ctx.context.adapter.create<AgentPermission>({
+					model: PERMISSION_TABLE,
+					data: {
+						agentId: agentSession.agent.id,
+						scope,
+						referenceId: null,
+						grantedBy: agentSession.user?.id ?? null,
+						expiresAt: null,
+						status: "active",
+						reason: null,
+						createdAt: now,
+						updatedAt: now,
+					},
 				});
 			}
 
-			const now = new Date();
-			const pendingIds: string[] = [];
+			if (needsApproval.length === 0) {
+				return ctx.json({
+					agent_id: agentSession.agent.id,
+					status: "granted",
+					scopes: [...activeScopes, ...autoApprove],
+				});
+			}
 
-			for (const scope of newOnly) {
+			const pendingIds: string[] = [];
+			for (const scope of needsApproval) {
 				const perm = await ctx.context.adapter.create<AgentPermission>({
 					model: PERMISSION_TABLE,
 					data: {
 						agentId: agentSession.agent.id,
 						scope,
 						referenceId: null,
-						grantedBy: agentSession.user.id,
+						grantedBy: agentSession.user?.id ?? null,
 						expiresAt: null,
 						status: "pending",
 						reason: reason || null,
@@ -113,15 +171,22 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const origin = new URL(ctx.context.baseURL).origin;
-			const requestId = agentSession.agent.id;
+			const userCode = generateUserCode();
 
 			return ctx.json({
-				requestId,
-				pendingPermissionIds: pendingIds,
+				agent_id: agentSession.agent.id,
 				status: "pending",
-				verificationUrl: `${origin}/device/scopes?request_id=${pendingIds[0]}`,
-				message:
-					"Scope escalation requires user approval. Open the verificationUrl in a browser to approve.",
+				scopes: [...activeScopes, ...autoApprove],
+				pending_scopes: needsApproval,
+				approval: {
+					method: "device_authorization",
+					verification_uri: `${origin}/device/scopes`,
+					verification_uri_complete: `${origin}/device/scopes?agent_id=${agentSession.agent.id}&code=${userCode}`,
+					user_code: userCode,
+					device_code: agentSession.agent.id,
+					expires_in: 300,
+					interval: 5,
+				},
 			});
 		},
 	);

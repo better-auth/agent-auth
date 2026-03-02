@@ -8,7 +8,11 @@
  * Every new agent requires explicit user approval via device auth.
  */
 
-import type { AgentConnectionData, MCPAgentStorage } from "./mcp-tools";
+import type {
+	AgentConnectionData,
+	AgentKeypair,
+	MCPAgentStorage,
+} from "./mcp-tools";
 
 export function createMemoryStorage(): MCPAgentStorage {
 	const connections = new Map<string, AgentConnectionData>();
@@ -20,6 +24,10 @@ export function createMemoryStorage(): MCPAgentStorage {
 			name: string;
 			scopes: string[];
 		}
+	>();
+	const hostKeypairs = new Map<
+		string,
+		{ keypair: AgentKeypair; hostId: string }
 	>();
 
 	return {
@@ -54,6 +62,14 @@ export function createMemoryStorage(): MCPAgentStorage {
 
 		async removePendingFlow(appUrl) {
 			pendingFlows.delete(appUrl);
+		},
+
+		async saveHostKeypair(appUrl, data) {
+			hostKeypairs.set(appUrl, data);
+		},
+
+		async getHostKeypair(appUrl) {
+			return hostKeypairs.get(appUrl) ?? null;
 		},
 	};
 }

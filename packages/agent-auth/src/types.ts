@@ -1,23 +1,74 @@
 import type { InferOptionSchema } from "better-auth/types";
 import type { agentSchema } from "./schema";
 
+/** Capability definition for the capabilities endpoint (§2.3). */
+export interface AgentCapability {
+	name: string;
+	description: string;
+	type: "mcp" | "http" | (string & {});
+	mcp?: { endpoint: string; tool_name: string };
+	http?: {
+		openapi_url?: string;
+		operation_id?: string;
+		method?: string;
+		url?: string;
+	};
+	[key: string]: unknown;
+}
+
 export interface AgentAuthOptions {
 	/**
-	 * Role definitions mapping role names to scope arrays.
+	 * Provider name for discovery (§2.1).
+	 * Returned in the well-known configuration.
+	 */
+	providerName?: string;
+	/**
+	 * Human-readable description of the service (§2.1).
+	 */
+	providerDescription?: string;
+	/**
+	 * Supported registration modes (§2.1).
+	 * @default ["behalf_of", "autonomous"]
+	 */
+	modes?: Array<"behalf_of" | "autonomous">;
+	/**
+	 * Supported approval methods (§8).
+	 * @default ["device_authorization"]
+	 */
+	approvalMethods?: string[];
+	/**
+	 * Resolve the preferred approval method for a given user.
+	 *
+	 * Called during agent creation when the agent needs user approval
+	 * (pending host or pending scopes). Return `"ciba"` to automatically
+	 * create a CIBA backchannel auth request, or `"device_authorization"`
+	 * to return the standard device-flow verification URL.
 	 *
 	 * @example
 	 * ```ts
-	 * roles: {
-	 *   agent: ["email.send", "reports.read"],
-	 *   finance_agent: ["email.send", "invoices.read"],
+	 * resolveApprovalMethod: async ({ userId }) => {
+	 *   const prefs = await db.getUserPrefs(userId);
+	 *   return prefs.useCiba ? "ciba" : "device_authorization";
 	 * }
 	 * ```
+	 *
+	 * @default () => "device_authorization"
 	 */
-	roles?: Record<string, string[]>;
+	resolveApprovalMethod?: (context: {
+		userId: string | null;
+		agentName: string;
+		hostId: string | null;
+		scopes: string[];
+	}) => string | Promise<string>;
 	/**
-	 * Default role assigned to new agents.
+	 * Server JWKS URI for clients to verify server-signed responses (§2.1).
 	 */
-	defaultRole?: string;
+	jwksUri?: string;
+	/**
+	 * Capability definitions returned by the capabilities endpoint (§2.3).
+	 * Each capability maps a scope name to its execution details.
+	 */
+	capabilities?: AgentCapability[];
 	/**
 	 * Allowed key algorithms for agent keypairs. Validated against
 	 * the JWK `crv` field (or `kty` when no curve applies).
@@ -55,16 +106,12 @@ export interface AgentAuthOptions {
 	/**
 	 * Validate that requested scopes exist before granting them.
 	 *
-	 * When `true`, scopes are checked against the union of all role
-	 * scopes defined in `roles`. Unrecognized scopes are rejected.
-	 *
 	 * When a function, it receives the scopes array and should return
 	 * `true` if all scopes are valid, or throw/return `false` to reject.
 	 *
-	 * When `false` or omitted, any scope string is accepted.
-	 * @default false
+	 * When omitted, any scope string is accepted.
 	 */
-	validateScopes?: boolean | ((scopes: string[]) => boolean | Promise<boolean>);
+	validateScopes?: (scopes: string[]) => boolean | Promise<boolean>;
 	/**
 	 * Maximum number of active agents a single user can have.
 	 * New agent creation is rejected once this limit is reached.
@@ -137,12 +184,14 @@ export interface AgentAuthOptions {
  */
 export interface AgentHost {
 	id: string;
-	userId: string;
+	userId: string | null;
+	/** Optional server-defined external identifier (org ID, tenant ID, etc.). §4.3. */
+	referenceId: string | null;
 	scopes: string[];
 	publicKey: string;
 	kid: string | null;
 	jwksUrl: string | null;
-	status: "active" | "expired" | "revoked";
+	status: "active" | "pending" | "expired" | "revoked" | "rejected";
 	activatedAt: Date | null;
 	expiresAt: Date | null;
 	lastUsedAt: Date | null;
@@ -158,12 +207,14 @@ export interface AgentHost {
 export interface Agent {
 	id: string;
 	name: string;
-	userId: string;
-	hostId: string;
-	status: "active" | "expired" | "revoked";
+	userId: string | null;
+	hostId: string | null;
+	status: "active" | "pending" | "expired" | "revoked" | "rejected";
 	mode: "behalf_of" | "autonomous";
 	publicKey: string;
 	kid: string | null;
+	/** JWKS endpoint URL for agent keys (§2.2). */
+	jwksUrl: string | null;
 	lastUsedAt: Date | null;
 	activatedAt: Date | null;
 	expiresAt: Date | null;
@@ -182,13 +233,35 @@ export interface AgentPermission {
 	scope: string;
 	/** Resource this permission applies to. Null = unrestricted. */
 	referenceId: string | null;
-	/** User who granted this permission. */
-	grantedBy: string;
+	/** User who granted this permission. Null when granted during host bootstrap without a user session. */
+	grantedBy: string | null;
 	expiresAt: Date | null;
 	/** Lifecycle status: active permissions are enforced, pending await user approval, denied are rejected. */
 	status: "active" | "pending" | "denied";
 	/** Human-readable reason for a pending permission request. */
 	reason: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+/**
+ * A CIBA backchannel authentication request (OpenID Connect CIBA Core 1.0).
+ */
+export interface CibaAuthRequest {
+	id: string;
+	clientId: string;
+	loginHint: string;
+	userId: string | null;
+	scope: string | null;
+	bindingMessage: string | null;
+	clientNotificationToken: string | null;
+	clientNotificationEndpoint: string | null;
+	deliveryMode: "poll" | "ping" | "push";
+	status: "pending" | "approved" | "denied" | "expired";
+	accessToken: string | null;
+	interval: number;
+	lastPolledAt: Date | null;
+	expiresAt: Date;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -208,10 +281,10 @@ export interface AgentSession {
 		permissions: Array<{
 			scope: string;
 			referenceId: string | null;
-			grantedBy: string;
+			grantedBy: string | null;
 			status: string;
 		}>;
-		hostId: string;
+		hostId: string | null;
 		createdAt: Date;
 		activatedAt: Date | null;
 		metadata: AgentMetadata | null;
@@ -221,6 +294,19 @@ export interface AgentSession {
 		name: string;
 		email: string;
 		[key: string]: string | number | boolean | null | undefined;
+	} | null;
+}
+
+/**
+ * The session object set when a host JWT authenticates.
+ * Available via `ctx.context.hostSession` in route handlers.
+ */
+export interface HostSession {
+	host: {
+		id: string;
+		userId: string | null;
+		scopes: string[];
+		status: string;
 	};
 }
 
@@ -239,6 +325,9 @@ export type ResolvedAgentAuthOptions = Required<
 		| "absoluteLifetime"
 		| "freshSessionWindow"
 		| "blockedScopes"
+		| "modes"
+		| "approvalMethods"
+		| "resolveApprovalMethod"
 	>
 > &
 	AgentAuthOptions;

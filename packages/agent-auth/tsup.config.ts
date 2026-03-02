@@ -8,6 +8,7 @@ export default defineConfig({
 		"src/mcp-tools.ts",
 		"src/mcp-storage-fs.ts",
 		"src/mcp-storage-memory.ts",
+		"src/gateway-server.ts",
 	],
 	format: ["esm"],
 	dts: true,
@@ -19,5 +20,6 @@ export default defineConfig({
 		"@better-auth/core",
 		"@better-auth/utils",
 		"@noble/ciphers",
+		"@modelcontextprotocol/sdk",
 	],
 });

@@ -36,6 +36,10 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 					description:
 						"Default scopes agents inherit. Reactivated agents reset to these.",
 				}),
+				referenceId: z.string().optional().meta({
+					description:
+						"Optional server-defined external identifier (org ID, tenant ID, etc.).",
+				}),
 			}),
 			metadata: {
 				openapi: {
@@ -50,7 +54,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const { publicKey, jwksUrl } = ctx.body;
+			const { publicKey, jwksUrl, referenceId } = ctx.body;
 
 			if (!publicKey && !jwksUrl) {
 				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
@@ -83,19 +87,9 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 			}
 
 			if (hostScopes.length > 0 && opts.validateScopes) {
-				if (typeof opts.validateScopes === "function") {
-					const valid = await opts.validateScopes(hostScopes);
-					if (!valid) {
-						throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
-					}
-				} else if (opts.roles) {
-					const knownScopes = new Set(Object.values(opts.roles).flat());
-					const invalid = hostScopes.filter((s) => !knownScopes.has(s));
-					if (invalid.length > 0) {
-						throw new APIError("BAD_REQUEST", {
-							message: `${ERROR_CODES.UNKNOWN_SCOPES} Unrecognized: ${invalid.join(", ")}.`,
-						});
-					}
+				const valid = await opts.validateScopes(hostScopes);
+				if (!valid) {
+					throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
 				}
 			}
 
@@ -151,6 +145,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				model: HOST_TABLE,
 				data: {
 					userId: session.user.id,
+					referenceId: referenceId ?? null,
 					scopes: JSON.stringify(hostScopes),
 					publicKey: publicKey ? JSON.stringify(publicKey) : "",
 					kid,
@@ -180,7 +175,9 @@ export function listHosts() {
 			method: "GET",
 			query: z
 				.object({
-					status: z.enum(["active", "expired", "revoked"]).optional(),
+					status: z
+						.enum(["active", "pending", "expired", "revoked", "rejected"])
+						.optional(),
 				})
 				.optional(),
 			metadata: {
@@ -308,7 +305,11 @@ export function revokeHost() {
 			}
 
 			if (host.status === "revoked") {
-				return ctx.json({ success: true, revokedAgentCount: 0 });
+				return ctx.json({
+					host_id: host.id,
+					status: "revoked",
+					agents_revoked: 0,
+				});
 			}
 
 			const now = new Date();
@@ -324,25 +325,16 @@ export function revokeHost() {
 				},
 			});
 
-			const agents = await ctx.context.adapter.findMany<Agent>({
+			const allAgents = await ctx.context.adapter.findMany<Agent>({
 				model: AGENT_TABLE,
-				where: [
-					{ field: "hostId", value: host.id },
-					{ field: "status", value: "active" },
-				],
+				where: [{ field: "hostId", value: host.id }],
 			});
 
-			const expiredAgents = await ctx.context.adapter.findMany<Agent>({
-				model: AGENT_TABLE,
-				where: [
-					{ field: "hostId", value: host.id },
-					{ field: "status", value: "expired" },
-				],
-			});
+			const toRevoke = allAgents.filter(
+				(a) => a.status !== "revoked" && a.status !== "rejected",
+			);
 
-			const allAgents = [...agents, ...expiredAgents];
-
-			for (const agent of allAgents) {
+			for (const agent of toRevoke) {
 				await ctx.context.adapter.update({
 					model: AGENT_TABLE,
 					where: [{ field: "id", value: agent.id }],
@@ -356,8 +348,9 @@ export function revokeHost() {
 			}
 
 			return ctx.json({
-				success: true,
-				revokedAgentCount: allAgents.length,
+				host_id: host.id,
+				status: "revoked",
+				agents_revoked: toRevoke.length,
 			});
 		},
 	);
@@ -576,19 +569,9 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 				}
 
 				if (scopes.length > 0 && opts.validateScopes) {
-					if (typeof opts.validateScopes === "function") {
-						const valid = await opts.validateScopes(scopes);
-						if (!valid) {
-							throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
-						}
-					} else if (opts.roles) {
-						const knownScopes = new Set(Object.values(opts.roles).flat());
-						const invalid = scopes.filter((s) => !knownScopes.has(s));
-						if (invalid.length > 0) {
-							throw new APIError("BAD_REQUEST", {
-								message: `${ERROR_CODES.UNKNOWN_SCOPES} Unrecognized: ${invalid.join(", ")}.`,
-							});
-						}
+					const valid = await opts.validateScopes(scopes);
+					if (!valid) {
+						throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
 					}
 				}
 

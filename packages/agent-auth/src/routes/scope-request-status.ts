@@ -60,9 +60,11 @@ export function scopeRequestStatus() {
 				status,
 				agentId,
 				agentName: agent.name,
-				existingScopes: activePerms.map((p) => p.scope),
-				requestedScopes: pendingPerms.map((p) => p.scope),
-				scopes: !hasPending ? activePerms.map((p) => p.scope) : undefined,
+				existingScopes: [...new Set(activePerms.map((p) => p.scope))],
+				requestedScopes: [...new Set(pendingPerms.map((p) => p.scope))],
+				scopes: !hasPending
+					? [...new Set(activePerms.map((p) => p.scope))]
+					: undefined,
 				added: !hasPending ? [] : undefined,
 			});
 		},

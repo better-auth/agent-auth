@@ -57,9 +57,11 @@ export interface RequestBinding {
 export interface SignAgentJWTOptions {
 	agentId: string;
 	privateKey: AgentJWK;
+	/** The server's issuer URL (origin). Required per §3.2. */
+	audience?: string;
 	expiresIn?: number;
 	format?: "simple" | "aap";
-	additionalClaims?: Record<string, string | number | boolean>;
+	additionalClaims?: Record<string, unknown>;
 	/** Bind this JWT to a specific HTTP request (DPoP-style). */
 	requestBinding?: RequestBinding;
 }
@@ -95,6 +97,7 @@ export async function signAgentJWT(options: SignAgentJWTOptions) {
 	const {
 		agentId,
 		privateKey,
+		audience,
 		expiresIn = 60,
 		format = "simple",
 		additionalClaims,
@@ -113,7 +116,7 @@ export async function signAgentJWT(options: SignAgentJWTOptions) {
 		}
 	}
 
-	return await new SignJWT({
+	const jwt = new SignJWT({
 		...(format === "aap"
 			? {
 					aap_agent: {
@@ -134,8 +137,13 @@ export async function signAgentJWT(options: SignAgentJWTOptions) {
 		.setSubject(agentId)
 		.setIssuedAt(now)
 		.setExpirationTime(now + expiresIn)
-		.setJti(generateId(24))
-		.sign(key);
+		.setJti(generateId(24));
+
+	if (audience) {
+		jwt.setAudience(audience);
+	}
+
+	return await jwt.sign(key);
 }
 
 export interface VerifyAgentJWTOptions {

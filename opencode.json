@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "better-auth": {
+      "type": "remote",
+      "url": "https://mcp.inkeep.com/better-auth/mcp"
+    },
+    "better-auth-agent": {
+      "type": "local",
+      "command": ["npx", "tsx", "apps/agent-idp/gateway.ts"],
+      "environment": {
+        "BETTER_AUTH_URL": "http://localhost:4000",
+        "BETTER_AUTH_ENCRYPTION_KEY": "demo-key"
+      }
+    }
+  }
+}

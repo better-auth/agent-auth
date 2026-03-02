@@ -12,14 +12,13 @@ workgroups for AI agents.
 
 ## Repository Structure
 
-This is a pnpm monorepo. The main package is `packages/agent-auth/`.
+This is a pnpm monorepo.
 
 ```
-packages/agent-auth/       @better-auth/agent-auth - the plugin
+packages/agent-auth/        @better-auth/agent-auth - the plugin
+packages/bank-mcp-server/   @better-auth/bank-mcp-server - demo MCP server
+apps/agent-idp/             @better-auth/agent-idp - demo identity provider app
 ```
-
-Future packages (e.g. `agent-gateway`) will be added as separate
-packages in this monorepo.
 
 ## Development Commands
 

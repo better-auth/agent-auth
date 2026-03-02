@@ -225,7 +225,7 @@ export async function connectAgent(
 	}
 
 	// Step 5: Register the agent with the app using the session token
-	const createRes = await globalThis.fetch(`${base}/api/auth/agent/create`, {
+	const createRes = await globalThis.fetch(`${base}/api/auth/agent/register`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -245,13 +245,232 @@ export async function connectAgent(
 	}
 
 	const createData = (await createRes.json()) as {
-		agentId: string;
+		agent_id: string;
 		name: string;
 		scopes: string[];
 	};
 
 	return {
-		agentId: createData.agentId,
+		agentId: createData.agent_id,
+		name: createData.name,
+		scopes: createData.scopes,
+		publicKey: keypair.publicKey,
+		privateKey: keypair.privateKey,
+		kid: keypair.kid,
+	};
+}
+
+// =========================================================================
+// CIBA CONNECT FLOW
+// =========================================================================
+
+export interface ConnectAgentViaCibaOptions {
+	/** Base URL of the app (e.g. "https://app-x.com") */
+	appURL: string;
+	/** User identifier (email) to send the authentication request to. */
+	loginHint: string;
+	/** Agent name. Default: "Agent" */
+	name?: string;
+	/** Scopes to request. */
+	scopes?: string[];
+	/** Role to request. */
+	role?: string;
+	/** Pre-generated keypair. If not provided, one will be generated. */
+	keypair?: {
+		publicKey: AgentJWK;
+		privateKey: AgentJWK;
+		kid: string;
+	};
+	/** Client ID. Default: "agent-auth" */
+	clientId?: string;
+	/** Polling interval in ms. Default: 5000 */
+	pollInterval?: number;
+	/** Max wait time in ms before giving up. Default: 300000 (5 min) */
+	timeout?: number;
+	/** Human-readable binding message shown to the user during approval. */
+	bindingMessage?: string;
+	/**
+	 * Called when the CIBA auth request is created.
+	 * The user must approve it (e.g. in their dashboard).
+	 */
+	onAuthRequest?: (info: {
+		authReqId: string;
+		expiresIn: number;
+		interval: number;
+	}) => void;
+	/**
+	 * Called on each poll attempt.
+	 */
+	onPoll?: (attempt: number) => void;
+}
+
+/**
+ * Connect an agent to an app using the CIBA (Client Initiated Backchannel
+ * Authentication) flow.
+ *
+ * 1. Generates a keypair (or uses the provided one)
+ * 2. Calls the CIBA authorize endpoint with the user's email (login_hint)
+ * 3. Calls onAuthRequest so you know approval is needed
+ * 4. Polls the CIBA token endpoint until the user approves (or times out)
+ * 5. Uses the session token to register the agent's public key
+ * 6. Returns the agent ID, keypair, and scopes
+ *
+ * The app must have `agentAuth()` with `approvalMethods` including `"ciba"`.
+ *
+ * @example
+ * ```ts
+ * const result = await connectAgentViaCiba({
+ *   appURL: "https://myapp.com",
+ *   loginHint: "user@example.com",
+ *   name: "My Agent",
+ *   scopes: ["reports.read"],
+ *   onAuthRequest: ({ authReqId }) => {
+ *     console.log(`Waiting for user to approve request ${authReqId}`);
+ *   },
+ * });
+ * ```
+ */
+export async function connectAgentViaCiba(
+	options: ConnectAgentViaCibaOptions,
+): Promise<ConnectAgentResult> {
+	const {
+		appURL,
+		loginHint,
+		name = "Agent",
+		scopes = [],
+		role,
+		clientId = "agent-auth",
+		pollInterval = 5000,
+		timeout = 300_000,
+		bindingMessage,
+		onAuthRequest,
+		onPoll,
+	} = options;
+
+	const base = appURL.replace(/\/+$/, "");
+
+	const keypair = options.keypair ?? (await generateAgentKeypair());
+
+	const authRes = await globalThis.fetch(
+		`${base}/api/auth/agent/ciba/authorize`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				login_hint: loginHint,
+				scope: scopes.join(" "),
+				client_id: clientId,
+				binding_message:
+					bindingMessage ?? `Agent "${name}" requesting connection`,
+			}),
+		},
+	);
+
+	if (!authRes.ok) {
+		const err = await authRes.text();
+		throw new Error(`Failed to initiate CIBA request: ${err}`);
+	}
+
+	const authData = (await authRes.json()) as {
+		auth_req_id: string;
+		expires_in: number;
+		interval: number;
+	};
+
+	if (onAuthRequest) {
+		onAuthRequest({
+			authReqId: authData.auth_req_id,
+			expiresIn: authData.expires_in,
+			interval: authData.interval,
+		});
+	}
+
+	const effectiveInterval = Math.max(pollInterval, authData.interval * 1000);
+	const deadline = Date.now() + timeout;
+	let attempt = 0;
+	let accessToken: string | null = null;
+
+	while (Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, effectiveInterval));
+		attempt++;
+		if (onPoll) onPoll(attempt);
+
+		const tokenRes = await globalThis.fetch(
+			`${base}/api/auth/agent/ciba/token`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					grant_type: "urn:openid:params:grant-type:ciba",
+					auth_req_id: authData.auth_req_id,
+					client_id: clientId,
+				}),
+			},
+		);
+
+		if (tokenRes.ok) {
+			const tokenData = (await tokenRes.json()) as {
+				access_token: string;
+			};
+			accessToken = tokenData.access_token;
+			break;
+		}
+
+		const errorData = (await tokenRes.json()) as {
+			error: string;
+			error_description?: string;
+		};
+
+		if (errorData.error === "authorization_pending") {
+			continue;
+		}
+		if (errorData.error === "slow_down") {
+			await new Promise((resolve) => setTimeout(resolve, effectiveInterval));
+			continue;
+		}
+		if (errorData.error === "access_denied") {
+			throw new Error("User denied the agent connection.");
+		}
+		if (errorData.error === "expired_token") {
+			throw new Error("CIBA request expired. Please try again.");
+		}
+
+		throw new Error(
+			`CIBA auth failed: ${errorData.error} — ${errorData.error_description ?? ""}`,
+		);
+	}
+
+	if (!accessToken) {
+		throw new Error("Timed out waiting for user approval.");
+	}
+
+	const createRes = await globalThis.fetch(`${base}/api/auth/agent/register`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${accessToken}`,
+		},
+		body: JSON.stringify({
+			name,
+			publicKey: keypair.publicKey,
+			scopes,
+			role,
+		}),
+	});
+
+	if (!createRes.ok) {
+		const err = await createRes.text();
+		throw new Error(`Failed to register agent: ${err}`);
+	}
+
+	const createData = (await createRes.json()) as {
+		agent_id: string;
+		name: string;
+		scopes: string[];
+	};
+
+	return {
+		agentId: createData.agent_id,
 		name: createData.name,
 		scopes: createData.scopes,
 		publicKey: keypair.publicKey,
@@ -263,7 +482,7 @@ export async function connectAgent(
 export interface AgentClientOptions {
 	/** Base URL of the app (e.g. "https://app-x.com") */
 	baseURL: string;
-	/** The agent's ID (returned from /agent/create) */
+	/** The agent's ID (returned from /agent/register) */
 	agentId: string;
 	/** The agent's Ed25519 private key as JWK */
 	privateKey: AgentJWK;
@@ -284,7 +503,7 @@ export interface AgentClientOptions {
  * import { createAgentClient, generateKeypair } from "better-auth/plugins/agent-auth/agent-client";
  *
  * const { privateKey, publicKey } = await generateKeypair();
- * // Register publicKey with the app via /agent/create, get back agentId
+ * // Register publicKey with the app via /agent/register, get back agentId
  *
  * const agent = createAgentClient({
  *   baseURL: "https://app-x.com",
@@ -306,6 +525,7 @@ export function createAgentClient(options: AgentClientOptions) {
 	} = options;
 
 	const base = baseURL.replace(/\/+$/, "");
+	const audience = new URL(base).origin;
 
 	async function signRequest(
 		method: string,
@@ -316,6 +536,7 @@ export function createAgentClient(options: AgentClientOptions) {
 		const jwt = await signAgentJWT({
 			agentId,
 			privateKey,
+			audience,
 			expiresIn: jwtExpiresIn,
 			format: jwtFormat,
 			requestBinding: { method: method.toUpperCase(), path, bodyHash },

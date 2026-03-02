@@ -111,7 +111,7 @@ The flow:
 
 ### Create an Agent
 
-<APIMethod path="/agent/create" method="POST">
+<APIMethod path="/agent/register" method="POST">
 ```ts
 type createAgent = {
     /**
@@ -389,7 +389,7 @@ const hostJWT = await signAgentJWT({
     privateKey: hostPrivateKey,
 })
 
-const res = await fetch("/api/auth/agent/create", {
+const res = await fetch("/api/auth/agent/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -74,6 +74,16 @@ export interface MCPAgentStorage {
 	} | null>;
 	/** Remove a pending device auth flow. */
 	removePendingFlow?(appUrl: string): Promise<void>;
+
+	/** Store a host keypair for an app URL (enables trusted host auto-approval). */
+	saveHostKeypair?(
+		appUrl: string,
+		data: { keypair: AgentKeypair; hostId: string },
+	): Promise<void>;
+	/** Retrieve the stored host keypair for an app URL. */
+	getHostKeypair?(
+		appUrl: string,
+	): Promise<{ keypair: AgentKeypair; hostId: string } | null>;
 }
 
 export interface MCPToolDefinition {
@@ -120,14 +130,108 @@ export interface CreateAgentMCPToolsOptions {
 }
 
 /**
+ * Sign a host JWT for registration (§2.2).
+ * Contains the host's public key and the agent's public key.
+ */
+async function signHostJWT(opts: {
+	hostId: string;
+	hostPrivateKey: AgentJWK;
+	hostPublicKey: AgentJWK;
+	agentPublicKey: AgentJWK;
+	audience: string;
+}): Promise<string> {
+	return signAgentJWT({
+		agentId: opts.hostId,
+		privateKey: opts.hostPrivateKey,
+		audience: opts.audience,
+		expiresIn: 60,
+		additionalClaims: {
+			host_public_key: opts.hostPublicKey,
+			agent_public_key: opts.agentPublicKey,
+		},
+	});
+}
+
+/**
+ * Try to register via host JWT (trusted host path).
+ * Returns the registration result, or null if the host is unknown/untrusted.
+ */
+async function tryHostJWTRegistration(
+	url: string,
+	hostData: { keypair: AgentKeypair; hostId: string },
+	agentPublicKey: AgentJWK,
+	body: {
+		name: string;
+		scopes: string[];
+		mode?: string;
+		metadata?: Record<string, unknown>;
+	},
+): Promise<{
+	agent_id: string;
+	host_id: string;
+	status: string;
+	scopes: string[];
+	pending_scopes?: string[];
+	approval?: Record<string, unknown>;
+} | null> {
+	try {
+		const issuer = new URL(url).origin;
+		const hostJwt = await signHostJWT({
+			hostId: hostData.hostId,
+			hostPrivateKey: hostData.keypair.privateKey,
+			hostPublicKey: hostData.keypair.publicKey,
+			agentPublicKey,
+			audience: issuer,
+		});
+
+		const res = await globalThis.fetch(`${url}/api/auth/agent/register`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${hostJwt}`,
+			},
+			body: JSON.stringify({
+				name: body.name,
+				scopes: body.scopes,
+				mode: body.mode,
+				metadata: body.metadata,
+			}),
+		});
+
+		if (!res.ok) {
+			const text = await res.text().catch(() => "");
+			console.error(
+				`[agent-auth] Host JWT registration failed: ${res.status} ${text.slice(0, 300)}`,
+			);
+			return null;
+		}
+
+		return (await res.json()) as {
+			agent_id: string;
+			host_id: string;
+			status: string;
+			scopes: string[];
+			pending_scopes?: string[];
+			approval?: Record<string, unknown>;
+		};
+	} catch (err) {
+		console.error(
+			"[agent-auth] Host JWT registration error:",
+			err instanceof Error ? err.message : err,
+		);
+		return null;
+	}
+}
+
+/**
  * Helper: try to register an agent with a token, return the response or null on auth failure.
  */
 async function tryRegisterAgent(
 	url: string,
 	token: string,
 	body: { name: string; publicKey: AgentJWK; scopes: string[] },
-): Promise<{ agentId: string; scopes: string[] } | null> {
-	const res = await globalThis.fetch(`${url}/api/auth/agent/create`, {
+): Promise<{ agent_id: string; scopes: string[] } | null> {
+	const res = await globalThis.fetch(`${url}/api/auth/agent/register`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -138,7 +242,7 @@ async function tryRegisterAgent(
 	});
 
 	if (res.ok) {
-		return (await res.json()) as { agentId: string; scopes: string[] };
+		return (await res.json()) as { agent_id: string; scopes: string[] };
 	}
 
 	// Auth failure — token expired or invalid
@@ -191,7 +295,9 @@ export function getAgentAuthInstructions(hasGateway = false): string {
 			"- Pick a descriptive name reflecting the user's request.",
 			'- If you discovered tools in Step 1, pass the exact tool names as scopes (e.g. `["github.list_issues"]`).',
 			"- If you skipped Step 1, omit `scopes` to let the user choose on the approval page.",
-			"- The user will see an approval page in their browser. Tell them to approve.",
+			"- **Approval methods:** By default, the user approves in their browser (device authorization).",
+			'  To use dashboard notification instead, pass `method="ciba"` and `login_hint="user@email.com"`.',
+			"  Ask the user which method they prefer if unclear.",
 			"- **Save the returned Agent ID.**",
 			"",
 			"### Step 3 — List tools",
@@ -245,9 +351,15 @@ export function getAgentAuthInstructions(hasGateway = false): string {
  * Create MCP tool definitions for agent management.
  * Register these in your MCP server via `server.registerTool()`.
  */
+export interface AgentMCPToolsResult {
+	tools: MCPToolDefinition[];
+	/** Set of agent IDs authorized in this session. Used by gateway tools for isolation. */
+	sessionAgentIds: Set<string>;
+}
+
 export function createAgentMCPTools(
 	options: CreateAgentMCPToolsOptions,
-): MCPToolDefinition[] {
+): AgentMCPToolsResult {
 	const {
 		storage,
 		getAuthHeaders,
@@ -256,9 +368,21 @@ export function createAgentMCPTools(
 		resolveAuthorizationDetails,
 	} = options;
 
+	// Session-scoped agent tracking: only agents created or explicitly
+	// authorized during this process lifetime can be used by tools.
+	// Prevents cross-conversation agent hijacking via shared storage.
+	const sessionAgentIds = new Set<string>();
+
 	async function resolveAuthHeaders(): Promise<Record<string, string>> {
 		if (!getAuthHeaders) return {};
 		return await getAuthHeaders();
+	}
+
+	function requireSessionAgent(agentId: string): string | null {
+		if (!sessionAgentIds.has(agentId)) {
+			return `Agent ${agentId} was not created in this session. Call connect_agent first.`;
+		}
+		return null;
 	}
 
 	/**
@@ -273,6 +397,7 @@ export function createAgentMCPTools(
 			const jwt = await signAgentJWT({
 				agentId,
 				privateKey: connection.keypair.privateKey,
+				audience: new URL(connection.appUrl).origin,
 			});
 			const res = await globalThis.fetch(
 				`${connection.appUrl}/api/auth/agent/get-session`,
@@ -400,7 +525,7 @@ export function createAgentMCPTools(
 				"(3) Pass it as agentId if re-calling. (4) If user approval is needed, tell them and wait." +
 				(getAuthHeaders
 					? ""
-					: " Uses device authorization (browser approval)."),
+					: " Supports two approval methods: 'device_authorization' (opens browser) and 'ciba' (dashboard notification, requires login_hint)."),
 			inputSchema: {
 				url: z.string().describe("App URL (e.g. https://myapp.com)"),
 				name: z
@@ -424,30 +549,51 @@ export function createAgentMCPTools(
 							"This reuses your existing identity instead of creating a new one. " +
 							"ONLY omit this on your very first connect_agent call.",
 					),
+				method: z
+					.enum(["device_authorization", "ciba"])
+					.optional()
+					.describe(
+						"Approval method. 'device_authorization' opens a browser for user approval. " +
+							"'ciba' sends a notification to the user's dashboard (requires login_hint). " +
+							"Default: 'device_authorization'.",
+					),
+				login_hint: z
+					.string()
+					.optional()
+					.describe(
+						"User's email address. Required when method is 'ciba'. " +
+							"The server will send a notification to this user's dashboard.",
+					),
 			},
 			handler: async (input) => {
 				const url = (input.url as string).replace(/\/+$/, "");
 				const name = (input.name as string) ?? "MCP Agent";
 				const scopes = (input.scopes as string[]) ?? [];
 				const existingAgentId = input.agentId as string | undefined;
+				const method = (input.method as string) ?? "device_authorization";
+				const loginHint = input.login_hint as string | undefined;
 
-				// Explicit agentId — reuse that specific connection
+				// Explicit agentId — only allow reuse if it was created in this session
 				if (existingAgentId) {
-					const existing = await storage.getConnection(existingAgentId);
-					if (existing) {
-						const healthy = await isConnectionHealthy(
-							existingAgentId,
-							existing,
-						);
-						if (healthy) {
-							return {
-								content: [
-									{
-										type: "text" as const,
-										text: `Reusing connection. Agent ID: ${existingAgentId}. Name: "${existing.name}". URL: ${existing.appUrl}. Scopes: ${existing.scopes.join(", ") || "none"}.`,
-									},
-								],
-							};
+					if (!sessionAgentIds.has(existingAgentId)) {
+						// Not from this session — ignore and create fresh
+					} else {
+						const existing = await storage.getConnection(existingAgentId);
+						if (existing) {
+							const healthy = await isConnectionHealthy(
+								existingAgentId,
+								existing,
+							);
+							if (healthy) {
+								return {
+									content: [
+										{
+											type: "text" as const,
+											text: `Reusing connection. Agent ID: ${existingAgentId}. Name: "${existing.name}". URL: ${existing.appUrl}. Scopes: ${existing.scopes.join(", ") || "none"}.`,
+										},
+									],
+								};
+							}
 						}
 					}
 					// agentId invalid or stale — fall through to create fresh
@@ -456,10 +602,46 @@ export function createAgentMCPTools(
 				// Fresh identity — each conversation gets its own agent
 				const keypair = await generateAgentKeypair();
 
+				// Trusted host path: if we have a stored host keypair for this
+				// app, try registering with a host JWT first. If the host is
+				// trusted and scopes are within its budget, the server
+				// auto-approves — no device auth needed.
+				if (storage.getHostKeypair) {
+					const hostData = await storage.getHostKeypair(url);
+					if (hostData) {
+						const result = await tryHostJWTRegistration(
+							url,
+							hostData,
+							keypair.publicKey,
+							{ name, scopes },
+						);
+
+						if (result && result.status === "active") {
+							await storage.saveConnection(result.agent_id, {
+								appUrl: url,
+								keypair,
+								name,
+								scopes: result.scopes,
+							});
+							sessionAgentIds.add(result.agent_id);
+
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: `Connected to ${url} (trusted host, auto-approved). Agent ID: ${result.agent_id}. Scopes: ${result.scopes.join(", ")}. Use this Agent ID for subsequent requests.`,
+									},
+								],
+							};
+						}
+						// status is "pending" or registration failed — fall through to device auth/CIBA
+					}
+				}
+
 				// Direct auth mode (cookie/token in env)
 				if (getAuthHeaders) {
 					const authHeaders = await resolveAuthHeaders();
-					const res = await globalThis.fetch(`${url}/api/auth/agent/create`, {
+					const res = await globalThis.fetch(`${url}/api/auth/agent/register`, {
 						method: "POST",
 						headers: {
 							"Content-Type": "application/json",
@@ -485,25 +667,238 @@ export function createAgentMCPTools(
 					}
 
 					const data = (await res.json()) as {
-						agentId: string;
+						agent_id: string;
 						scopes: string[];
 					};
 
-					await storage.saveConnection(data.agentId, {
+					await storage.saveConnection(data.agent_id, {
 						appUrl: url,
 						keypair,
 						name,
 						scopes: data.scopes,
 					});
+					sessionAgentIds.add(data.agent_id);
 
 					return {
 						content: [
 							{
 								type: "text" as const,
-								text: `Connected to ${url}. Agent ID: ${data.agentId}. Scopes: ${data.scopes.join(", ")}. Use this Agent ID for subsequent requests in this conversation.`,
+								text: `Connected to ${url}. Agent ID: ${data.agent_id}. Scopes: ${data.scopes.join(", ")}. Use this Agent ID for subsequent requests in this conversation.`,
 							},
 						],
 					};
+				}
+
+				// CIBA flow — backchannel authentication via dashboard notification
+				if (method === "ciba") {
+					if (!loginHint) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: "CIBA requires a login_hint (user email). Pass login_hint with the user's email address.",
+								},
+							],
+						};
+					}
+
+					const cibaRes = await globalThis.fetch(
+						`${url}/api/auth/agent/ciba/authorize`,
+						{
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								login_hint: loginHint,
+								scope: scopes.join(" "),
+								binding_message: `${name} requests access${scopes.length > 0 ? `: ${scopes.join(", ")}` : ""}`,
+								client_id: clientId,
+								backchannel_token_delivery_mode: "poll",
+							}),
+						},
+					);
+
+					if (!cibaRes.ok) {
+						const err = await cibaRes.text();
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `CIBA auth failed: ${err}`,
+								},
+							],
+						};
+					}
+
+					const cibaData = (await cibaRes.json()) as {
+						auth_req_id: string;
+						expires_in: number;
+						interval: number;
+					};
+
+					const cibaMaxAttempts = 60;
+					const cibaInterval = Math.max(5000, (cibaData.interval ?? 5) * 1000);
+					let cibaAccessToken: string | null = null;
+
+					for (let i = 0; i < cibaMaxAttempts; i++) {
+						await new Promise((resolve) => setTimeout(resolve, cibaInterval));
+
+						const tokenRes = await globalThis.fetch(
+							`${url}/api/auth/agent/ciba/token`,
+							{
+								method: "POST",
+								headers: { "Content-Type": "application/json" },
+								body: JSON.stringify({
+									grant_type: "urn:openid:params:grant-type:ciba",
+									auth_req_id: cibaData.auth_req_id,
+									client_id: clientId,
+								}),
+							},
+						);
+
+						const resText = await tokenRes.text();
+						let resJson: Record<string, unknown>;
+						try {
+							resJson = JSON.parse(resText);
+						} catch {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: `CIBA token endpoint returned non-JSON: ${resText.slice(0, 200)}`,
+									},
+								],
+							};
+						}
+
+						if (tokenRes.ok) {
+							cibaAccessToken = resJson.access_token as string;
+							break;
+						}
+
+						const error = resJson.error as string | undefined;
+						if (error === "authorization_pending") continue;
+						if (error === "slow_down") {
+							await new Promise((resolve) => setTimeout(resolve, cibaInterval));
+							continue;
+						}
+						if (error === "access_denied") {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: "User denied the CIBA authentication request.",
+									},
+								],
+							};
+						}
+						if (error === "expired_token") {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: "CIBA request expired. Please try again.",
+									},
+								],
+							};
+						}
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `CIBA token exchange failed: ${error}`,
+								},
+							],
+						};
+					}
+
+					if (!cibaAccessToken) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: "Timed out waiting for CIBA approval. Ask the user to approve in their dashboard.",
+								},
+							],
+						};
+					}
+
+					const cibaHostKeypair = storage.saveHostKeypair
+						? await generateAgentKeypair()
+						: null;
+
+					try {
+						const cibaRegisterBody: Record<string, unknown> = {
+							name,
+							publicKey: keypair.publicKey,
+							scopes,
+						};
+						if (cibaHostKeypair) {
+							cibaRegisterBody.hostPublicKey = cibaHostKeypair.publicKey;
+						}
+
+						const cibaRegRes = await globalThis.fetch(
+							`${url}/api/auth/agent/register`,
+							{
+								method: "POST",
+								headers: {
+									"Content-Type": "application/json",
+									Authorization: `Bearer ${cibaAccessToken}`,
+								},
+								body: JSON.stringify(cibaRegisterBody),
+							},
+						);
+
+						if (!cibaRegRes.ok) {
+							const err = await cibaRegRes.text();
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: `Failed to register agent: ${err}`,
+									},
+								],
+							};
+						}
+
+						const data = (await cibaRegRes.json()) as {
+							agent_id: string;
+							host_id?: string;
+							scopes: string[];
+						};
+
+						await storage.saveConnection(data.agent_id, {
+							appUrl: url,
+							keypair,
+							name,
+							scopes: data.scopes,
+						});
+						sessionAgentIds.add(data.agent_id);
+
+						if (cibaHostKeypair && data.host_id && storage.saveHostKeypair) {
+							await storage.saveHostKeypair(url, {
+								keypair: cibaHostKeypair,
+								hostId: data.host_id,
+							});
+						}
+
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Connected via CIBA to ${url}. Agent ID: ${data.agent_id}. Scopes: ${data.scopes.join(", ")}. Use this Agent ID for subsequent requests.`,
+								},
+							],
+						};
+					} catch (err) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `${err instanceof Error ? err.message : String(err)}`,
+								},
+							],
+						};
+					}
 				}
 
 				// Device authorization flow — every new identity requires explicit approval
@@ -659,32 +1054,67 @@ export function createAgentMCPTools(
 					};
 				}
 
-				// Register the agent
+				// Generate a host keypair to register alongside the agent.
+				// The server creates a host with this key, enabling future
+				// agents to auto-approve via host JWT without device auth.
+				const hostKeypair = storage.saveHostKeypair
+					? await generateAgentKeypair()
+					: null;
+
+				// Register the agent (include hostPublicKey so the server
+				// creates/associates a host with this key)
 				try {
-					const data = await tryRegisterAgent(url, accessToken, {
+					const registerBody: Record<string, unknown> = {
 						name,
 						publicKey: keypair.publicKey,
 						scopes,
+					};
+					if (hostKeypair) {
+						registerBody.hostPublicKey = hostKeypair.publicKey;
+					}
+
+					const res = await globalThis.fetch(`${url}/api/auth/agent/register`, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							Authorization: `Bearer ${accessToken}`,
+						},
+						body: JSON.stringify(registerBody),
 					});
 
-					if (!data) {
+					if (!res.ok) {
 						if (storage.removePendingFlow) await storage.removePendingFlow(url);
+						const err = await res.text();
 						return {
 							content: [
 								{
 									type: "text" as const,
-									text: "Failed to register agent: auth token was rejected.",
+									text: `Failed to register agent: ${err}`,
 								},
 							],
 						};
 					}
 
-					await storage.saveConnection(data.agentId, {
+					const data = (await res.json()) as {
+						agent_id: string;
+						host_id?: string;
+						scopes: string[];
+					};
+
+					await storage.saveConnection(data.agent_id, {
 						appUrl: url,
 						keypair,
 						name,
 						scopes: data.scopes,
 					});
+					sessionAgentIds.add(data.agent_id);
+
+					if (hostKeypair && data.host_id && storage.saveHostKeypair) {
+						await storage.saveHostKeypair(url, {
+							keypair: hostKeypair,
+							hostId: data.host_id,
+						});
+					}
 
 					if (storage.removePendingFlow) await storage.removePendingFlow(url);
 
@@ -692,7 +1122,7 @@ export function createAgentMCPTools(
 						content: [
 							{
 								type: "text" as const,
-								text: `Connected to ${url}. Agent ID: ${data.agentId}. Scopes: ${data.scopes.join(", ")}. Use this Agent ID for subsequent requests in this conversation.`,
+								text: `Connected to ${url}. Agent ID: ${data.agent_id}. Scopes: ${data.scopes.join(", ")}. Use this Agent ID for subsequent requests in this conversation.`,
 							},
 						],
 					};
@@ -710,34 +1140,6 @@ export function createAgentMCPTools(
 			},
 		},
 		{
-			name: "list_agents",
-			description:
-				"Show all active agent connections. Call when the user asks: " +
-				"what agents are running, show my connections, which apps am I connected to, " +
-				"or what sessions are active. Returns Agent IDs, app URLs, names, and scopes.",
-			inputSchema: {},
-			handler: async () => {
-				const connections = await storage.listConnections();
-				if (connections.length === 0) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: "No agent connections.",
-							},
-						],
-					};
-				}
-				const lines = connections.map(
-					(c) =>
-						`${c.appUrl} — ${c.name} (${c.agentId}) [${c.scopes.join(", ")}]`,
-				);
-				return {
-					content: [{ type: "text" as const, text: lines.join("\n") }],
-				};
-			},
-		},
-		{
 			name: "disconnect_agent",
 			description:
 				"Disconnect, sign out, log out, or revoke an agent. " +
@@ -750,6 +1152,10 @@ export function createAgentMCPTools(
 			},
 			handler: async (input) => {
 				const agentId = input.agentId as string;
+				const sessionErr = requireSessionAgent(agentId);
+				if (sessionErr) {
+					return { content: [{ type: "text" as const, text: sessionErr }] };
+				}
 				const connection = await storage.getConnection(agentId);
 				if (!connection) {
 					return {
@@ -767,6 +1173,7 @@ export function createAgentMCPTools(
 					const jwt = await signAgentJWT({
 						agentId,
 						privateKey: connection.keypair.privateKey,
+						audience: new URL(connection.appUrl).origin,
 					});
 					await globalThis.fetch(`${connection.appUrl}/api/auth/agent/revoke`, {
 						method: "POST",
@@ -802,6 +1209,10 @@ export function createAgentMCPTools(
 			},
 			handler: async (input) => {
 				const agentId = input.agentId as string;
+				const sessionErr = requireSessionAgent(agentId);
+				if (sessionErr) {
+					return { content: [{ type: "text" as const, text: sessionErr }] };
+				}
 				const connection = await storage.getConnection(agentId);
 				if (!connection) {
 					return {
@@ -817,6 +1228,7 @@ export function createAgentMCPTools(
 				const jwt = await signAgentJWT({
 					agentId,
 					privateKey: connection.keypair.privateKey,
+					audience: new URL(connection.appUrl).origin,
 				});
 
 				const res = await globalThis.fetch(
@@ -873,6 +1285,10 @@ export function createAgentMCPTools(
 			},
 			handler: async (input) => {
 				const agentId = input.agentId as string;
+				const sessionErr = requireSessionAgent(agentId);
+				if (sessionErr) {
+					return { content: [{ type: "text" as const, text: sessionErr }] };
+				}
 				const reqPath = input.path as string;
 				const method = (input.method as string) ?? "GET";
 				const body = input.body as string | undefined;
@@ -924,6 +1340,7 @@ export function createAgentMCPTools(
 				const jwt = await signAgentJWT({
 					agentId,
 					privateKey: connection.keypair.privateKey,
+					audience: new URL(connection.appUrl).origin,
 					requestBinding: {
 						method,
 						path: requestPath,
@@ -1105,12 +1522,13 @@ export function createAgentMCPTools(
 						};
 					}
 
-					await storage.saveConnection(data.agentId, {
+					await storage.saveConnection(data.agent_id, {
 						appUrl: url,
 						keypair,
 						name: pendingFlow.name,
 						scopes: data.scopes,
 					});
+					sessionAgentIds.add(data.agent_id);
 
 					if (storage.removePendingFlow) await storage.removePendingFlow(url);
 
@@ -1118,7 +1536,7 @@ export function createAgentMCPTools(
 						content: [
 							{
 								type: "text" as const,
-								text: `Connected to ${url}. Agent ID: ${data.agentId}. Scopes: ${data.scopes.join(", ")}. Use this Agent ID for subsequent requests in this conversation.`,
+								text: `Connected to ${url}. Agent ID: ${data.agent_id}. Scopes: ${data.scopes.join(", ")}. Use this Agent ID for subsequent requests in this conversation.`,
 							},
 						],
 					};
@@ -1137,5 +1555,5 @@ export function createAgentMCPTools(
 		});
 	}
 
-	return tools;
+	return { tools, sessionAgentIds };
 }

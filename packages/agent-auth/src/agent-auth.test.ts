@@ -23,11 +23,6 @@ describe("agent-auth", async () => {
 		{
 			plugins: [
 				agentAuth({
-					roles: {
-						reader: ["reports.read"],
-						writer: ["reports.read", "reports.write"],
-					},
-					defaultRole: "reader",
 					rateLimit: false,
 				}),
 			],
@@ -1444,10 +1439,8 @@ describe("agent-auth", async () => {
 		it("should return server configuration", async () => {
 			const res = await auth.api.discover({});
 			expect(res.algorithms).toEqual(["Ed25519"]);
-			expect(res.scopes.length).toBeGreaterThanOrEqual(2);
-			expect(res.roles).toEqual(["reader", "writer"]);
-			expect(typeof res.jwtMaxAge).toBe("number");
-			expect(typeof res.sessionTTL).toBe("number");
+			expect(res.protocol_version).toBe("1.0-draft");
+			expect(res.modes).toEqual(["behalf_of", "autonomous"]);
 		});
 	});
 
@@ -1546,16 +1539,14 @@ describe("agent-auth", async () => {
 	// Validate scopes
 	// ---------------------------------------------------------------------------
 	describe("validateScopes", async () => {
+		const knownScopes = new Set(["reports.read", "reports.write"]);
 		const { client: vsClient, signInWithTestUser: vsSignIn } =
 			await getTestInstance(
 				{
 					plugins: [
 						agentAuth({
-							roles: {
-								reader: ["reports.read"],
-								writer: ["reports.read", "reports.write"],
-							},
-							validateScopes: true,
+							validateScopes: (scopes) =>
+								scopes.every((s) => knownScopes.has(s)),
 							rateLimit: false,
 						}),
 					],
@@ -1565,7 +1556,7 @@ describe("agent-auth", async () => {
 
 		const { headers: vsHeaders } = await vsSignIn();
 
-		it("should accept known scopes when validateScopes is true", async () => {
+		it("should accept known scopes", async () => {
 			const kp = await generateAgentKeypair();
 			const res = await vsClient.agent.create(
 				{
@@ -1579,7 +1570,7 @@ describe("agent-auth", async () => {
 			expect(res.data?.scopes).toEqual(["reports.read"]);
 		});
 
-		it("should reject unknown scopes when validateScopes is true", async () => {
+		it("should reject unknown scopes", async () => {
 			const kp = await generateAgentKeypair();
 			const res = await vsClient.agent.create(
 				{
@@ -1649,7 +1640,6 @@ describe("agent-auth", async () => {
 						agentSessionTTL: 3600,
 						agentMaxLifetime: 86400,
 						absoluteLifetime: 172800,
-						roles: { reader: ["reports.read"] },
 						rateLimit: false,
 					}),
 				],

@@ -1,9 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
-import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { Agent, ResolvedAgentAuthOptions } from "../types";
+import type { Agent, AgentSession, ResolvedAgentAuthOptions } from "../types";
 
 const AGENT_TABLE = "agent";
 
@@ -13,7 +12,6 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				agentId: z.string(),
 				publicKey: z.record(
 					z.string(),
 					z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
@@ -22,24 +20,24 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Accept a new public key for an agent. Old key stops working immediately.",
+						"Rotate an agent's public key via agent JWT. Old key stops working immediately.",
 				},
 			},
 		},
 		async (ctx) => {
-			const session = await getSessionFromCtx(ctx);
-			if (!session) {
+			const agentSession = (ctx.context as Record<string, unknown>)
+				.agentSession as AgentSession | undefined;
+
+			if (!agentSession) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const { agentId, publicKey } = ctx.body;
+			const agentId = agentSession.agent.id;
+			const { publicKey } = ctx.body;
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: AGENT_TABLE,
-				where: [
-					{ field: "id", value: agentId },
-					{ field: "userId", value: session.user.id },
-				],
+				where: [{ field: "id", value: agentId }],
 			});
 
 			if (!agent) {
@@ -71,7 +69,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 				},
 			});
 
-			return ctx.json({ success: true });
+			return ctx.json({ agent_id: agentId, status: "active" });
 		},
 	);
 }

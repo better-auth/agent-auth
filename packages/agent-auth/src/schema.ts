@@ -15,7 +15,13 @@ export const agentSchema = () =>
 				userId: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },
-					required: true,
+					required: false,
+					input: false,
+					index: true,
+				},
+				referenceId: {
+					type: "string",
+					required: false,
 					input: false,
 					index: true,
 				},
@@ -91,7 +97,7 @@ export const agentSchema = () =>
 				userId: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },
-					required: true,
+					required: false,
 					input: false,
 					index: true,
 				},
@@ -124,6 +130,11 @@ export const agentSchema = () =>
 					input: false,
 				},
 				kid: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				jwksUrl: {
 					type: "string",
 					required: false,
 					input: false,
@@ -192,7 +203,7 @@ export const agentSchema = () =>
 				grantedBy: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },
-					required: true,
+					required: false,
 					input: false,
 					index: true,
 				},
@@ -220,6 +231,93 @@ export const agentSchema = () =>
 				reason: {
 					type: "string",
 					required: false,
+					input: false,
+				},
+			},
+		},
+		cibaAuthRequest: {
+			fields: {
+				clientId: {
+					type: "string",
+					required: true,
+					input: false,
+				},
+				loginHint: {
+					type: "string",
+					required: true,
+					input: false,
+					index: true,
+				},
+				userId: {
+					type: "string",
+					references: {
+						model: "user",
+						field: "id",
+						onDelete: "cascade",
+					},
+					required: false,
+					input: false,
+					index: true,
+				},
+				scope: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				bindingMessage: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				clientNotificationToken: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				clientNotificationEndpoint: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				deliveryMode: {
+					type: "string",
+					required: true,
+					input: false,
+				},
+				status: {
+					type: "string",
+					required: true,
+					input: false,
+					defaultValue: "pending",
+				},
+				accessToken: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				interval: {
+					type: "number",
+					required: true,
+					input: false,
+				},
+				lastPolledAt: {
+					type: "date",
+					required: false,
+					input: false,
+				},
+				expiresAt: {
+					type: "date",
+					required: true,
+					input: false,
+				},
+				createdAt: {
+					type: "date",
+					required: true,
+					input: false,
+				},
+				updatedAt: {
+					type: "date",
+					required: true,
 					input: false,
 				},
 			},

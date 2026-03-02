@@ -15,6 +15,7 @@ import type {
 	AgentHost,
 	AgentPermission,
 	AgentSession,
+	HostSession,
 	ResolvedAgentAuthOptions,
 } from "./types";
 
@@ -44,7 +45,7 @@ function buildRateLimits(config: AgentAuthOptions["rateLimit"]) {
 	return [
 		{
 			pathMatcher(path: string) {
-				return path === "/agent/create";
+				return path === "/agent/register";
 			},
 			window,
 			max: createMax,
@@ -181,6 +182,10 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		absoluteLifetime: options?.absoluteLifetime ?? 0,
 		freshSessionWindow: options?.freshSessionWindow ?? 300,
 		blockedScopes: options?.blockedScopes ?? [],
+		modes: options?.modes ?? ["behalf_of", "autonomous"],
+		approvalMethods: options?.approvalMethods ?? ["device_authorization"],
+		resolveApprovalMethod:
+			options?.resolveApprovalMethod ?? (() => "device_authorization"),
 	};
 
 	const schema = mergeSchema(agentSchema(), opts.schema);
@@ -194,6 +199,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			before: [
 				{
 					matcher: (ctx) => {
+						if (ctx.path === "/agent/register") return false;
 						const auth = ctx.headers?.get("authorization");
 						if (!auth) return false;
 						const bearer = auth.replace(/^Bearer\s+/i, "");
@@ -215,7 +221,33 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								);
 							}
 							agentId = decodedPayload.sub;
-						} catch {
+
+							// §3.4 step 2: Verify aud early (before DB lookup).
+							// Reject when aud is present but doesn't match — prevents cross-server replay.
+							if (decodedPayload.aud) {
+								const configuredOrigin = new URL(ctx.context.baseURL).origin;
+								const acceptedOrigins = new Set([configuredOrigin]);
+								const reqHost = ctx.headers?.get("host");
+								const reqProto =
+									ctx.headers?.get("x-forwarded-proto") ?? "http";
+								if (reqHost) {
+									acceptedOrigins.add(`${reqProto}://${reqHost}`);
+								}
+								const audValues = Array.isArray(decodedPayload.aud)
+									? decodedPayload.aud
+									: [decodedPayload.aud];
+								const audMatch = audValues.some((a) =>
+									acceptedOrigins.has(String(a)),
+								);
+								if (!audMatch) {
+									throw APIError.from(
+										"UNAUTHORIZED",
+										AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+									);
+								}
+							}
+						} catch (e) {
+							if (e instanceof APIError) throw e;
 							throw APIError.from(
 								"UNAUTHORIZED",
 								AGENT_AUTH_ERROR_CODES.INVALID_JWT,
@@ -228,6 +260,49 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						});
 
 						if (!agent) {
+							const host = await ctx.context.adapter.findOne<AgentHost>({
+								model: HOST_TABLE,
+								where: [{ field: "id", value: agentId }],
+							});
+
+							if (host && host.status === "active" && host.publicKey) {
+								let hostPubKey: AgentJWK;
+								try {
+									hostPubKey = JSON.parse(host.publicKey);
+								} catch {
+									throw APIError.from(
+										"UNAUTHORIZED",
+										AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
+									);
+								}
+								const hostPayload = await verifyAgentJWT({
+									jwt: bearer,
+									publicKey: hostPubKey,
+									maxAge: opts.jwtMaxAge,
+								});
+								if (!hostPayload) {
+									throw APIError.from(
+										"UNAUTHORIZED",
+										AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+									);
+								}
+								const hostScopes =
+									typeof host.scopes === "string"
+										? JSON.parse(host.scopes)
+										: (host.scopes ?? []);
+								const hostSession: HostSession = {
+									host: {
+										id: host.id,
+										userId: host.userId,
+										scopes: hostScopes,
+										status: host.status,
+									},
+								};
+								(ctx.context as { hostSession?: HostSession }).hostSession =
+									hostSession;
+								return { context: ctx };
+							}
+
 							throw APIError.from(
 								"UNAUTHORIZED",
 								AGENT_AUTH_ERROR_CODES.AGENT_NOT_FOUND,
@@ -235,6 +310,20 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						}
 
 						if (agent.status === "revoked") {
+							throw APIError.from(
+								"UNAUTHORIZED",
+								AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
+							);
+						}
+
+						if (agent.status === "pending") {
+							throw APIError.from(
+								"FORBIDDEN",
+								AGENT_AUTH_ERROR_CODES.AGENT_PENDING,
+							);
+						}
+
+						if (agent.status === "rejected") {
 							throw APIError.from(
 								"UNAUTHORIZED",
 								AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
@@ -325,24 +414,25 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							);
 						}
 
-						// §9.4 JTI replay detection — must run before transparent
-						// reactivation to prevent a replayed JWT from triggering
-						// reactivation side-effects.
-						if (payload.jti) {
-							if (jtiCache.has(payload.jti)) {
-								throw APIError.from(
-									"UNAUTHORIZED",
-									AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
-								);
-							}
-							jtiCache.add(payload.jti, opts.jwtMaxAge);
+						// §3.5: jti is required for replay detection
+						if (!payload.jti) {
+							throw APIError.from(
+								"UNAUTHORIZED",
+								AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+							);
 						}
+						if (jtiCache.has(payload.jti)) {
+							throw APIError.from(
+								"UNAUTHORIZED",
+								AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
+							);
+						}
+						jtiCache.add(payload.jti, opts.jwtMaxAge);
 
-						// DPoP-style request binding verification.
-						// If the JWT contains htm/htu/ath claims, verify they match the actual request.
+						// DPoP-style request binding verification (§3.3).
+						// htu must be the full URL (scheme + host + path) per RFC 9449 §4.2.
 						if (payload.htm || payload.htu) {
 							const method = ctx.method?.toUpperCase();
-							const path = ctx.path;
 
 							if (
 								payload.htm &&
@@ -355,15 +445,15 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 								);
 							}
 
-							if (
-								payload.htu &&
-								typeof payload.htu === "string" &&
-								payload.htu !== path
-							) {
-								throw APIError.from(
-									"UNAUTHORIZED",
-									AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
-								);
+							if (payload.htu && typeof payload.htu === "string") {
+								const baseUrl = new URL(ctx.context.baseURL);
+								const expectedHtu = `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, "")}${ctx.path}`;
+								if (payload.htu !== expectedHtu) {
+									throw APIError.from(
+										"UNAUTHORIZED",
+										AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
+									);
+								}
 							}
 
 							if (payload.ath && typeof payload.ath === "string") {
@@ -398,31 +488,37 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						}
 
 						const [user, permissions] = await Promise.all([
-							ctx.context.internalAdapter.findUserById(agent.userId),
+							agent.userId
+								? ctx.context.internalAdapter.findUserById(agent.userId)
+								: Promise.resolve(null),
 							ctx.context.adapter.findMany<AgentPermission>({
 								model: PERMISSION_TABLE,
 								where: [{ field: "agentId", value: agent.id }],
 							}),
 						]);
-						if (!user) {
-							throw APIError.from(
-								"UNAUTHORIZED",
-								AGENT_AUTH_ERROR_CODES.AGENT_NOT_FOUND,
-							);
-						}
-
 						const activePermissions = permissions.filter(
 							(p) =>
 								p.status === "active" &&
 								(!p.expiresAt || new Date(p.expiresAt) > new Date()),
 						);
 
+						// §3.4 step 9: If JWT contains a scopes claim, intersect
+						// with granted scopes so downstream handlers only see the
+						// scopes the JWT was issued for.
+						let effectivePermissions = activePermissions;
+						if (payload.scopes && Array.isArray(payload.scopes)) {
+							const jwtScopes = new Set(payload.scopes as string[]);
+							effectivePermissions = activePermissions.filter((p) =>
+								jwtScopes.has(p.scope),
+							);
+						}
+
 						const agentSession: AgentSession = {
 							agent: {
 								id: agent.id,
 								name: agent.name,
 								mode: agent.mode,
-								permissions: activePermissions.map((p) => ({
+								permissions: effectivePermissions.map((p) => ({
 									scope: p.scope,
 									referenceId: p.referenceId,
 									grantedBy: p.grantedBy,
@@ -436,11 +532,9 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 										? JSON.parse(agent.metadata)
 										: agent.metadata,
 							},
-							user: {
-								id: user.id,
-								name: user.name,
-								email: user.email,
-							},
+							user: user
+								? { id: user.id, name: user.name, email: user.email }
+								: null,
 						};
 
 						(ctx.context as { agentSession?: AgentSession }).agentSession =
@@ -508,13 +602,23 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			scopeRequestStatus: routes.scopeRequestStatus,
 			approveScope: routes.approveScope,
 			discover: routes.discover,
+			capabilities: routes.capabilities,
+			agentStatus: routes.agentStatus,
+			introspect: routes.introspect,
+			connectAccount: routes.connectAccount,
 			createHost: routes.createHost,
 			listHosts: routes.listHosts,
 			getHost: routes.getHost,
 			revokeHost: routes.revokeHost,
 			reactivateHost: routes.reactivateHost,
 			updateHost: routes.updateHost,
+			rotateHostKey: routes.rotateHostKey,
 			grantPermission: routes.grantPermission,
+			cibaAuthorize: routes.cibaAuthorize,
+			cibaToken: routes.cibaToken,
+			cibaApprove: routes.cibaApprove,
+			cibaDeny: routes.cibaDeny,
+			cibaPending: routes.cibaPending,
 		},
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,

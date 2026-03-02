@@ -249,5 +249,51 @@ export function createFileStorage(
 			delete flows[appUrl];
 			writeJSON(pendingFlowsFile, flows);
 		},
+
+		async saveHostKeypair(appUrl, data) {
+			const hostsFile = path.join(dir, "hosts.json");
+			const hosts =
+				readJSON<
+					Record<string, { keypair: AgentKeypair | string; hostId: string }>
+				>(hostsFile) ?? {};
+			hosts[appUrl] = {
+				keypair: encKey
+					? await encryptKeypair(data.keypair, encKey)
+					: data.keypair,
+				hostId: data.hostId,
+			};
+			writeJSON(
+				hostsFile,
+				hosts as unknown as Record<string, PendingFlow>,
+				true,
+			);
+		},
+
+		async getHostKeypair(appUrl) {
+			const hostsFile = path.join(dir, "hosts.json");
+			const hosts =
+				readJSON<
+					Record<string, { keypair: AgentKeypair | string; hostId: string }>
+				>(hostsFile) ?? {};
+			const entry = hosts[appUrl];
+			if (!entry) return null;
+
+			let keypair: AgentKeypair;
+			if (
+				typeof entry.keypair === "string" &&
+				entry.keypair.startsWith(ENCRYPTED_PREFIX)
+			) {
+				if (!encKey) {
+					throw new Error(
+						"Host keypair is encrypted but no encryptionKey was provided",
+					);
+				}
+				keypair = await decryptKeypair(entry.keypair, encKey);
+			} else {
+				keypair = entry.keypair as AgentKeypair;
+			}
+
+			return { keypair, hostId: entry.hostId };
+		},
 	};
 }

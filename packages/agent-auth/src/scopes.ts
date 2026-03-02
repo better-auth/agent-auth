@@ -9,12 +9,25 @@
 /**
  * Check if a single granted scope covers a required scope.
  * Supports trailing wildcards: "github.*" matches "github.create_issue".
+ * Also handles provider-prefixed scopes (§2.3.4): if the required scope
+ * is "acme.get_balance" and the granted scope is "get_balance", it matches
+ * by stripping the provider prefix from the required scope.
  */
 function scopeCovers(granted: string, required: string): boolean {
 	if (granted === required || granted === "*") return true;
 	if (granted.endsWith(".*")) {
 		const prefix = granted.slice(0, -1);
 		return required.startsWith(prefix);
+	}
+	// Provider-prefix stripping: "acme.get_balance" matches "get_balance"
+	const dotIdx = required.indexOf(".");
+	if (dotIdx !== -1) {
+		const unprefixed = required.slice(dotIdx + 1);
+		if (granted === unprefixed) return true;
+		if (granted.endsWith(".*")) {
+			const prefix = granted.slice(0, -1);
+			return unprefixed.startsWith(prefix);
+		}
 	}
 	return false;
 }
