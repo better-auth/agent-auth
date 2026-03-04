@@ -12,6 +12,7 @@ import { createAgent } from "./create-agent";
 import { discover } from "./discover";
 import {
 	createHost,
+	enrollHost,
 	getHost,
 	listHosts,
 	reactivateHost,
@@ -55,6 +56,7 @@ export function createAgentRoutes(
 		introspect: introspect(opts, jtiCache),
 		connectAccount: connectAccount(),
 		createHost: createHost(opts),
+		enrollHost: enrollHost(opts),
 		listHosts: listHosts(),
 		getHost: getHost(),
 		revokeHost: revokeHost(),

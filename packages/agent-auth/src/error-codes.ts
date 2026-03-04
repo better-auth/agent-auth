@@ -34,6 +34,8 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 	HOST_EXPIRED:
 		"Agent host has expired. Reactivate it via proof-of-possession.",
 	HOST_REQUIRED: "An active agent host is required to create agents.",
+	DYNAMIC_HOST_REGISTRATION_DISABLED:
+		"Dynamic host registration is disabled. Register a host via the dashboard or API first.",
 	HOST_ALREADY_LINKED: "Host already has a user_id — unlink first.",
 	REQUEST_BINDING_MISMATCH:
 		"JWT request binding does not match the actual request.",
@@ -47,4 +49,7 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 		"Ping/Push modes require a client_notification_endpoint.",
 	CIBA_MISSING_LOGIN_HINT: "login_hint is required for CIBA authentication.",
 	CIBA_NOT_ENABLED: "CIBA approval method is not enabled on this server.",
+	ENROLLMENT_TOKEN_INVALID: "Invalid or expired enrollment token.",
+	ENROLLMENT_TOKEN_EXPIRED: "Enrollment token has expired.",
+	HOST_NOT_PENDING_ENROLLMENT: "Host is not in pending_enrollment state.",
 });

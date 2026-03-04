@@ -2,16 +2,27 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import { findBlockedScopes, hasScope } from "../scopes";
+import { findBlockedScopes, hasScope, parseScopes } from "../scopes";
 import type {
 	AgentHost,
 	AgentPermission,
 	AgentSession,
+	CibaAuthRequest,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
 const HOST_TABLE = "agentHost";
 const PERMISSION_TABLE = "agentPermission";
+const CIBA_TABLE = "cibaAuthRequest";
+const CIBA_DEFAULT_INTERVAL = 5;
+const CIBA_DEFAULT_EXPIRES_IN = 300;
+
+/**
+ * Convention: CIBA requests created for scope approval encode the
+ * agent ID in the `scope` field with this prefix so that
+ * cibaApprove / cibaDeny can resolve the pending permissions.
+ */
+export const SCOPE_APPROVAL_PREFIX = "scope_approval:";
 
 function generateUserCode(): string {
 	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -21,6 +32,88 @@ function generateUserCode(): string {
 		code += chars[Math.floor(Math.random() * chars.length)];
 	}
 	return code;
+}
+
+async function buildScopeApproval(
+	opts: ResolvedAgentAuthOptions,
+	ctx: {
+		context: {
+			adapter: {
+				create: <T>(args: {
+					model: string;
+					data: Record<string, unknown>;
+				}) => Promise<T>;
+			};
+			internalAdapter: {
+				findUserById: (
+					id: string,
+				) => Promise<{ id: string; email: string } | null>;
+			};
+			baseURL: string;
+		};
+	},
+	agentId: string,
+	agentName: string,
+	userId: string | null,
+	hostId: string | null,
+	pendingScopes: string[],
+): Promise<Record<string, unknown>> {
+	const method = await opts.resolveApprovalMethod({
+		userId,
+		agentName,
+		hostId,
+		scopes: pendingScopes,
+	});
+
+	const origin = new URL(ctx.context.baseURL).origin;
+
+	if (method === "ciba" && userId) {
+		const user = await ctx.context.internalAdapter.findUserById(userId);
+		if (user) {
+			const now = new Date();
+			const expiresAt = new Date(
+				now.getTime() + CIBA_DEFAULT_EXPIRES_IN * 1000,
+			);
+			const cibaRequest = await ctx.context.adapter.create<CibaAuthRequest>({
+				model: CIBA_TABLE,
+				data: {
+					clientId: "agent-auth",
+					loginHint: user.email,
+					userId,
+					scope: `${SCOPE_APPROVAL_PREFIX}${agentId}`,
+					bindingMessage: `Agent "${agentName}" requests additional scopes: ${pendingScopes.join(", ")}`,
+					clientNotificationToken: null,
+					clientNotificationEndpoint: null,
+					deliveryMode: "poll",
+					status: "pending",
+					accessToken: null,
+					interval: CIBA_DEFAULT_INTERVAL,
+					lastPolledAt: null,
+					expiresAt,
+					createdAt: now,
+					updatedAt: now,
+				},
+			});
+			return {
+				method: "ciba",
+				auth_req_id: cibaRequest.id,
+				expires_in: CIBA_DEFAULT_EXPIRES_IN,
+				interval: CIBA_DEFAULT_INTERVAL,
+				ciba_token_endpoint: `${origin}/api/auth/agent/ciba/token`,
+			};
+		}
+	}
+
+	const userCode = generateUserCode();
+	return {
+		method: "device_authorization",
+		verification_uri: `${origin}/device/scopes`,
+		verification_uri_complete: `${origin}/device/scopes?agent_id=${agentId}&code=${userCode}`,
+		user_code: userCode,
+		device_code: agentId,
+		expires_in: 300,
+		interval: 5,
+	};
 }
 
 /**
@@ -91,38 +184,68 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				.filter((p) => p.status === "active")
 				.map((p) => p.scope);
 
-			const pendingScopes = existingPerms
+			const pendingScopesList = existingPerms
 				.filter((p) => p.status === "pending")
 				.map((p) => p.scope);
 
-			const alreadyTracked = new Set([...activeScopes, ...pendingScopes]);
+			const alreadyActive = new Set(activeScopes);
+			const alreadyPending = new Set(pendingScopesList);
+			const alreadyTracked = new Set([...activeScopes, ...pendingScopesList]);
 			const newOnly = scopes.filter((s: string) => !alreadyTracked.has(s));
 
 			if (newOnly.length === 0) {
-				throw APIError.from("CONFLICT", ERROR_CODES.ALREADY_GRANTED);
+				const allActive = scopes.every((s: string) => alreadyActive.has(s));
+				if (allActive) {
+					return ctx.json({
+						agent_id: agentSession.agent.id,
+						status: "granted",
+						scopes: activeScopes,
+					});
+				}
+				const stillPending = scopes.filter((s: string) =>
+					alreadyPending.has(s),
+				);
+				const approval = await buildScopeApproval(
+					opts,
+					ctx,
+					agentSession.agent.id,
+					agentSession.agent.name,
+					agentSession.user?.id ?? null,
+					agentSession.agent.hostId ?? null,
+					stillPending,
+				);
+				return ctx.json({
+					agent_id: agentSession.agent.id,
+					status: "pending",
+					scopes: activeScopes,
+					pending_scopes: stillPending,
+					approval,
+				});
 			}
 
-			// §2.4: Check host pre-auth budget for auto-approval
 			let hostBudget: string[] = [];
+			let hostIsActive = false;
 			if (agentSession.agent.hostId) {
 				const host = await ctx.context.adapter.findOne<AgentHost>({
 					model: HOST_TABLE,
 					where: [{ field: "id", value: agentSession.agent.hostId }],
 				});
 				if (host) {
-					hostBudget =
-						typeof host.scopes === "string"
-							? JSON.parse(host.scopes)
-							: host.scopes;
+					hostBudget = parseScopes(host.scopes);
+					hostIsActive = host.status === "active";
 				}
 			}
 
-			const autoApprove = newOnly.filter((s: string) =>
-				hasScope(hostBudget, s),
-			);
-			const needsApproval = newOnly.filter(
-				(s: string) => !hasScope(hostBudget, s),
-			);
+			let autoApprove: string[];
+			let needsApproval: string[];
+
+			if (hostIsActive && hostBudget.length > 0) {
+				autoApprove = newOnly.filter((s: string) => hasScope(hostBudget, s));
+				needsApproval = newOnly.filter((s: string) => !hasScope(hostBudget, s));
+			} else {
+				autoApprove = [];
+				needsApproval = newOnly;
+			}
 
 			const now = new Date();
 
@@ -151,9 +274,8 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				});
 			}
 
-			const pendingIds: string[] = [];
 			for (const scope of needsApproval) {
-				const perm = await ctx.context.adapter.create<AgentPermission>({
+				await ctx.context.adapter.create<AgentPermission>({
 					model: PERMISSION_TABLE,
 					data: {
 						agentId: agentSession.agent.id,
@@ -167,26 +289,24 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 						updatedAt: now,
 					},
 				});
-				pendingIds.push(perm.id);
 			}
 
-			const origin = new URL(ctx.context.baseURL).origin;
-			const userCode = generateUserCode();
+			const approval = await buildScopeApproval(
+				opts,
+				ctx,
+				agentSession.agent.id,
+				agentSession.agent.name,
+				agentSession.user?.id ?? null,
+				agentSession.agent.hostId ?? null,
+				needsApproval,
+			);
 
 			return ctx.json({
 				agent_id: agentSession.agent.id,
 				status: "pending",
 				scopes: [...activeScopes, ...autoApprove],
 				pending_scopes: needsApproval,
-				approval: {
-					method: "device_authorization",
-					verification_uri: `${origin}/device/scopes`,
-					verification_uri_complete: `${origin}/device/scopes?agent_id=${agentSession.agent.id}&code=${userCode}`,
-					user_code: userCode,
-					device_code: agentSession.agent.id,
-					expires_in: 300,
-					interval: 5,
-				},
+				approval,
 			});
 		},
 	);

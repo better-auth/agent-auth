@@ -1,3 +1,4 @@
+import type { GenericEndpointContext } from "@better-auth/core";
 import type { InferOptionSchema } from "better-auth/types";
 import type { agentSchema } from "./schema";
 
@@ -28,9 +29,9 @@ export interface AgentAuthOptions {
 	providerDescription?: string;
 	/**
 	 * Supported registration modes (§2.1).
-	 * @default ["behalf_of", "autonomous"]
+	 * @default ["delegated", "autonomous"]
 	 */
-	modes?: Array<"behalf_of" | "autonomous">;
+	modes?: Array<"delegated" | "autonomous">;
 	/**
 	 * Supported approval methods (§8).
 	 * @default ["device_authorization"]
@@ -148,6 +149,20 @@ export interface AgentAuthOptions {
 	 */
 	freshSessionWindow?: number;
 	/**
+	 * Whether to allow unknown hosts to register dynamically during
+	 * agent creation. When `false`, only pre-registered hosts (created
+	 * via `POST /agent/host/create` or the dashboard) can create agents.
+	 *
+	 * Can be a boolean or an async callback that receives the full
+	 * endpoint context for per-request decisions (e.g. checking
+	 * org-level settings from session data).
+	 *
+	 * @default true
+	 */
+	allowDynamicHostRegistration?:
+		| boolean
+		| ((ctx: GenericEndpointContext) => boolean | Promise<boolean>);
+	/**
 	 * Scopes that are always blocked from being granted or escalated.
 	 * Any scope request containing a blocked scope is rejected.
 	 * @default []
@@ -184,6 +199,8 @@ export interface AgentAuthOptions {
  */
 export interface AgentHost {
 	id: string;
+	/** Human-readable name identifying the environment/device (e.g. "Cursor on MacBook-Pro"). §7.1. */
+	name: string | null;
 	userId: string | null;
 	/** Optional server-defined external identifier (org ID, tenant ID, etc.). §4.3. */
 	referenceId: string | null;
@@ -191,7 +208,16 @@ export interface AgentHost {
 	publicKey: string;
 	kid: string | null;
 	jwksUrl: string | null;
-	status: "active" | "pending" | "expired" | "revoked" | "rejected";
+	/** SHA-256 hash of a one-time enrollment token for dashboard-provisioned hosts. */
+	enrollmentTokenHash: string | null;
+	enrollmentTokenExpiresAt: Date | null;
+	status:
+		| "active"
+		| "pending"
+		| "pending_enrollment"
+		| "expired"
+		| "revoked"
+		| "rejected";
 	activatedAt: Date | null;
 	expiresAt: Date | null;
 	lastUsedAt: Date | null;
@@ -210,7 +236,7 @@ export interface Agent {
 	userId: string | null;
 	hostId: string | null;
 	status: "active" | "pending" | "expired" | "revoked" | "rejected";
-	mode: "behalf_of" | "autonomous";
+	mode: "delegated" | "autonomous";
 	publicKey: string;
 	kid: string | null;
 	/** JWKS endpoint URL for agent keys (§2.2). */
@@ -277,7 +303,7 @@ export interface AgentSession {
 	agent: {
 		id: string;
 		name: string;
-		mode: "behalf_of" | "autonomous";
+		mode: "delegated" | "autonomous";
 		permissions: Array<{
 			scope: string;
 			referenceId: string | null;
@@ -328,6 +354,7 @@ export type ResolvedAgentAuthOptions = Required<
 		| "modes"
 		| "approvalMethods"
 		| "resolveApprovalMethod"
+		| "allowDynamicHostRegistration"
 	>
 > &
 	AgentAuthOptions;

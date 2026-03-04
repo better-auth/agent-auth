@@ -9,6 +9,7 @@ import { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 import { JtiReplayCache } from "./jti-cache";
 import { createAgentRoutes } from "./routes";
 import { agentSchema } from "./schema";
+import { parseScopes } from "./scopes";
 import type {
 	Agent,
 	AgentAuthOptions,
@@ -110,8 +111,7 @@ async function tryTransparentReactivation(
 		});
 		if (!host || host.status === "revoked") return null;
 
-		const baseScopes: string[] =
-			typeof host.scopes === "string" ? JSON.parse(host.scopes) : host.scopes;
+		const baseScopes: string[] = parseScopes(host.scopes);
 
 		// Scope decay: delete all existing permissions, re-create from host scopes
 		const existingPerms = await adapter.findMany<AgentPermission>({
@@ -182,7 +182,8 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		absoluteLifetime: options?.absoluteLifetime ?? 0,
 		freshSessionWindow: options?.freshSessionWindow ?? 300,
 		blockedScopes: options?.blockedScopes ?? [],
-		modes: options?.modes ?? ["behalf_of", "autonomous"],
+		allowDynamicHostRegistration: options?.allowDynamicHostRegistration ?? true,
+		modes: options?.modes ?? ["delegated", "autonomous"],
 		approvalMethods: options?.approvalMethods ?? ["device_authorization"],
 		resolveApprovalMethod:
 			options?.resolveApprovalMethod ?? (() => "device_authorization"),
@@ -286,10 +287,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 										AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 									);
 								}
-								const hostScopes =
-									typeof host.scopes === "string"
-										? JSON.parse(host.scopes)
-										: (host.scopes ?? []);
+								const hostScopes = parseScopes(host.scopes);
 								const hostSession: HostSession = {
 									host: {
 										id: host.id,
@@ -607,6 +605,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			introspect: routes.introspect,
 			connectAccount: routes.connectAccount,
 			createHost: routes.createHost,
+			enrollHost: routes.enrollHost,
 			listHosts: routes.listHosts,
 			getHost: routes.getHost,
 			revokeHost: routes.revokeHost,

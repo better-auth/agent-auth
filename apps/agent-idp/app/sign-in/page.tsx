@@ -1,125 +1,46 @@
-"use client";
+import { Loader2 } from "lucide-react";
+import { headers } from "next/headers";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { AuthForm } from "@/components/auth/auth-form";
+import { BetterAuthLogo } from "@/components/icons/logo";
+import { HalftoneBackground } from "@/components/ui/halftone-background";
+import { auth } from "@/lib/auth/auth";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
-
-export default function SignIn() {
-	const router = useRouter();
-	const [isSignUp, setIsSignUp] = useState(false);
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [name, setName] = useState("");
-	const [error, setError] = useState<string | null>(null);
-	const [loading, setLoading] = useState(false);
-
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setError(null);
-		setLoading(true);
-
-		try {
-			if (isSignUp) {
-				const res = await authClient.signUp.email({
-					email,
-					password,
-					name: name || email.split("@")[0],
-				});
-				if (res.error) {
-					setError(res.error.message ?? "Sign up failed");
-					return;
-				}
-			} else {
-				const res = await authClient.signIn.email({ email, password });
-				if (res.error) {
-					setError(res.error.message ?? "Sign in failed");
-					return;
-				}
-			}
-			router.push("/dashboard");
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Something went wrong");
-		} finally {
-			setLoading(false);
-		}
-	};
-
+export default async function SignInPage() {
+	const session = await auth.api.getSession({ headers: await headers() });
+	if (session?.user) {
+		const orgs = await auth.api.listOrganizations({ headers: await headers() });
+		if (orgs && orgs.length > 0)
+			throw redirect(`/dashboard/${(orgs[0] as any).slug}`);
+		throw redirect("/onboarding");
+	}
 	return (
-		<div className="flex min-h-dvh items-center justify-center p-4">
-			<div className="w-full max-w-sm space-y-6">
-				<div className="text-center">
-					<h1 className="text-2xl font-bold tracking-tight">Agent Auth</h1>
-					<p className="mt-1 text-sm text-muted-foreground">
-						{isSignUp ? "Create an account" : "Sign in to your account"}
+		<div className="relative min-h-dvh flex flex-col items-center">
+			<HalftoneBackground />
+			<div className="relative z-10 w-full py-4 px-5 sm:px-6">
+				<Link href="/" className="flex items-center gap-1">
+					<BetterAuthLogo className="h-4 w-4" />
+					<p className="select-none font-mono text-sm uppercase">
+						BETTER-AUTH.
 					</p>
-				</div>
-
-				<form onSubmit={handleSubmit} className="space-y-4">
-					{isSignUp && (
-						<div>
-							<label className="mb-1.5 block text-sm font-medium">Name</label>
-							<input
-								type="text"
-								value={name}
-								onChange={(e) => setName(e.target.value)}
-								className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
-								placeholder="Your name"
-							/>
+				</Link>
+			</div>
+			<div className="relative z-10 grow w-full grid place-items-center">
+				<Suspense
+					fallback={
+						<div className="w-full max-w-md z-10 max-md:px-4 py-14">
+							<div className="bg-background border border-border/60 p-8">
+								<div className="flex items-center justify-center py-8">
+									<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+								</div>
+							</div>
 						</div>
-					)}
-
-					<div>
-						<label className="mb-1.5 block text-sm font-medium">Email</label>
-						<input
-							type="email"
-							value={email}
-							onChange={(e) => setEmail(e.target.value)}
-							required
-							className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
-							placeholder="you@example.com"
-						/>
-					</div>
-
-					<div>
-						<label className="mb-1.5 block text-sm font-medium">Password</label>
-						<input
-							type="password"
-							value={password}
-							onChange={(e) => setPassword(e.target.value)}
-							required
-							minLength={8}
-							className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
-							placeholder="••••••••"
-						/>
-					</div>
-
-					{error && (
-						<p className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive-foreground">
-							{error}
-						</p>
-					)}
-
-					<button
-						type="submit"
-						disabled={loading}
-						className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-					>
-						{loading ? "Loading..." : isSignUp ? "Create Account" : "Sign In"}
-					</button>
-				</form>
-
-				<p className="text-center text-sm text-muted-foreground">
-					{isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
-					<button
-						onClick={() => {
-							setIsSignUp(!isSignUp);
-							setError(null);
-						}}
-						className="font-medium text-foreground underline-offset-4 hover:underline"
-					>
-						{isSignUp ? "Sign In" : "Sign Up"}
-					</button>
-				</p>
+					}
+				>
+					<AuthForm />
+				</Suspense>
 			</div>
 		</div>
 	);

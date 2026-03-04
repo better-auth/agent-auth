@@ -77,3 +77,20 @@ export function findBlockedScopes(
 	if (blocked.length === 0) return [];
 	return scopes.filter((s) => blocked.some((b) => scopeCovers(b, s)));
 }
+
+/**
+ * Robustly parse a scopes value from the database.
+ * Handles raw arrays (from adapter output transforms), JSON strings,
+ * and double-encoded strings (legacy data).
+ */
+export function parseScopes(value: unknown): string[] {
+	if (Array.isArray(value)) return value;
+	if (typeof value !== "string" || !value) return [];
+	try {
+		let parsed: unknown = JSON.parse(value);
+		if (typeof parsed === "string") parsed = JSON.parse(parsed);
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}

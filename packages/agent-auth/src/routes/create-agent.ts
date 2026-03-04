@@ -8,7 +8,7 @@ import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
 import { JWKSCache } from "../jwks-cache";
-import { findBlockedScopes, hasScope } from "../scopes";
+import { findBlockedScopes, hasScope, parseScopes } from "../scopes";
 import type {
 	Agent,
 	AgentHost,
@@ -76,10 +76,17 @@ const createAgentBodySchema = z.object({
 		})
 		.optional(),
 	mode: z
-		.enum(["behalf_of", "autonomous"])
+		.enum(["delegated", "autonomous"])
 		.meta({
 			description:
-				'Agent operating mode. "behalf_of" (default) acts on behalf of a user; "autonomous" operates independently.',
+				'Agent operating mode. "delegated" (default) acts on behalf of a user; "autonomous" operates independently.',
+		})
+		.optional(),
+	hostName: z
+		.string()
+		.meta({
+			description:
+				"Human-readable name for the host, identifying the environment and device (e.g. 'Cursor on MacBook-Pro'). §7.1.",
 		})
 		.optional(),
 	metadata: z
@@ -223,6 +230,15 @@ async function buildApprovalInfo(
 	};
 }
 
+async function isDynamicHostAllowed(
+	opts: ResolvedAgentAuthOptions,
+	ctx: unknown,
+): Promise<boolean> {
+	const flag = opts.allowDynamicHostRegistration;
+	if (typeof flag === "function") return flag(ctx as never);
+	return flag;
+}
+
 export function createAgent(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiReplayCache,
@@ -251,6 +267,7 @@ export function createAgent(
 				scopes,
 				hostJWT: bodyHostJWT,
 				hostPublicKey,
+				hostName,
 				mode: rawMode,
 				metadata,
 			} = ctx.body;
@@ -264,7 +281,7 @@ export function createAgent(
 					? bearerToken
 					: null;
 			const hostJWT = headerHostJWT ?? bodyHostJWT;
-			const mode = rawMode ?? "behalf_of";
+			const mode = rawMode ?? "delegated";
 
 			if (!opts.modes.includes(mode)) {
 				throw APIError.from("BAD_REQUEST", ERROR_CODES.UNSUPPORTED_MODE);
@@ -422,8 +439,7 @@ export function createAgent(
 						const configuredOrigin = new URL(ctx.context.baseURL).origin;
 						const acceptedOrigins = new Set([configuredOrigin]);
 						const reqHost = ctx.headers?.get("host");
-						const reqProto =
-							ctx.headers?.get("x-forwarded-proto") ?? "http";
+						const reqProto = ctx.headers?.get("x-forwarded-proto") ?? "http";
 						if (reqHost) {
 							acceptedOrigins.add(`${reqProto}://${reqHost}`);
 						}
@@ -444,18 +460,28 @@ export function createAgent(
 
 					userId = host.userId ?? null;
 					hostId = host.id;
-					hostBaseScopes =
-						typeof host.scopes === "string"
-							? JSON.parse(host.scopes)
-							: host.scopes;
+					hostBaseScopes = parseScopes(host.scopes);
 
+					const backgroundUpdates: Record<string, string | null> = {};
 					if (hostJwksUrl && !host.jwksUrl) {
+						backgroundUpdates.jwksUrl = hostJwksUrl;
+					}
+					const jwtHostNameClaim =
+						typeof decoded.host_name === "string" ? decoded.host_name : null;
+					const resolvedExistingHostName = hostName ?? jwtHostNameClaim ?? null;
+					if (
+						resolvedExistingHostName &&
+						resolvedExistingHostName !== host.name
+					) {
+						backgroundUpdates.name = resolvedExistingHostName;
+					}
+					if (Object.keys(backgroundUpdates).length > 0) {
 						ctx.context.runInBackground(
 							ctx.context.adapter
 								.update({
 									model: HOST_TABLE,
 									where: [{ field: "id", value: host.id }],
-									update: { jwksUrl: hostJwksUrl },
+									update: backgroundUpdates,
 								})
 								.catch(() => {}),
 						);
@@ -480,6 +506,13 @@ export function createAgent(
 					);
 				} else {
 					// §2.2 step 6: Unknown host — bootstrap from JWT payload
+					if (!(await isDynamicHostAllowed(opts, ctx))) {
+						throw APIError.from(
+							"FORBIDDEN",
+							ERROR_CODES.DYNAMIC_HOST_REGISTRATION_DISABLED,
+						);
+					}
+
 					let resolvedHostPubKey: AgentJWK | null = null;
 
 					if (hostJwksUrl) {
@@ -513,8 +546,7 @@ export function createAgent(
 						const configuredOrigin = new URL(ctx.context.baseURL).origin;
 						const acceptedOrigins = new Set([configuredOrigin]);
 						const reqHost = ctx.headers?.get("host");
-						const reqProto =
-							ctx.headers?.get("x-forwarded-proto") ?? "http";
+						const reqProto = ctx.headers?.get("x-forwarded-proto") ?? "http";
 						if (reqHost) {
 							acceptedOrigins.add(`${reqProto}://${reqHost}`);
 						}
@@ -537,24 +569,28 @@ export function createAgent(
 					// Autonomous agents: host + agent are created active immediately
 					// with no user association (§2, Use Case C). Linking to a user
 					// happens later via connect_account (§2, Use Case F).
-					// behalf_of agents: both stay pending until user approval (§2, Use Case B).
+					// delegated agents: both stay pending until user approval (§2, Use Case B).
 					const isAutonomousMode = mode === "autonomous";
 					const hostNow = new Date();
 					const hostKid = resolvedHostPubKey.kid
 						? String(resolvedHostPubKey.kid)
 						: null;
+					const jwtHostName =
+						typeof decoded.host_name === "string" ? decoded.host_name : null;
+					const resolvedHostName = hostName ?? jwtHostName ?? null;
 					const newHost = await ctx.context.adapter.create<
-						Record<string, string | Date | null>,
+						Record<string, unknown>,
 						AgentHost
 					>({
 						model: HOST_TABLE,
 						data: {
+							name: resolvedHostName,
 							userId: null,
 							referenceId: null,
 							publicKey: JSON.stringify(resolvedHostPubKey),
 							kid: hostKid,
 							jwksUrl: hostJwksUrl,
-							scopes: JSON.stringify([]),
+							scopes: [],
 							status: isAutonomousMode ? "active" : "pending",
 							activatedAt: isAutonomousMode ? hostNow : null,
 							expiresAt: null,
@@ -633,24 +669,40 @@ export function createAgent(
 					}
 					if (existingHost) {
 						hostId = existingHost.id;
-						hostBaseScopes =
-							typeof existingHost.scopes === "string"
-								? JSON.parse(existingHost.scopes)
-								: existingHost.scopes;
+						hostBaseScopes = parseScopes(existingHost.scopes);
+						if (hostName && hostName !== existingHost.name) {
+							ctx.context.runInBackground(
+								ctx.context.adapter
+									.update({
+										model: HOST_TABLE,
+										where: [{ field: "id", value: existingHost.id }],
+										update: { name: hostName, updatedAt: new Date() },
+									})
+									.catch(() => {}),
+							);
+						}
 					} else {
+						if (!(await isDynamicHostAllowed(opts, ctx))) {
+							throw APIError.from(
+								"FORBIDDEN",
+								ERROR_CODES.DYNAMIC_HOST_REGISTRATION_DISABLED,
+							);
+						}
+
 						const hostNow = new Date();
 						const newHost = await ctx.context.adapter.create<
-							Record<string, string | Date | null>,
+							Record<string, unknown>,
 							AgentHost
 						>({
 							model: HOST_TABLE,
 							data: {
+								name: hostName ?? null,
 								userId,
 								referenceId: null,
 								publicKey: JSON.stringify(hostPublicKey),
 								kid: hostKid,
 								jwksUrl: null,
-								scopes: JSON.stringify([]),
+								scopes: [],
 								status: "active",
 								activatedAt: hostNow,
 								expiresAt: null,
@@ -675,29 +727,33 @@ export function createAgent(
 						});
 						if (hosts.length > 0 && hosts[0]) {
 							hostId = hosts[0].id;
-							hostBaseScopes =
-								typeof hosts[0].scopes === "string"
-									? JSON.parse(hosts[0].scopes)
-									: hosts[0].scopes;
+							hostBaseScopes = parseScopes(hosts[0].scopes);
 						}
 					} catch {
 						// host lookup is best-effort
 					}
 					if (!hostId) {
-						// Auto-create a default host for the user
+						if (!(await isDynamicHostAllowed(opts, ctx))) {
+							throw APIError.from(
+								"FORBIDDEN",
+								ERROR_CODES.DYNAMIC_HOST_REGISTRATION_DISABLED,
+							);
+						}
+
 						const autoHostNow = new Date();
 						const autoHost = await ctx.context.adapter.create<
-							Record<string, string | Date | null>,
+							Record<string, unknown>,
 							AgentHost
 						>({
 							model: HOST_TABLE,
 							data: {
+								name: hostName ?? null,
 								userId,
 								referenceId: null,
 								publicKey: "",
 								kid: null,
 								jwksUrl: null,
-								scopes: JSON.stringify([]),
+								scopes: [],
 								status: "active",
 								activatedAt: autoHostNow,
 								expiresAt: null,
@@ -744,6 +800,17 @@ export function createAgent(
 				}
 			}
 
+			// Fetch host record early — needed for scope resolution and status check
+			let hostRecord: AgentHost | null = null;
+			if (hostId) {
+				hostRecord = await ctx.context.adapter.findOne<AgentHost>({
+					model: HOST_TABLE,
+					where: [{ field: "id", value: hostId }],
+				});
+			}
+			const isHostPending = hostRecord?.status === "pending";
+			const isHostActive = hostRecord?.status === "active";
+
 			let resolvedScopes: string[];
 			let pendingScopes: string[] = [];
 
@@ -756,7 +823,16 @@ export function createAgent(
 					resolvedScopes = budget;
 				}
 			} else if (scopes && scopes.length > 0) {
-				resolvedScopes = scopes;
+				// Active host with empty budget = no restrictions, grant all requested scopes.
+				// Pending/unknown host = scopes need approval.
+				if (hostId && hostBaseScopes !== null && isHostActive) {
+					resolvedScopes = scopes;
+				} else if (hostId && hostBaseScopes !== null && isHostPending) {
+					resolvedScopes = [];
+					pendingScopes = scopes;
+				} else {
+					resolvedScopes = scopes;
+				}
 			} else {
 				resolvedScopes = [];
 			}
@@ -785,15 +861,6 @@ export function createAgent(
 			const now = new Date();
 			const kid = publicKey ? ((publicKey.kid as string) ?? null) : null;
 
-			// If the host is pending (unknown host bootstrap), agent must also be pending
-			let hostRecord: AgentHost | null = null;
-			if (hostId) {
-				hostRecord = await ctx.context.adapter.findOne<AgentHost>({
-					model: HOST_TABLE,
-					where: [{ field: "id", value: hostId }],
-				});
-			}
-			const isHostPending = hostRecord?.status === "pending";
 			const agentStatus = isHostPending ? "pending" : "active";
 
 			const expiresAt =
@@ -822,7 +889,7 @@ export function createAgent(
 							jwksUrl: agentJwksUrl,
 							hostId,
 							activatedAt: isHostPending ? null : now,
-							metadata: metadata ? JSON.stringify(metadata) : null,
+							metadata: metadata ?? null,
 							expiresAt,
 							updatedAt: now,
 						},
@@ -863,7 +930,7 @@ export function createAgent(
 									model: HOST_TABLE,
 									where: [{ field: "id", value: hostId }],
 									update: {
-										scopes: JSON.stringify(resolvedScopes),
+										scopes: resolvedScopes,
 										updatedAt: new Date(),
 									},
 								})
@@ -903,7 +970,7 @@ export function createAgent(
 			const grantedBy = userId || null;
 
 			const agent = await ctx.context.adapter.create<
-				Record<string, string | Date | null>,
+				Record<string, unknown>,
 				Agent
 			>({
 				model: AGENT_TABLE,
@@ -919,7 +986,7 @@ export function createAgent(
 					lastUsedAt: null,
 					activatedAt: isHostPending ? null : now,
 					expiresAt,
-					metadata: metadata ? JSON.stringify(metadata) : null,
+					metadata: metadata ?? null,
 					createdAt: now,
 					updatedAt: now,
 				},
@@ -960,7 +1027,7 @@ export function createAgent(
 							model: HOST_TABLE,
 							where: [{ field: "id", value: hostId }],
 							update: {
-								scopes: JSON.stringify(resolvedScopes),
+								scopes: resolvedScopes,
 								updatedAt: new Date(),
 							},
 						})

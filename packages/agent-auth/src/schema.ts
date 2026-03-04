@@ -12,6 +12,11 @@ export const agentSchema = () =>
 	({
 		agentHost: {
 			fields: {
+				name: {
+					type: "string",
+					required: false,
+					input: false,
+				},
 				userId: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },
@@ -41,7 +46,7 @@ export const agentSchema = () =>
 				},
 				publicKey: {
 					type: "string",
-					required: true,
+					required: false,
 					input: false,
 				},
 				kid: {
@@ -51,6 +56,16 @@ export const agentSchema = () =>
 				},
 				jwksUrl: {
 					type: "string",
+					required: false,
+					input: false,
+				},
+				enrollmentTokenHash: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				enrollmentTokenExpiresAt: {
+					type: "date",
 					required: false,
 					input: false,
 				},
@@ -122,7 +137,7 @@ export const agentSchema = () =>
 					type: "string",
 					required: true,
 					input: false,
-					defaultValue: "behalf_of",
+					defaultValue: "delegated",
 				},
 				publicKey: {
 					type: "string",

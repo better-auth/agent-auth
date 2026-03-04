@@ -1440,7 +1440,7 @@ describe("agent-auth", async () => {
 			const res = await auth.api.discover({});
 			expect(res.algorithms).toEqual(["Ed25519"]);
 			expect(res.protocol_version).toBe("1.0-draft");
-			expect(res.modes).toEqual(["behalf_of", "autonomous"]);
+			expect(res.modes).toEqual(["delegated", "autonomous"]);
 		});
 	});
 

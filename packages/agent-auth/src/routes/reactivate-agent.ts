@@ -5,6 +5,7 @@ import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
+import { parseScopes } from "../scopes";
 import type {
 	Agent,
 	AgentHost,
@@ -126,10 +127,7 @@ export function reactivateAgent(
 					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 
-				const baseScopes: string[] =
-					typeof host.scopes === "string"
-						? JSON.parse(host.scopes)
-						: host.scopes;
+				const baseScopes: string[] = parseScopes(host.scopes);
 
 				const existingPerms =
 					await ctx.context.adapter.findMany<AgentPermission>({

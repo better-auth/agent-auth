@@ -3,9 +3,15 @@ import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { CibaAuthRequest, ResolvedAgentAuthOptions } from "../types";
+import type {
+	AgentPermission,
+	CibaAuthRequest,
+	ResolvedAgentAuthOptions,
+} from "../types";
+import { SCOPE_APPROVAL_PREFIX } from "./request-scope";
 
 const CIBA_TABLE = "cibaAuthRequest";
+const PERMISSION_TABLE = "agentPermission";
 
 async function deliverNotification(
 	request: CibaAuthRequest,
@@ -105,6 +111,29 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 				},
 			});
 
+			// If this CIBA request is for scope approval, auto-approve
+			// the agent's pending permissions.
+			if (request.scope && request.scope.startsWith(SCOPE_APPROVAL_PREFIX)) {
+				const agentId = request.scope.slice(SCOPE_APPROVAL_PREFIX.length);
+				if (agentId) {
+					const pendingPerms =
+						await ctx.context.adapter.findMany<AgentPermission>({
+							model: PERMISSION_TABLE,
+							where: [
+								{ field: "agentId", value: agentId },
+								{ field: "status", value: "pending" },
+							],
+						});
+					for (const perm of pendingPerms) {
+						await ctx.context.adapter.update({
+							model: PERMISSION_TABLE,
+							where: [{ field: "id", value: perm.id }],
+							update: { status: "active", updatedAt: now },
+						});
+					}
+				}
+			}
+
 			const expiresIn = Math.max(
 				0,
 				Math.floor(
@@ -183,11 +212,35 @@ export function cibaDeny(_opts: ResolvedAgentAuthOptions) {
 				});
 			}
 
+			const denyNow = new Date();
 			await ctx.context.adapter.update({
 				model: CIBA_TABLE,
 				where: [{ field: "id", value: request.id }],
-				update: { status: "denied", updatedAt: new Date() },
+				update: { status: "denied", updatedAt: denyNow },
 			});
+
+			// If this CIBA request is for scope approval, deny the
+			// agent's pending permissions as well.
+			if (request.scope && request.scope.startsWith(SCOPE_APPROVAL_PREFIX)) {
+				const agentId = request.scope.slice(SCOPE_APPROVAL_PREFIX.length);
+				if (agentId) {
+					const pendingPerms =
+						await ctx.context.adapter.findMany<AgentPermission>({
+							model: PERMISSION_TABLE,
+							where: [
+								{ field: "agentId", value: agentId },
+								{ field: "status", value: "pending" },
+							],
+						});
+					for (const perm of pendingPerms) {
+						await ctx.context.adapter.update({
+							model: PERMISSION_TABLE,
+							where: [{ field: "id", value: perm.id }],
+							update: { status: "denied", updatedAt: denyNow },
+						});
+					}
+				}
+			}
 
 			if (request.deliveryMode === "ping" || request.deliveryMode === "push") {
 				void deliverNotification(request, {

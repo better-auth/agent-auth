@@ -1,8 +1,23 @@
-"use client";
-
+import { headers } from "next/headers";
 import Link from "next/link";
+import { auth } from "@/lib/auth/auth";
 
-export default function SuccessPage() {
+export default async function SuccessPage() {
+	let dashboardHref = "/";
+	try {
+		const session = await auth.api.getSession({ headers: await headers() });
+		if (session?.user) {
+			const orgs = await auth.api.listOrganizations({
+				headers: await headers(),
+			});
+			if (orgs && orgs.length > 0) {
+				dashboardHref = `/dashboard/${(orgs[0] as any).slug}`;
+			}
+		}
+	} catch {
+		// Fall back to root
+	}
+
 	return (
 		<div className="flex min-h-dvh items-center justify-center p-4">
 			<div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-6 text-center shadow-sm">
@@ -31,7 +46,7 @@ export default function SuccessPage() {
 				</div>
 
 				<Link
-					href="/dashboard"
+					href={dashboardHref}
 					className="inline-block w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
 				>
 					Return to Dashboard

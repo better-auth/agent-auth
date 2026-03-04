@@ -8,7 +8,7 @@ export default defineConfig({
 		"src/mcp-tools.ts",
 		"src/mcp-storage-fs.ts",
 		"src/mcp-storage-memory.ts",
-		"src/gateway-server.ts",
+		"src/mcp-server.ts",
 	],
 	format: ["esm"],
 	dts: true,

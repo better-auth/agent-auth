@@ -3,6 +3,15 @@
 This file provides guidance to AI assistants (Claude Code, Cursor, etc.)
 when working with code in this repository.
 
+## Greenfield Project
+
+This is a **greenfield project under active development**. Do not worry
+about backward compatibility, migration paths, or preserving legacy
+behavior. Feel free to make breaking changes, rename things, restructure
+modules, and choose the best design without being constrained by what
+existed before. Treat every file as if it can be rewritten from scratch
+if that produces a better result.
+
 ## Project Overview
 
 Agent Auth is an AI agent authentication and authorization plugin for

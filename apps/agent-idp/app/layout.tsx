@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 
 const fontSans = Geist({
@@ -40,6 +41,12 @@ export default function RootLayout({
 					disableTransitionOnChange
 				>
 					{children}
+					<Toaster
+						position="bottom-right"
+						toastOptions={{
+							className: "!bg-card !text-foreground !border-border",
+						}}
+					/>
 				</ThemeProvider>
 			</body>
 		</html>

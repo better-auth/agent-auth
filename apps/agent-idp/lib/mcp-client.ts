@@ -10,19 +10,45 @@ export interface MCPTool {
 const toolsCache = new Map<string, { tools: MCPTool[]; fetchedAt: number }>();
 const CACHE_TTL = 60_000;
 
+const CONNECTION_TIMEOUT = 3_000;
+
 async function withClient<T>(
 	endpoint: string,
 	fn: (client: Client) => Promise<T>,
 ): Promise<T> {
-	const transport = new StreamableHTTPClientTransport(new URL(endpoint));
-	const client = new Client({ name: "agent-auth-gateway", version: "1.0.0" });
+	const abortController = new AbortController();
+	const timeout = setTimeout(() => abortController.abort(), CONNECTION_TIMEOUT);
 	try {
-		await client.connect(transport);
-		return await fn(client);
+		const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
+			requestInit: {
+				signal: abortController.signal,
+			},
+		});
+		const client = new Client({
+			name: "agent-auth-gateway",
+			version: "1.0.0",
+		});
+
+		await Promise.race([
+			client.connect(transport),
+			new Promise<never>((_, reject) => {
+				abortController.signal.addEventListener("abort", () =>
+					reject(new Error(`MCP connection to ${endpoint} timed out`)),
+				);
+			}),
+		]);
+
+		return await Promise.race([
+			fn(client),
+			new Promise<never>((_, reject) => {
+				abortController.signal.addEventListener("abort", () =>
+					reject(new Error(`MCP operation on ${endpoint} timed out`)),
+				);
+			}),
+		]);
 	} finally {
-		try {
-			await client.close();
-		} catch {}
+		clearTimeout(timeout);
+		abortController.abort();
 	}
 }
 
@@ -32,17 +58,21 @@ export async function listMCPTools(endpoint: string): Promise<MCPTool[]> {
 		return cached.tools;
 	}
 
-	const tools = await withClient(endpoint, async (client) => {
-		const result = await client.listTools();
-		return result.tools.map((t) => ({
-			name: t.name,
-			description: t.description ?? "",
-			inputSchema: t.inputSchema as Record<string, unknown>,
-		}));
-	});
+	try {
+		const tools = await withClient(endpoint, async (client) => {
+			const result = await client.listTools();
+			return result.tools.map((t) => ({
+				name: t.name,
+				description: t.description ?? "",
+				inputSchema: t.inputSchema as Record<string, unknown>,
+			}));
+		});
 
-	toolsCache.set(endpoint, { tools, fetchedAt: Date.now() });
-	return tools;
+		toolsCache.set(endpoint, { tools, fetchedAt: Date.now() });
+		return tools;
+	} catch {
+		return [];
+	}
 }
 
 export async function callMCPTool(

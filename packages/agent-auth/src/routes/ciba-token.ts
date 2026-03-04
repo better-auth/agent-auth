@@ -1,17 +1,22 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
-import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { CibaAuthRequest, ResolvedAgentAuthOptions } from "../types";
 
 const CIBA_TABLE = "cibaAuthRequest";
 const CIBA_GRANT_TYPE = "urn:openid:params:grant-type:ciba";
+
+// Tolerance to avoid spurious slow_down from timing jitter (ms)
+const SLOW_DOWN_TOLERANCE_MS = 500;
 
 /**
  * POST /agent/ciba/token
  *
  * Token endpoint for the CIBA grant type.
  * Clients poll this to retrieve the access token after the user approves.
+ *
+ * All error responses use RFC 8628 / CIBA Core `{ error, error_description }`
+ * format — never Better Auth's `{ code, message }` format — so that
+ * generic CIBA clients can parse them reliably.
  */
 export function cibaToken(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -39,15 +44,25 @@ export function cibaToken(opts: ResolvedAgentAuthOptions) {
 		},
 		async (ctx) => {
 			if (!opts.approvalMethods.includes("ciba")) {
-				throw APIError.from("BAD_REQUEST", ERROR_CODES.CIBA_NOT_ENABLED);
+				return ctx.json(
+					{
+						error: "invalid_request",
+						error_description: "CIBA is not enabled on this server.",
+					},
+					{ status: 400 },
+				);
 			}
 
 			const { grant_type, auth_req_id } = ctx.body;
 
 			if (grant_type !== CIBA_GRANT_TYPE) {
-				throw new APIError("BAD_REQUEST", {
-					message: `Unsupported grant_type. Expected "${CIBA_GRANT_TYPE}".`,
-				});
+				return ctx.json(
+					{
+						error: "invalid_grant",
+						error_description: `Unsupported grant_type. Expected "${CIBA_GRANT_TYPE}".`,
+					},
+					{ status: 400 },
+				);
 			}
 
 			const request = await ctx.context.adapter.findOne<CibaAuthRequest>({
@@ -56,7 +71,14 @@ export function cibaToken(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!request) {
-				throw APIError.from("NOT_FOUND", ERROR_CODES.CIBA_REQUEST_NOT_FOUND);
+				return ctx.json(
+					{
+						error: "invalid_grant",
+						error_description:
+							"The auth_req_id is invalid or has been removed.",
+					},
+					{ status: 400 },
+				);
 			}
 
 			if (new Date(request.expiresAt) <= new Date()) {
@@ -67,15 +89,33 @@ export function cibaToken(opts: ResolvedAgentAuthOptions) {
 						update: { status: "expired", updatedAt: new Date() },
 					});
 				}
-				throw APIError.from("FORBIDDEN", ERROR_CODES.CIBA_REQUEST_EXPIRED);
+				return ctx.json(
+					{
+						error: "expired_token",
+						error_description: "The authentication request has expired.",
+					},
+					{ status: 400 },
+				);
 			}
 
 			if (request.status === "denied") {
-				return ctx.json({ error: "access_denied" }, { status: 403 });
+				return ctx.json(
+					{
+						error: "access_denied",
+						error_description: "The user denied the authentication request.",
+					},
+					{ status: 403 },
+				);
 			}
 
 			if (request.status === "expired") {
-				return ctx.json({ error: "expired_token" }, { status: 400 });
+				return ctx.json(
+					{
+						error: "expired_token",
+						error_description: "The authentication request has expired.",
+					},
+					{ status: 400 },
+				);
 			}
 
 			if (request.status === "pending") {
@@ -83,7 +123,8 @@ export function cibaToken(opts: ResolvedAgentAuthOptions) {
 				if (request.lastPolledAt) {
 					const elapsed =
 						now.getTime() - new Date(request.lastPolledAt).getTime();
-					if (elapsed < request.interval * 1000) {
+					const threshold = request.interval * 1000 - SLOW_DOWN_TOLERANCE_MS;
+					if (elapsed < threshold) {
 						await ctx.context.adapter.update({
 							model: CIBA_TABLE,
 							where: [{ field: "id", value: request.id }],

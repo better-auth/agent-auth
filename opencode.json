@@ -7,11 +7,13 @@
     },
     "better-auth-agent": {
       "type": "local",
-      "command": ["npx", "tsx", "apps/agent-idp/gateway.ts"],
-      "environment": {
-        "BETTER_AUTH_URL": "http://localhost:4000",
-        "BETTER_AUTH_ENCRYPTION_KEY": "demo-key"
-      }
+      "command": [
+        "node",
+        "packages/agents/dist/cli.js",
+        "gateway",
+        "--url",
+        "http://localhost:3000"
+      ]
     }
   }
 }

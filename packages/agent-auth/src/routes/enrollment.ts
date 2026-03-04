@@ -6,11 +6,103 @@ import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
-import { findBlockedScopes } from "../scopes";
+import { findBlockedScopes, parseScopes } from "../scopes";
 import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../types";
+
+const ENROLLMENT_TOKEN_TTL = 3600;
+
+async function generateEnrollmentToken(): Promise<{
+	plaintext: string;
+	hash: string;
+}> {
+	const bytes = new Uint8Array(32);
+	globalThis.crypto.getRandomValues(bytes);
+	let binary = "";
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	const plaintext = btoa(binary)
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+
+	const digest = await globalThis.crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(plaintext),
+	);
+	const hashBytes = new Uint8Array(digest);
+	let hashBinary = "";
+	for (const byte of hashBytes) {
+		hashBinary += String.fromCharCode(byte);
+	}
+	const hash = btoa(hashBinary)
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+
+	return { plaintext, hash };
+}
+
+async function hashToken(token: string): Promise<string> {
+	const digest = await globalThis.crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(token),
+	);
+	const bytes = new Uint8Array(digest);
+	let binary = "";
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	return btoa(binary)
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+}
 
 const HOST_TABLE = "agentHost";
 const AGENT_TABLE = "agent";
+const MEMBER_TABLE = "member";
+
+type BetterAuthAdapter = {
+	findMany: <T>(opts: {
+		model: string;
+		where: Array<{ field: string; value: string }>;
+	}) => Promise<T[]>;
+	[key: string]: unknown;
+};
+
+async function checkSharedOrg(
+	adapter: BetterAuthAdapter,
+	userA: string,
+	userB: string,
+): Promise<boolean> {
+	try {
+		const membershipsA = await adapter.findMany<{
+			organizationId: string;
+		}>({
+			model: MEMBER_TABLE,
+			where: [{ field: "userId", value: userA }],
+		});
+		if (membershipsA.length === 0) return false;
+
+		const orgIds = membershipsA.map((m) => m.organizationId);
+		for (const orgId of orgIds) {
+			const membershipsB = await adapter.findMany<{
+				organizationId: string;
+			}>({
+				model: MEMBER_TABLE,
+				where: [
+					{ field: "userId", value: userB },
+					{ field: "organizationId", value: orgId },
+				],
+			});
+			if (membershipsB.length > 0) return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+}
 
 export function createHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -18,6 +110,10 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
+				name: z.string().optional().meta({
+					description:
+						"Human-readable name identifying the environment/device (e.g. 'Cursor on MacBook-Pro').",
+				}),
 				publicKey: z
 					.record(
 						z.string(),
@@ -54,11 +150,8 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const { publicKey, jwksUrl, referenceId } = ctx.body;
-
-			if (!publicKey && !jwksUrl) {
-				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
-			}
+			const { name: hostName, publicKey, jwksUrl, referenceId } = ctx.body;
+			const isEnrollmentFlow = !publicKey && !jwksUrl;
 
 			if (publicKey) {
 				if (!publicKey.kty || !publicKey.x) {
@@ -96,7 +189,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 			const now = new Date();
 			const kid = publicKey ? ((publicKey.kid as string) ?? null) : null;
 			const expiresAt =
-				opts.agentSessionTTL > 0
+				!isEnrollmentFlow && opts.agentSessionTTL > 0
 					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
 					: null;
 
@@ -115,18 +208,22 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				}
 
 				if (existing) {
+					const reactivateUpdate: Record<string, unknown> = {
+						scopes: hostScopes,
+						publicKey: publicKey ? JSON.stringify(publicKey) : "",
+						jwksUrl: jwksUrl ?? null,
+						status: "active",
+						activatedAt: now,
+						expiresAt,
+						updatedAt: now,
+					};
+					if (hostName) {
+						reactivateUpdate.name = hostName;
+					}
 					await ctx.context.adapter.update({
 						model: HOST_TABLE,
 						where: [{ field: "id", value: existing.id }],
-						update: {
-							scopes: JSON.stringify(hostScopes),
-							publicKey: publicKey ? JSON.stringify(publicKey) : "",
-							jwksUrl: jwksUrl ?? null,
-							status: "active",
-							activatedAt: now,
-							expiresAt,
-							updatedAt: now,
-						},
+						update: reactivateUpdate,
 					});
 
 					return ctx.json({
@@ -138,26 +235,52 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
+			let enrollmentTokenPlaintext: string | null = null;
+			let enrollmentTokenHash: string | null = null;
+			let enrollmentTokenExpiresAt: Date | null = null;
+
+			if (isEnrollmentFlow) {
+				const token = await generateEnrollmentToken();
+				enrollmentTokenPlaintext = token.plaintext;
+				enrollmentTokenHash = token.hash;
+				enrollmentTokenExpiresAt = new Date(
+					now.getTime() + ENROLLMENT_TOKEN_TTL * 1000,
+				);
+			}
+
 			const host = await ctx.context.adapter.create<
-				Record<string, string | Date | null>,
+				Record<string, unknown>,
 				AgentHost
 			>({
 				model: HOST_TABLE,
 				data: {
+					name: hostName ?? null,
 					userId: session.user.id,
 					referenceId: referenceId ?? null,
-					scopes: JSON.stringify(hostScopes),
+					scopes: hostScopes,
 					publicKey: publicKey ? JSON.stringify(publicKey) : "",
 					kid,
 					jwksUrl: jwksUrl ?? null,
-					status: "active",
-					activatedAt: now,
+					enrollmentTokenHash,
+					enrollmentTokenExpiresAt,
+					status: isEnrollmentFlow ? "pending_enrollment" : "active",
+					activatedAt: isEnrollmentFlow ? null : now,
 					expiresAt,
 					lastUsedAt: null,
 					createdAt: now,
 					updatedAt: now,
 				},
 			});
+
+			if (isEnrollmentFlow) {
+				return ctx.json({
+					hostId: host.id,
+					scopes: hostScopes,
+					status: "pending_enrollment",
+					enrollmentToken: enrollmentTokenPlaintext,
+					enrollmentTokenExpiresAt,
+				});
+			}
 
 			return ctx.json({
 				hostId: host.id,
@@ -176,7 +299,14 @@ export function listHosts() {
 			query: z
 				.object({
 					status: z
-						.enum(["active", "pending", "expired", "revoked", "rejected"])
+						.enum([
+							"active",
+							"pending",
+							"pending_enrollment",
+							"expired",
+							"revoked",
+							"rejected",
+						])
 						.optional(),
 				})
 				.optional(),
@@ -208,8 +338,8 @@ export function listHosts() {
 			return ctx.json({
 				hosts: hosts.map((e) => ({
 					id: e.id,
-					scopes:
-						typeof e.scopes === "string" ? JSON.parse(e.scopes) : e.scopes,
+					name: e.name ?? null,
+					scopes: parseScopes(e.scopes),
 					status: e.status,
 					activatedAt: e.activatedAt,
 					expiresAt: e.expiresAt,
@@ -256,10 +386,8 @@ export function getHost() {
 
 			return ctx.json({
 				id: host.id,
-				scopes:
-					typeof host.scopes === "string"
-						? JSON.parse(host.scopes)
-						: host.scopes,
+				name: host.name ?? null,
+				scopes: parseScopes(host.scopes),
 				status: host.status,
 				activatedAt: host.activatedAt,
 				expiresAt: host.expiresAt,
@@ -294,14 +422,22 @@ export function revokeHost() {
 
 			const host = await ctx.context.adapter.findOne<AgentHost>({
 				model: HOST_TABLE,
-				where: [
-					{ field: "id", value: ctx.body.hostId },
-					{ field: "userId", value: session.user.id },
-				],
+				where: [{ field: "id", value: ctx.body.hostId }],
 			});
 
 			if (!host) {
 				throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
+			}
+
+			if (host.userId !== session.user.id && host.userId !== null) {
+				const sameOrg = await checkSharedOrg(
+					ctx.context.adapter,
+					session.user.id,
+					host.userId,
+				);
+				if (!sameOrg) {
+					throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
+				}
 			}
 
 			if (host.status === "revoked") {
@@ -486,6 +622,9 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 			method: "POST",
 			body: z.object({
 				hostId: z.string().meta({ description: "ID of the host to update" }),
+				name: z.string().optional().meta({
+					description: "Human-readable name identifying the environment/device",
+				}),
 				publicKey: z
 					.record(
 						z.string(),
@@ -506,7 +645,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Update an agent host's public key, JWKS URL, or scopes. Requires user session.",
+						"Update an agent host's name, public key, JWKS URL, or scopes. Requires user session.",
 				},
 			},
 		},
@@ -518,25 +657,37 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 
 			const host = await ctx.context.adapter.findOne<AgentHost>({
 				model: HOST_TABLE,
-				where: [
-					{ field: "id", value: ctx.body.hostId },
-					{ field: "userId", value: session.user.id },
-				],
+				where: [{ field: "id", value: ctx.body.hostId }],
 			});
 
 			if (!host) {
 				throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
 			}
 
+			if (host.userId !== session.user.id && host.userId !== null) {
+				const sameOrg = await checkSharedOrg(
+					ctx.context.adapter,
+					session.user.id,
+					host.userId,
+				);
+				if (!sameOrg) {
+					throw APIError.from("NOT_FOUND", ERROR_CODES.HOST_NOT_FOUND);
+				}
+			}
+
 			if (host.status === "revoked") {
 				throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 			}
 
-			const { publicKey, jwksUrl, scopes } = ctx.body;
+			const { name, publicKey, jwksUrl, scopes } = ctx.body;
 
 			const update: Record<string, unknown> = {
 				updatedAt: new Date(),
 			};
+
+			if (name !== undefined) {
+				update.name = name;
+			}
 
 			if (publicKey) {
 				if (!publicKey.kty || !publicKey.x) {
@@ -575,7 +726,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 					}
 				}
 
-				update.scopes = JSON.stringify(scopes);
+				update.scopes = scopes;
 			}
 
 			await ctx.context.adapter.update({
@@ -591,13 +742,133 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 
 			return ctx.json({
 				id: updated!.id,
-				scopes:
-					typeof updated!.scopes === "string"
-						? JSON.parse(updated!.scopes)
-						: updated!.scopes,
+				scopes: parseScopes(updated!.scopes),
 				jwksUrl: updated!.jwksUrl,
 				status: updated!.status,
 				updatedAt: updated!.updatedAt,
+			});
+		},
+	);
+}
+
+/**
+ * POST /agent/host/enroll
+ *
+ * Claim a dashboard-provisioned host using a one-time enrollment token.
+ * The device generates a keypair locally, sends the public key and token.
+ * No session auth required — the token IS the authorization.
+ */
+export function enrollHost(opts: ResolvedAgentAuthOptions) {
+	return createAuthEndpoint(
+		"/agent/host/enroll",
+		{
+			method: "POST",
+			body: z.object({
+				token: z.string().meta({
+					description: "One-time enrollment token received from the dashboard.",
+				}),
+				publicKey: z
+					.record(
+						z.string(),
+						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+					)
+					.meta({
+						description:
+							"Host Ed25519 public key as JWK, generated on the device.",
+					}),
+				name: z.string().optional().meta({
+					description: "Override the host name set during provisioning.",
+				}),
+			}),
+			metadata: {
+				openapi: {
+					description:
+						"Enroll a device as a host using a one-time enrollment token from the dashboard. " +
+						"The device generates a keypair locally and sends the public key.",
+				},
+			},
+		},
+		async (ctx) => {
+			const { token, publicKey, name } = ctx.body;
+
+			if (!publicKey.kty || !publicKey.x) {
+				throw APIError.from("BAD_REQUEST", ERROR_CODES.INVALID_PUBLIC_KEY);
+			}
+
+			const kty = publicKey.kty as string;
+			const crv = (publicKey.crv as string) ?? null;
+			const keyAlg = crv ? `${crv}` : kty;
+			if (!opts.allowedKeyAlgorithms.includes(keyAlg)) {
+				throw new APIError("BAD_REQUEST", {
+					message: `Key algorithm "${keyAlg}" is not allowed. Accepted: ${opts.allowedKeyAlgorithms.join(", ")}`,
+				});
+			}
+
+			const tokenHash = await hashToken(token);
+
+			const hosts = await ctx.context.adapter.findMany<AgentHost>({
+				model: HOST_TABLE,
+				where: [{ field: "enrollmentTokenHash", value: tokenHash }],
+			});
+
+			const host = hosts[0] ?? null;
+			if (!host) {
+				throw APIError.from(
+					"UNAUTHORIZED",
+					ERROR_CODES.ENROLLMENT_TOKEN_INVALID,
+				);
+			}
+
+			if (host.status !== "pending_enrollment") {
+				throw APIError.from(
+					"BAD_REQUEST",
+					ERROR_CODES.HOST_NOT_PENDING_ENROLLMENT,
+				);
+			}
+
+			if (
+				host.enrollmentTokenExpiresAt &&
+				new Date(host.enrollmentTokenExpiresAt) <= new Date()
+			) {
+				throw APIError.from(
+					"UNAUTHORIZED",
+					ERROR_CODES.ENROLLMENT_TOKEN_EXPIRED,
+				);
+			}
+
+			const now = new Date();
+			const kid = (publicKey.kid as string) ?? null;
+			const expiresAt =
+				opts.agentSessionTTL > 0
+					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
+					: null;
+
+			const update: Record<string, unknown> = {
+				publicKey: JSON.stringify(publicKey),
+				kid,
+				status: "active",
+				activatedAt: now,
+				expiresAt,
+				enrollmentTokenHash: null,
+				enrollmentTokenExpiresAt: null,
+				updatedAt: now,
+			};
+
+			if (name) {
+				update.name = name;
+			}
+
+			await ctx.context.adapter.update({
+				model: HOST_TABLE,
+				where: [{ field: "id", value: host.id }],
+				update,
+			});
+
+			return ctx.json({
+				hostId: host.id,
+				name: name ?? host.name,
+				scopes: parseScopes(host.scopes),
+				status: "active",
 			});
 		},
 	);
