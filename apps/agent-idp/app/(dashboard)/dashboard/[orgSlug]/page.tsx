@@ -10,12 +10,10 @@ import {
 	Users,
 	Zap,
 } from "lucide-react";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { auth } from "@/lib/auth/auth";
 import { listConnectionsByOrg } from "@/lib/db/connections";
-import { getOverviewData } from "@/lib/db/queries";
+import { getOrgBySlug, getOverviewData } from "@/lib/db/queries";
 
 function formatRelativeTime(d: string | null): string {
 	if (!d) return "Never";
@@ -39,11 +37,10 @@ export default async function OverviewPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	await auth.api.getSession({ headers: await headers() });
-	const orgs = await auth.api.listOrganizations({ headers: await headers() });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
-	const data = org ? await getOverviewData(org.id) : null;
-	const connections = org ? await listConnectionsByOrg(org.id) : [];
+	const org = await getOrgBySlug(orgSlug);
+	const [data, connections] = org
+		? await Promise.all([getOverviewData(org.id), listConnectionsByOrg(org.id)])
+		: [null, []];
 	const hasAgents = (data?.agents.total ?? 0) > 0;
 	const hasConnections = connections.length > 0;
 	const hasActivity = (data?.toolCalls.total ?? 0) > 0;

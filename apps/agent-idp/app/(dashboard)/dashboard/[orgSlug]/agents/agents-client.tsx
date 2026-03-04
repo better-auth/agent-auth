@@ -596,11 +596,15 @@ export function AgentsClient({
 
 	async function handleRevokeAll() {
 		setRevokingAll(true);
-		const result = await revokeAllAgents();
+		const ids = activeAgents.map((a) => a.id);
+		const result = await revokeAllAgents(ids);
 		if (result.revoked > 0) {
+			const failedSet = new Set(result.failed);
 			setAgents((prev) =>
 				prev.map((a) =>
-					a.status === "active" ? { ...a, status: "revoked" as const } : a,
+					a.status === "active" && !failedSet.has(a.id)
+						? { ...a, status: "revoked" as const }
+						: a,
 				),
 			);
 		}

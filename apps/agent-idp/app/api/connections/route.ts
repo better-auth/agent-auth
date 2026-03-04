@@ -51,6 +51,12 @@ export async function GET(req: Request) {
 			} else if (conn.type === "mcp") {
 				connected = true;
 				identifier = conn.mcpEndpoint;
+			} else if (conn.type === "openapi") {
+				connected = true;
+				identifier = conn.specUrl;
+			} else if (conn.type === "agent-auth") {
+				connected = !!conn.baseUrl;
+				identifier = conn.baseUrl;
 			}
 
 			return {

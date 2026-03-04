@@ -8,9 +8,11 @@ import {
 	Fingerprint,
 	KeyRound,
 	LogOut,
+	MessageSquare,
 	Plug,
 	Plus,
 	Settings,
+	ShieldCheck,
 	Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -69,8 +71,10 @@ function isNavItemActive(
 	if (name === "Agents" && pathname.includes("/agents")) return true;
 	if (name === "Hosts" && pathname.includes("/hosts")) return true;
 	if (name === "Activity" && pathname.includes("/activity")) return true;
+	if (name === "Chat" && pathname.includes("/chat")) return true;
 	if (name === "Approvals" && pathname.includes("/approvals")) return true;
 	if (name === "Members" && pathname.includes("/members")) return true;
+	if (name === "Security" && pathname.includes("/security")) return true;
 	if (name === "Settings" && pathname.includes("/settings")) return true;
 	if (pathname.startsWith(href + "/") || pathname.startsWith(href + "?"))
 		return true;
@@ -140,7 +144,7 @@ function usePendingCibaCount() {
 
 	useEffect(() => {
 		void fetch();
-		pollRef.current = setInterval(fetch, 10_000);
+		pollRef.current = setInterval(fetch, 30_000);
 		return () => {
 			if (pollRef.current) clearInterval(pollRef.current);
 		};
@@ -164,11 +168,21 @@ function SidebarNavLinks({ slug }: { slug: string }) {
 		},
 		{ name: "Activity", href: `/dashboard/${slug}/activity`, icon: Activity },
 		{
+			name: "Chat",
+			href: `/dashboard/${slug}/chat`,
+			icon: MessageSquare,
+		},
+		{
 			name: "Approvals",
 			href: `/dashboard/${slug}/approvals`,
 			icon: Fingerprint,
 		},
 		{ name: "Members", href: `/dashboard/${slug}/members`, icon: Users },
+		{
+			name: "Security",
+			href: `/dashboard/${slug}/security`,
+			icon: ShieldCheck,
+		},
 		{ name: "Settings", href: `/dashboard/${slug}/settings`, icon: Settings },
 	];
 	return (
@@ -299,7 +313,7 @@ export default function Sidebar({
 				<OrgSwitcher slug={slug} orgs={orgs} />
 			</div>
 			<div className="px-3 pb-1">
-				<ConnectDialog orgId={orgId}>
+				<ConnectDialog orgId={orgId} orgSlug={slug}>
 					<button className="w-full flex items-center gap-2.5 px-2.5 py-2 text-[13px] font-medium rounded-lg border border-dashed border-border/70 text-muted-foreground hover:text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03] transition-all group">
 						<Plug className="h-4 w-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
 						<span>Connect Agent</span>

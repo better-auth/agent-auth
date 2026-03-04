@@ -10,6 +10,17 @@
 
 import { createFileStorage } from "./mcp-storage-fs";
 
+function collectArgs(args: string[], flag: string): string[] {
+	const values: string[] = [];
+	for (let i = 0; i < args.length; i++) {
+		if (args[i] === flag && i + 1 < args.length) {
+			values.push(args[i + 1]);
+			i++;
+		}
+	}
+	return values;
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 	const command = args[0];
@@ -19,9 +30,11 @@ async function main() {
 		process.exit(0);
 	}
 
-	const urlIndex = args.indexOf("--url");
-	const url =
-		urlIndex !== -1 ? args[urlIndex + 1] : process.env.BETTER_AUTH_URL;
+	const urls = collectArgs(args, "--url");
+	if (urls.length === 0 && process.env.BETTER_AUTH_URL) {
+		urls.push(process.env.BETTER_AUTH_URL);
+	}
+	const url = urls[0];
 
 	const encKeyIndex = args.indexOf("--encryption-key");
 	const encryptionKey =
@@ -133,7 +146,7 @@ async function main() {
 			const { createMCPServer } = await import("./mcp-server");
 			await createMCPServer({
 				storage,
-				appUrl: url,
+				appUrl: urls.length > 1 ? urls : url,
 				serverName: "auth-agents",
 			});
 			break;
@@ -169,11 +182,11 @@ function printHelp() {
 Usage:
   auth agent   --url <app-url> [--name <name>]    Connect an agent via device flow
   auth enroll  --url <app-url> --token <token>     Enroll device using dashboard token
-  auth serve   --url <app-url>                     Start MCP server (stdio)
+  auth serve   --url <url> [--url <url2> ...]      Start MCP server (stdio)
   auth list                                        List stored connections
 
 Options:
-  --url <url>              App URL (or set BETTER_AUTH_URL env var)
+  --url <url>              App URL (repeatable for serve; or set BETTER_AUTH_URL)
   --name <name>            Agent name (default: "CLI Agent")
   --token <token>          Enrollment token from dashboard (for enroll command)
   --encryption-key <key>   Encrypt stored keypairs (or set AGENT_ENCRYPTION_KEY)

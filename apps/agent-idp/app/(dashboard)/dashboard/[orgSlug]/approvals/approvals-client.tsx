@@ -12,6 +12,7 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ReAuthDialog, useReAuth } from "@/components/auth/re-auth-dialog";
 import { Button } from "@/components/ui/button";
 import type { CibaPendingRequest } from "@/lib/auth/agent-api";
 import {
@@ -48,9 +49,11 @@ function formatTimeLeft(seconds: number): string {
 function RequestCard({
 	request,
 	onResponded,
+	onReAuthNeeded,
 }: {
 	request: CibaPendingRequest;
 	onResponded: (id: string) => void;
+	onReAuthNeeded: () => Promise<void>;
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const [approving, setApproving] = useState(false);
@@ -70,6 +73,22 @@ function RequestCard({
 		setError(null);
 		setApproving(true);
 		const res = await approveCibaRequest(request.auth_req_id);
+		if (res.code === "FRESH_SESSION_REQUIRED") {
+			try {
+				await onReAuthNeeded();
+				const retry = await approveCibaRequest(request.auth_req_id);
+				if (retry.error) {
+					setError(retry.error);
+					setApproving(false);
+				} else {
+					onResponded(request.auth_req_id);
+				}
+			} catch {
+				setError(null);
+				setApproving(false);
+			}
+			return;
+		}
 		if (res.error) {
 			setError(res.error);
 			setApproving(false);
@@ -257,15 +276,20 @@ function RequestCard({
 export function ApprovalsClient({
 	currentUserId,
 	orgId,
+	userEmail,
+	allowedReAuthMethods,
 }: {
 	currentUserId: string;
 	orgId: string;
+	userEmail?: string;
+	allowedReAuthMethods?: ("password" | "passkey" | "email_otp")[];
 }) {
 	const [requests, setRequests] = useState<CibaPendingRequest[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [refreshing, setRefreshing] = useState(false);
 	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const reAuth = useReAuth();
 
 	const fetchRequests = useCallback(async (showLoading = false) => {
 		if (showLoading) setLoading(true);
@@ -376,11 +400,22 @@ export function ApprovalsClient({
 								key={req.auth_req_id}
 								request={req}
 								onResponded={handleResponded}
+								onReAuthNeeded={reAuth.requestReAuth}
 							/>
 						))}
 					</div>
 				)}
 			</div>
+
+			<ReAuthDialog
+				open={reAuth.open}
+				onOpenChange={reAuth.onOpenChange}
+				onSuccess={reAuth.onSuccess}
+				allowedMethods={allowedReAuthMethods}
+				userEmail={userEmail}
+				title="Re-authenticate to approve"
+				description="A fresh session is required to approve agent requests."
+			/>
 		</div>
 	);
 }

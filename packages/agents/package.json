@@ -41,6 +41,12 @@
         "default": "./dist/mcp-storage-memory.js"
       }
     },
+    "./ai": {
+      "import": {
+        "types": "./dist/ai.d.ts",
+        "default": "./dist/ai.js"
+      }
+    },
     "./mcp-server": {
       "import": {
         "types": "./dist/mcp-server.d.ts",

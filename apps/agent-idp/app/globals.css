@@ -308,6 +308,57 @@
 	background-size: 16px 16px;
 }
 
+/* Chat thinking dots */
+.chat-dot {
+	display: inline-block;
+	width: 5px;
+	height: 5px;
+	border-radius: 9999px;
+	background-color: var(--muted-foreground);
+	opacity: 0.4;
+	animation: chatBounce 1.2s ease-in-out infinite;
+}
+
+@keyframes chatBounce {
+	0%,
+	60%,
+	100% {
+		transform: translateY(0);
+		opacity: 0.3;
+	}
+	30% {
+		transform: translateY(-4px);
+		opacity: 0.8;
+	}
+}
+
+/* Tool card running shimmer */
+.tool-running {
+	position: relative;
+	overflow: hidden;
+}
+.tool-running::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(
+		90deg,
+		transparent 0%,
+		var(--foreground) 50%,
+		transparent 100%
+	);
+	opacity: 0.02;
+	animation: toolShimmer 2s ease-in-out infinite;
+}
+@keyframes toolShimmer {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(100%);
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,

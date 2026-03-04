@@ -26,10 +26,13 @@ export interface MCPServerOptions
 	/** MCP server name. Default: "better-auth-agent" */
 	serverName?: string;
 	/**
-	 * App URL, optionally with query params for discovery.
-	 * Example: "http://localhost:3000" or "http://localhost:3000?referenceId=abc"
+	 * One or more app URLs, optionally with query params for discovery.
+	 * All URLs are auto-discovered on startup. The first URL is used as
+	 * the default when tools don't specify a provider.
+	 *
+	 * Example: "http://localhost:3000" or ["https://bank.com", "https://github-gateway.com"]
 	 */
-	appUrl?: string;
+	appUrl?: string | string[];
 	/**
 	 * Hook called after all built-in tools are registered but before the
 	 * transport is connected. Use this to add custom tools to the MCP server.
@@ -85,17 +88,26 @@ export async function createMCPServer(
 		appUrl: configAppUrl,
 	} = options;
 
-	const rawUrl = (configAppUrl || process.env.BETTER_AUTH_URL || "").replace(
-		/\/+$/,
-		"",
-	);
+	const inputUrls: string[] = (
+		Array.isArray(configAppUrl)
+			? configAppUrl
+			: [configAppUrl || process.env.BETTER_AUTH_URL || ""]
+	)
+		.map((u) => u.replace(/\/+$/, ""))
+		.filter(Boolean);
 
-	let resolvedAppUrl = rawUrl;
-	try {
-		const parsed = new URL(rawUrl);
-		parsed.search = "";
-		resolvedAppUrl = parsed.toString().replace(/\/+$/, "");
-	} catch {}
+	const rawUrls: string[] = [...inputUrls];
+	const resolvedUrls: string[] = inputUrls.map((raw) => {
+		try {
+			const parsed = new URL(raw);
+			parsed.search = "";
+			return parsed.toString().replace(/\/+$/, "");
+		} catch {
+			return raw;
+		}
+	});
+
+	const primaryUrl = resolvedUrls[0] ?? "";
 
 	const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
 	const { StdioServerTransport } = await import(
@@ -110,34 +122,41 @@ export async function createMCPServer(
 		resolveAuthorizationDetails,
 		onVerificationUrl:
 			onVerificationUrl === false ? undefined : onVerificationUrl,
-		defaultUrl: resolvedAppUrl || undefined,
+		defaultUrl: primaryUrl || undefined,
 	});
 
-	// Auto-discover on startup so provider names resolve immediately
-	if (resolvedAppUrl && storage.saveProviderConfig) {
-		try {
-			const discoverTool = tools.find((t) => t.name === "discover");
-			if (discoverTool) {
-				await discoverTool.handler({ url: resolvedAppUrl });
-				process.stderr.write(
-					`[${serverName}] Auto-discovered ${resolvedAppUrl}\n`,
-				);
+	// Auto-discover all configured URLs on startup
+	if (storage.saveProviderConfig) {
+		const discoverTool = tools.find((t) => t.name === "discover");
+		if (discoverTool) {
+			for (const url of resolvedUrls) {
+				try {
+					await discoverTool.handler({ url });
+					process.stderr.write(`[${serverName}] Auto-discovered ${url}\n`);
+				} catch {
+					process.stderr.write(
+						`[${serverName}] Auto-discovery failed for ${url} (server may not be running yet)\n`,
+					);
+				}
 			}
-		} catch {
-			process.stderr.write(
-				`[${serverName}] Auto-discovery failed for ${resolvedAppUrl} (server may not be running yet)\n`,
-			);
 		}
 	}
 
 	let instructions = getAgentAuthInstructions();
-	if (resolvedAppUrl) {
+	if (resolvedUrls.length === 1 && primaryUrl) {
 		instructions +=
 			`\n\n## Default App URL\n\n` +
-			`The app URL is: ${resolvedAppUrl}\n` +
+			`The app URL is: ${primaryUrl}\n` +
 			`Always use this URL when calling connect_agent. Do NOT ask the user for it.`;
+	} else if (resolvedUrls.length > 1) {
+		instructions +=
+			`\n\n## Configured Providers\n\n` +
+			`Multiple providers are configured:\n` +
+			resolvedUrls.map((u) => `- ${u}`).join("\n") +
+			`\n\nUse \`list_providers\` to see their names and descriptions. ` +
+			`Pass the appropriate provider name to \`connect_agent\` based on the user's request.`;
 	}
-	if (rawUrl && rawUrl !== resolvedAppUrl) {
+	if (rawUrls.some((raw, i) => raw !== resolvedUrls[i])) {
 		instructions +=
 			`\n\n## Tool Discovery\n\n` +
 			`Call discover before connecting — it is pre-configured. Do NOT ask the user for parameters.`;
@@ -156,16 +175,16 @@ export async function createMCPServer(
 
 		const originalHandler = tool.handler;
 		const handler = async (params: Record<string, string | string[]>) => {
-			// Auto-inject url for discover when appUrl is configured
-			if (tool.name === "discover" && rawUrl && !params.url) {
-				params.url = rawUrl;
+			// Auto-inject url for discover when a single URL is configured
+			if (tool.name === "discover" && rawUrls[0] && !params.url) {
+				params.url = rawUrls[0];
 			}
-			// Auto-inject provider/url for tools that need it
-			if (resolvedAppUrl && !params.provider && !params.url) {
+			// Auto-inject provider/url for tools that need it (only when single provider)
+			if (primaryUrl && !params.provider && !params.url) {
 				if ("provider" in tool.inputSchema) {
-					params.provider = resolvedAppUrl;
+					params.provider = primaryUrl;
 				} else if ("url" in tool.inputSchema) {
-					params.url = resolvedAppUrl;
+					params.url = primaryUrl;
 				}
 			}
 			return originalHandler(params);

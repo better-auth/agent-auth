@@ -62,6 +62,21 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
+			const freshWindow =
+				typeof opts.freshSessionWindow === "function"
+					? await opts.freshSessionWindow(ctx)
+					: opts.freshSessionWindow;
+
+			if (freshWindow > 0) {
+				const sessionCreated = session.session?.createdAt
+					? new Date(session.session.createdAt).getTime()
+					: 0;
+				const age = (Date.now() - sessionCreated) / 1000;
+				if (age > freshWindow) {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.FRESH_SESSION_REQUIRED);
+				}
+			}
+
 			const request = await ctx.context.adapter.findOne<CibaAuthRequest>({
 				model: CIBA_TABLE,
 				where: [{ field: "id", value: ctx.body.auth_req_id }],

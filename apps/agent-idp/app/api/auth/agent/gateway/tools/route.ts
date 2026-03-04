@@ -1,6 +1,10 @@
 import { and, eq } from "drizzle-orm";
+import {
+	listAgentAuthTools,
+	parseAgentAuthCredential,
+} from "@/lib/agent-auth-proxy";
 import { db } from "@/lib/db/drizzle";
-import { connection } from "@/lib/db/schema";
+import { connection, connectionCredential } from "@/lib/db/schema";
 import { listMCPTools } from "@/lib/mcp-client";
 import { listOpenAPITools } from "@/lib/openapi-tools";
 import { resolveAuth } from "@/lib/resolve-auth";
@@ -122,6 +126,43 @@ export async function GET(request: Request) {
 						inputSchema: t.inputSchema,
 					})),
 				});
+			} catch {
+				result.push({ name: conn.name, tools: [] });
+			}
+			continue;
+		}
+
+		if (conn.type === "agent-auth" && conn.baseUrl) {
+			try {
+				const [cred] = await db
+					.select()
+					.from(connectionCredential)
+					.where(
+						and(
+							eq(connectionCredential.connectionId, conn.id),
+							eq(connectionCredential.orgId, orgId),
+							eq(connectionCredential.status, "active"),
+						),
+					)
+					.limit(1);
+
+				const credential = parseAgentAuthCredential(
+					cred?.metadata ?? null,
+					conn.baseUrl,
+				);
+				if (credential) {
+					const tools = await listAgentAuthTools(credential);
+					result.push({
+						name: conn.name,
+						tools: tools.map((t) => ({
+							name: t.name,
+							description: t.description,
+							inputSchema: t.inputSchema,
+						})),
+					});
+				} else {
+					result.push({ name: conn.name, tools: [] });
+				}
 			} catch {
 				result.push({ name: conn.name, tools: [] });
 			}

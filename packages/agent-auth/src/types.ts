@@ -145,9 +145,16 @@ export interface AgentAuthOptions {
 	 * If the session is older than this, re-authentication is required.
 	 *
 	 * Set to `0` to disable fresh session enforcement.
+	 *
+	 * Can be a number or an async callback that receives the full
+	 * endpoint context for per-request decisions (e.g. reading
+	 * org-level settings from session data).
+	 *
 	 * @default 300 (5 minutes)
 	 */
-	freshSessionWindow?: number;
+	freshSessionWindow?:
+		| number
+		| ((ctx: GenericEndpointContext) => number | Promise<number>);
 	/**
 	 * Whether to allow unknown hosts to register dynamically during
 	 * agent creation. When `false`, only pre-registered hosts (created
@@ -162,6 +169,20 @@ export interface AgentAuthOptions {
 	allowDynamicHostRegistration?:
 		| boolean
 		| ((ctx: GenericEndpointContext) => boolean | Promise<boolean>);
+	/**
+	 * Default pre-authorized scopes for dynamically created hosts.
+	 * When a dynamic host is registered, these scopes are assigned
+	 * so agents connecting through it get them auto-approved.
+	 *
+	 * Can be a static array or an async callback that receives the
+	 * endpoint context for per-request decisions (e.g. resolving
+	 * org-level settings from session data).
+	 *
+	 * @default []
+	 */
+	dynamicHostDefaultScopes?:
+		| string[]
+		| ((ctx: GenericEndpointContext) => string[] | Promise<string[]>);
 	/**
 	 * Scopes that are always blocked from being granted or escalated.
 	 * Any scope request containing a blocked scope is rejected.
@@ -355,6 +376,7 @@ export type ResolvedAgentAuthOptions = Required<
 		| "approvalMethods"
 		| "resolveApprovalMethod"
 		| "allowDynamicHostRegistration"
+		| "dynamicHostDefaultScopes"
 	>
 > &
 	AgentAuthOptions;

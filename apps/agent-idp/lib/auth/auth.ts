@@ -3,19 +3,19 @@ import type { GenericEndpointContext } from "@better-auth/core";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { getSessionFromCtx } from "better-auth/api";
-import { deviceAuthorization, organization } from "better-auth/plugins";
+import { bearer, deviceAuthorization, organization } from "better-auth/plugins";
 import { ac, admin, member, owner } from "@/lib/auth/permissions";
 import * as betterAuthSchema from "@/lib/db/better-auth-schema";
 import { db } from "@/lib/db/drizzle";
 import { syncConnectionOnAccountLink } from "@/lib/db/sync-connection";
 import { env } from "@/lib/env";
 
-async function isOrgDynamicHostAllowed(
+async function getOrgMetadataFromCtx(
 	ctx: GenericEndpointContext,
-): Promise<boolean> {
+): Promise<Record<string, unknown> | null> {
 	try {
 		const session = await getSessionFromCtx(ctx);
-		if (!session?.user?.id) return true;
+		if (!session?.user?.id) return null;
 
 		const rows = await ctx.context.adapter.findMany<{
 			organizationId: string;
@@ -24,7 +24,7 @@ async function isOrgDynamicHostAllowed(
 			where: [{ field: "userId", value: session.user.id }],
 		});
 
-		if (rows.length === 0) return true;
+		if (rows.length === 0) return null;
 
 		const org = await ctx.context.adapter.findOne<{
 			metadata: string | null;
@@ -33,16 +33,101 @@ async function isOrgDynamicHostAllowed(
 			where: [{ field: "id", value: rows[0]!.organizationId }],
 		});
 
-		if (!org?.metadata) return true;
+		if (!org?.metadata) return null;
 		try {
-			const parsed = JSON.parse(org.metadata);
-			return parsed.allowDynamicHostRegistration !== false;
+			return JSON.parse(org.metadata);
 		} catch {
-			return true;
+			return null;
 		}
 	} catch {
-		return true;
+		return null;
 	}
+}
+
+async function isOrgDynamicHostAllowed(
+	ctx: GenericEndpointContext,
+): Promise<boolean> {
+	const meta = await getOrgMetadataFromCtx(ctx);
+	if (!meta) return true;
+	return meta.allowDynamicHostRegistration !== false;
+}
+
+async function getOrgDynamicHostDefaultScopes(
+	ctx: GenericEndpointContext,
+): Promise<string[]> {
+	const meta = await getOrgMetadataFromCtx(ctx);
+	if (!meta || !Array.isArray(meta.dynamicHostDefaultScopes)) return [];
+	return meta.dynamicHostDefaultScopes;
+}
+
+async function getOrgFreshSessionWindow(
+	ctx: GenericEndpointContext,
+): Promise<number> {
+	const meta = await getOrgMetadataFromCtx(ctx);
+	if (!meta) return 0;
+	if (meta.reAuthPolicy === "none") return 0;
+	if (meta.reAuthPolicy === "fresh_session") {
+		return typeof meta.freshSessionWindow === "number"
+			? meta.freshSessionWindow
+			: 300;
+	}
+	return 300;
+}
+
+const VALID_APPROVAL_METHODS = new Set(["ciba", "device_authorization"]);
+
+async function resolveApproval({
+	userId,
+}: {
+	userId: string | null;
+	agentName: string;
+	hostId: string | null;
+	scopes: string[];
+}): Promise<string> {
+	if (!userId) return "device_authorization";
+
+	try {
+		const pref = await db.query.userPreference.findFirst({
+			where: (t, { eq }) => eq(t.userId, userId),
+			columns: { preferredApprovalMethod: true },
+		});
+		if (
+			pref?.preferredApprovalMethod &&
+			VALID_APPROVAL_METHODS.has(pref.preferredApprovalMethod)
+		) {
+			return pref.preferredApprovalMethod;
+		}
+	} catch {
+		// user pref lookup is best-effort
+	}
+
+	try {
+		const memberships = await db.query.member.findMany({
+			where: (m, { eq }) => eq(m.userId, userId),
+			columns: { organizationId: true },
+			limit: 1,
+		});
+		if (memberships.length > 0) {
+			const org = await db.query.organization.findFirst({
+				where: (o, { eq }) => eq(o.id, memberships[0]!.organizationId),
+				columns: { metadata: true },
+			});
+			if (org?.metadata) {
+				const parsed =
+					typeof org.metadata === "string"
+						? JSON.parse(org.metadata)
+						: org.metadata;
+				const orgMethod = parsed?.defaultApprovalMethod;
+				if (VALID_APPROVAL_METHODS.has(orgMethod)) {
+					return orgMethod;
+				}
+			}
+		}
+	} catch {
+		// org setting lookup is best-effort
+	}
+
+	return "ciba";
 }
 
 export const auth = betterAuth({
@@ -96,20 +181,29 @@ export const auth = betterAuth({
 		},
 	},
 	plugins: [
+		bearer(),
 		organization({
 			ac,
 			roles: { owner, admin, member },
 		}),
 		agentAuth({
-			rateLimit: false,
+			rateLimit: false, 
+			freshSessionWindow: (ctx) => getOrgFreshSessionWindow(ctx),
 			approvalMethods: ["device_authorization", "ciba"],
+			resolveApprovalMethod: resolveApproval,
 			providerName: "agent-idp",
 			providerDescription: "Agent Auth Identity Provider",
 			allowDynamicHostRegistration: (ctx) => isOrgDynamicHostAllowed(ctx),
+			dynamicHostDefaultScopes: (ctx) => getOrgDynamicHostDefaultScopes(ctx),
 		}),
 		deviceAuthorization(),
 	],
-	trustedOrigins: ["http://localhost:3000", "http://localhost:4000"],
+	trustedOrigins: [
+		"http://localhost:3000",
+		"http://localhost:4000",
+		"chrome-extension://*",
+		"better-auth-desktop://*",
+	],
 	baseURL: env.BETTER_AUTH_URL,
 	basePath: "/api/auth",
 });

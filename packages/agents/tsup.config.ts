@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
 	entry: [
 		"src/index.ts",
+		"src/ai.ts",
 		"src/agent-client.ts",
 		"src/mcp-tools.ts",
 		"src/mcp-storage-fs.ts",

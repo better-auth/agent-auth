@@ -1,6 +1,5 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth/auth";
+import { getOrgBySlug, getSession } from "@/lib/db/queries";
 import { SettingsClient } from "./settings-client";
 
 export default async function SettingsPage({
@@ -9,17 +8,11 @@ export default async function SettingsPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const reqHeaders = await headers();
-	const session = await auth.api.getSession({ headers: reqHeaders });
+	const [session, org] = await Promise.all([
+		getSession(),
+		getOrgBySlug(orgSlug),
+	]);
 	if (!session?.user) redirect("/sign-in");
-
-	const orgs = await auth.api.listOrganizations({ headers: reqHeaders });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
-
-	const canUpdateSettings = await auth.api.hasPermission({
-		headers: reqHeaders,
-		body: { permissions: { settings: ["update"] } },
-	});
 
 	return (
 		<div className="max-w-5xl mx-auto">
@@ -30,7 +23,6 @@ export default async function SettingsPage({
 				userEmail={session.user.email ?? ""}
 				orgSlug={orgSlug}
 				orgId={org?.id ?? ""}
-				canUpdateSettings={canUpdateSettings?.success ?? false}
 			/>
 		</div>
 	);

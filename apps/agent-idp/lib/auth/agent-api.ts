@@ -38,7 +38,7 @@ export async function listAgents(): Promise<{
 	error?: string;
 }> {
 	try {
-		const res = await authFetch("/agent/list-agents");
+		const res = await authFetch("/agent/list");
 		const json = await res.json();
 		if (!res.ok) return { error: json.message || "Failed to list agents" };
 		return { data: json.agents ?? json ?? [] };
@@ -53,7 +53,7 @@ export async function updateAgent(body: {
 	scopes?: string[];
 }): Promise<{ data?: Partial<Agent>; error?: string }> {
 	try {
-		const res = await authFetch("/agent/update-agent", {
+		const res = await authFetch("/agent/update", {
 			method: "POST",
 			body: JSON.stringify(body),
 		});
@@ -83,19 +83,20 @@ export async function revokeAgent(
 	}
 }
 
-export async function revokeAllAgents(): Promise<{ revoked: number }> {
-	try {
-		const agents = await listAgents();
-		const active = (agents.data ?? []).filter((a) => a.status === "active");
-		let revoked = 0;
-		for (const a of active) {
-			const res = await revokeAgent(a.id);
-			if (!res.error) revoked++;
+export async function revokeAllAgents(
+	agentIds: string[],
+): Promise<{ revoked: number; failed: string[] }> {
+	const failed: string[] = [];
+	let revoked = 0;
+	for (const id of agentIds) {
+		const res = await revokeAgent(id);
+		if (res.error) {
+			failed.push(id);
+		} else {
+			revoked++;
 		}
-		return { revoked };
-	} catch {
-		return { revoked: 0 };
 	}
+	return { revoked, failed };
 }
 
 export async function getAgentActivity(params: {
@@ -145,7 +146,7 @@ export async function listPendingCibaRequests(): Promise<{
 
 export async function approveCibaRequest(
 	authReqId: string,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; code?: string }> {
 	try {
 		const res = await authFetch("/agent/ciba/approve", {
 			method: "POST",
@@ -153,7 +154,14 @@ export async function approveCibaRequest(
 		});
 		if (!res.ok) {
 			const json = await res.json();
-			return { error: json.message || "Failed to approve request" };
+			const message = json.message || "Failed to approve request";
+			const isFreshSession =
+				typeof message === "string" &&
+				message.includes("FRESH_SESSION_REQUIRED");
+			return {
+				error: message,
+				code: isFreshSession ? "FRESH_SESSION_REQUIRED" : undefined,
+			};
 		}
 		return {};
 	} catch (e: unknown) {
@@ -223,6 +231,30 @@ export async function revokeHost(hostId: string): Promise<{ error?: string }> {
 		return {};
 	} catch (e: unknown) {
 		return { error: e instanceof Error ? e.message : "Failed to revoke host" };
+	}
+}
+
+export async function createRemoteHost(body: {
+	name: string;
+	scopes?: string[];
+}): Promise<{
+	data?: { hostId: string; status: string };
+	error?: string;
+}> {
+	try {
+		const res = await fetch("/api/agent/host/create-remote", {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		});
+		const json = await res.json();
+		if (!res.ok) return { error: json.error || "Failed to create remote host" };
+		return { data: json };
+	} catch (e: unknown) {
+		return {
+			error: e instanceof Error ? e.message : "Failed to create remote host",
+		};
 	}
 }
 

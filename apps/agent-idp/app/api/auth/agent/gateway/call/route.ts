@@ -1,6 +1,14 @@
 import { and, eq } from "drizzle-orm";
+import {
+	callAgentAuthTool,
+	parseAgentAuthCredential,
+} from "@/lib/agent-auth-proxy";
 import { db } from "@/lib/db/drizzle";
-import { agentActivity, connection } from "@/lib/db/schema";
+import {
+	agentActivity,
+	connection,
+	connectionCredential,
+} from "@/lib/db/schema";
 import { callMCPTool, listMCPTools } from "@/lib/mcp-client";
 import { buildUrl, listOpenAPITools } from "@/lib/openapi-tools";
 import { resolveAuth } from "@/lib/resolve-auth";
@@ -127,6 +135,77 @@ export async function POST(request: Request) {
 				content: [{ type: "text", text: JSON.stringify(resultData) }],
 				isError: !response.ok,
 			});
+		} catch (err) {
+			const durationMs = Date.now() - startTime;
+			const errorMsg = err instanceof Error ? err.message : String(err);
+
+			await db.insert(agentActivity).values({
+				id: crypto.randomUUID(),
+				orgId,
+				agentId: agentSession.agent.id,
+				agentName: agentSession.agent.name,
+				userId,
+				tool: toolName,
+				provider: providerName,
+				status: "error",
+				durationMs,
+				error: errorMsg,
+			});
+
+			return Response.json(
+				{ error: `Failed to call tool: ${errorMsg}` },
+				{ status: 502 },
+			);
+		}
+	}
+
+	if (conn.type === "agent-auth" && conn.baseUrl) {
+		try {
+			const [cred] = await db
+				.select()
+				.from(connectionCredential)
+				.where(
+					and(
+						eq(connectionCredential.connectionId, conn.id),
+						eq(connectionCredential.orgId, orgId),
+						eq(connectionCredential.status, "active"),
+					),
+				)
+				.limit(1);
+
+			const credential = parseAgentAuthCredential(
+				cred?.metadata ?? null,
+				conn.baseUrl,
+			);
+			if (!credential) {
+				return Response.json(
+					{
+						error: `Agent Auth connection "${providerName}" is not connected. Set up the connection first.`,
+					},
+					{ status: 400 },
+				);
+			}
+
+			const result = await callAgentAuthTool(
+				credential,
+				toolName,
+				body.args ?? {},
+			);
+			const durationMs = Date.now() - startTime;
+
+			await db.insert(agentActivity).values({
+				id: crypto.randomUUID(),
+				orgId,
+				agentId: agentSession.agent.id,
+				agentName: agentSession.agent.name,
+				userId,
+				tool: toolName,
+				provider: providerName,
+				status: result.isError ? "error" : "success",
+				durationMs,
+			});
+
+			return Response.json(result);
 		} catch (err) {
 			const durationMs = Date.now() - startTime;
 			const errorMsg = err instanceof Error ? err.message : String(err);

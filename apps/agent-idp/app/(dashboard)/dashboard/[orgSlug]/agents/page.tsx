@@ -1,7 +1,5 @@
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth/auth";
 import { listConnectionsByOrg } from "@/lib/db/connections";
-import { getOrgAgents } from "@/lib/db/queries";
+import { getOrgAgents, getOrgBySlug, getSession } from "@/lib/db/queries";
 import { AgentsClient } from "./agents-client";
 
 export default async function AgentsPage({
@@ -10,12 +8,29 @@ export default async function AgentsPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const session = await auth.api.getSession({ headers: await headers() });
-	const orgs = await auth.api.listOrganizations({ headers: await headers() });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
-	const agents = org ? await getOrgAgents(org.id) : [];
+	const [session, org] = await Promise.all([
+		getSession(),
+		getOrgBySlug(orgSlug),
+	]);
 
-	const connections = org ? await listConnectionsByOrg(org.id) : [];
+	if (!org) {
+		return (
+			<div className="max-w-5xl mx-auto">
+				<AgentsClient
+					initialAgents={[]}
+					currentUserId=""
+					providerTools={[]}
+					orgId=""
+				/>
+			</div>
+		);
+	}
+
+	const [agents, connections] = await Promise.all([
+		getOrgAgents(org.id),
+		listConnectionsByOrg(org.id),
+	]);
+
 	const providerTools = connections
 		.filter((c) => c.status === "active")
 		.map((c) => ({
@@ -30,7 +45,7 @@ export default async function AgentsPage({
 				initialAgents={agents}
 				currentUserId={session?.user?.id ?? ""}
 				providerTools={providerTools}
-				orgId={org?.id ?? ""}
+				orgId={org.id}
 			/>
 		</div>
 	);

@@ -6,6 +6,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth/client";
+import { cn } from "@/lib/utils";
+
+type ApprovalMethod = "auto" | "ciba" | "device_authorization";
+
+const APPROVAL_METHOD_OPTIONS: {
+	id: ApprovalMethod;
+	label: string;
+	description: string;
+}[] = [
+	{
+		id: "auto",
+		label: "Use organization default",
+		description: "Follow the approval method set by your organization admin.",
+	},
+	{
+		id: "ciba",
+		label: "Push notification (CIBA)",
+		description:
+			"Receive approval requests in the browser extension or dashboard.",
+	},
+	{
+		id: "device_authorization",
+		label: "Browser verification",
+		description: "Open a browser URL to approve agent requests.",
+	},
+];
 
 interface SettingsClientProps {
 	orgName: string;
@@ -36,6 +62,9 @@ export function SettingsClient({
 	const [accountLoading, setAccountLoading] = useState(false);
 	const [accountSaved, setAccountSaved] = useState(false);
 	const [accountError, setAccountError] = useState<string | null>(null);
+	const [approvalMethod, setApprovalMethod] = useState<ApprovalMethod>("auto");
+	const [approvalMethodLoading, setApprovalMethodLoading] = useState(false);
+	const [approvalMethodSaved, setApprovalMethodSaved] = useState(false);
 
 	const [allowDynamicHosts, setAllowDynamicHosts] = useState(true);
 	const [securityLoading, setSecurityLoading] = useState(false);
@@ -55,9 +84,36 @@ export function SettingsClient({
 		setSecurityInitialized(true);
 	}, [orgId]);
 
+	const fetchUserPreference = useCallback(async () => {
+		try {
+			const res = await fetch("/api/user-preference");
+			if (res.ok) {
+				const data = await res.json();
+				setApprovalMethod(data.preferredApprovalMethod ?? "auto");
+			}
+		} catch {}
+	}, []);
+
 	useEffect(() => {
-		fetchSecuritySettings();
-	}, [fetchSecuritySettings]);
+		void fetchSecuritySettings();
+		void fetchUserPreference();
+	}, [fetchSecuritySettings, fetchUserPreference]);
+
+	const handleApprovalMethodSave = async () => {
+		setApprovalMethodLoading(true);
+		try {
+			const res = await fetch("/api/user-preference", {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ preferredApprovalMethod: approvalMethod }),
+			});
+			if (res.ok) {
+				setApprovalMethodSaved(true);
+				setTimeout(() => setApprovalMethodSaved(false), 2000);
+			}
+		} catch {}
+		setApprovalMethodLoading(false);
+	};
 
 	const handleOrgSave = async () => {
 		setOrgLoading(true);
@@ -241,36 +297,96 @@ export function SettingsClient({
 			)}
 
 			{activeTab === "account" && (
-				<div className="space-y-4 max-w-lg">
-					{accountError && (
-						<div className="p-3 border border-destructive/50 bg-destructive/10 text-sm text-destructive">
-							{accountError}
+				<div className="space-y-6 max-w-lg">
+					<div className="space-y-4">
+						{accountError && (
+							<div className="p-3 border border-destructive/50 bg-destructive/10 text-sm text-destructive">
+								{accountError}
+							</div>
+						)}
+						<div>
+							<Label className="text-xs">Name</Label>
+							<Input
+								value={name}
+								onChange={(e) => setName(e.target.value)}
+								className="mt-1"
+							/>
 						</div>
-					)}
-					<div>
-						<Label className="text-xs">Name</Label>
-						<Input
-							value={name}
-							onChange={(e) => setName(e.target.value)}
-							className="mt-1"
-						/>
+						<div>
+							<Label className="text-xs">Email</Label>
+							<Input value={userEmail} disabled className="mt-1 bg-muted" />
+						</div>
+						<Button
+							size="sm"
+							onClick={handleAccountSave}
+							disabled={accountLoading}
+						>
+							{accountLoading ? (
+								<Loader2 className="h-3 w-3 animate-spin mr-1" />
+							) : accountSaved ? (
+								<Check className="h-3 w-3 mr-1" />
+							) : null}
+							{accountSaved ? "Saved" : "Save Changes"}
+						</Button>
 					</div>
-					<div>
-						<Label className="text-xs">Email</Label>
-						<Input value={userEmail} disabled className="mt-1 bg-muted" />
+
+					<div className="border-t border-border/40 pt-6 space-y-3">
+						<div>
+							<h3 className="text-sm font-medium">Approval notifications</h3>
+							<p className="text-xs text-muted-foreground mt-0.5">
+								Choose how you want to be notified when an agent needs your
+								approval. This overrides the organization default.
+							</p>
+						</div>
+
+						<div className="space-y-1.5">
+							{APPROVAL_METHOD_OPTIONS.map((option) => (
+								<button
+									key={option.id}
+									type="button"
+									onClick={() => setApprovalMethod(option.id)}
+									className={cn(
+										"flex items-start gap-3 w-full p-3 border rounded-lg text-left transition-all",
+										approvalMethod === option.id
+											? "border-foreground/30 bg-foreground/3"
+											: "border-border/40 hover:border-foreground/15",
+									)}
+								>
+									<div
+										className={cn(
+											"mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors",
+											approvalMethod === option.id
+												? "border-foreground bg-foreground text-background"
+												: "border-border",
+										)}
+									>
+										{approvalMethod === option.id && (
+											<Check className="h-2 w-2" />
+										)}
+									</div>
+									<div>
+										<p className="text-xs font-medium">{option.label}</p>
+										<p className="text-[11px] text-muted-foreground/70 mt-0.5">
+											{option.description}
+										</p>
+									</div>
+								</button>
+							))}
+						</div>
+
+						<Button
+							size="sm"
+							onClick={handleApprovalMethodSave}
+							disabled={approvalMethodLoading}
+						>
+							{approvalMethodLoading ? (
+								<Loader2 className="h-3 w-3 animate-spin mr-1" />
+							) : approvalMethodSaved ? (
+								<Check className="h-3 w-3 mr-1" />
+							) : null}
+							{approvalMethodSaved ? "Saved" : "Save Preference"}
+						</Button>
 					</div>
-					<Button
-						size="sm"
-						onClick={handleAccountSave}
-						disabled={accountLoading}
-					>
-						{accountLoading ? (
-							<Loader2 className="h-3 w-3 animate-spin mr-1" />
-						) : accountSaved ? (
-							<Check className="h-3 w-3 mr-1" />
-						) : null}
-						{accountSaved ? "Saved" : "Save Changes"}
-					</Button>
 				</div>
 			)}
 		</div>

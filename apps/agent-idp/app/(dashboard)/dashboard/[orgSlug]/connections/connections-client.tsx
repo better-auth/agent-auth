@@ -10,6 +10,7 @@ import {
 	Plus,
 	Search,
 	Server,
+	Shield,
 	Trash2,
 	Unplug,
 	Wrench,
@@ -127,6 +128,8 @@ const OAUTH_PROVIDERS = [
 function getConnectionIcon(conn: UnifiedConnection) {
 	if (conn.builtinId === "github") return <GitHubIcon className="h-5 w-5" />;
 	if (conn.builtinId === "google") return <GoogleIcon className="h-5 w-5" />;
+	if (conn.type === "agent-auth")
+		return <Shield className="h-5 w-5 text-muted-foreground" />;
 	if (conn.type === "openapi")
 		return <FileJson className="h-5 w-5 text-muted-foreground" />;
 	return <Server className="h-5 w-5 text-muted-foreground" />;
@@ -134,6 +137,7 @@ function getConnectionIcon(conn: UnifiedConnection) {
 
 function getConnectionBadge(conn: UnifiedConnection) {
 	if (conn.type === "oauth") return "OAuth";
+	if (conn.type === "agent-auth") return "Agent Auth";
 	if (conn.type === "openapi") return "OpenAPI";
 	return "MCP";
 }
@@ -285,7 +289,7 @@ function ConnectionCard({
 					<p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
 						{isOAuth && conn.connected
 							? conn.identifier
-							: conn.mcpEndpoint || conn.name}
+							: conn.identifier || conn.mcpEndpoint || conn.name}
 					</p>
 				</div>
 				<div className="flex items-center gap-1.5 shrink-0">
@@ -739,6 +743,163 @@ function OpenAPIDialog({
 }
 
 // ---------------------------------------------------------------------------
+// AgentAuthDialog
+// ---------------------------------------------------------------------------
+
+function AgentAuthDialog({
+	open,
+	onOpenChange,
+	orgId,
+	onAdded,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	orgId: string;
+	onAdded: () => void;
+}) {
+	const [name, setName] = useState("");
+	const [displayName, setDisplayName] = useState("");
+	const [providerUrl, setProviderUrl] = useState("");
+	const [isLoading, setIsLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const resetForm = () => {
+		setName("");
+		setDisplayName("");
+		setProviderUrl("");
+		setError(null);
+	};
+
+	const handleOpenChange = (next: boolean) => {
+		if (!next) resetForm();
+		onOpenChange(next);
+	};
+
+	const handleSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		setIsLoading(true);
+		setError(null);
+
+		try {
+			const res = await fetch("/api/connections/agent-auth", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name: name || displayName.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+					displayName: displayName || name,
+					providerUrl,
+					orgId,
+				}),
+			});
+
+			if (!res.ok) {
+				const data = await res.json();
+				setError(data.error || "Failed to add Agent Auth connection");
+			} else {
+				onAdded();
+				handleOpenChange(false);
+			}
+		} catch {
+			setError("Failed to add Agent Auth connection");
+		}
+		setIsLoading(false);
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={handleOpenChange}>
+			<DialogContent className="max-w-md">
+				<DialogHeader>
+					<DialogTitle>Add Agent Auth Connection</DialogTitle>
+					<DialogDescription>
+						Connect to a remote Agent Auth provider. The IDP will proxy tool
+						calls through its gateway.
+					</DialogDescription>
+				</DialogHeader>
+				<form onSubmit={handleSubmit} className="p-6 pt-4 space-y-3">
+					{error && (
+						<div className="p-2 rounded-md border border-destructive/50 bg-destructive/10 text-xs text-destructive">
+							{error}
+						</div>
+					)}
+
+					<div className="grid grid-cols-2 gap-3">
+						<div>
+							<Label className="text-xs">Display Name</Label>
+							<Input
+								value={displayName}
+								onChange={(e) => {
+									setDisplayName(e.target.value);
+									if (!name) {
+										setName(
+											e.target.value
+												.toLowerCase()
+												.replace(/[^a-z0-9-]/g, "-")
+												.replace(/-+/g, "-"),
+										);
+									}
+								}}
+								placeholder="Smart Home"
+								required
+								className="h-8 text-sm mt-1"
+							/>
+						</div>
+						<div>
+							<Label className="text-xs">Slug</Label>
+							<Input
+								value={name}
+								onChange={(e) =>
+									setName(
+										e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+									)
+								}
+								placeholder="smart-home"
+								required
+								className="h-8 text-sm mt-1"
+							/>
+						</div>
+					</div>
+
+					<div>
+						<Label className="text-xs">Provider URL</Label>
+						<Input
+							value={providerUrl}
+							onChange={(e) => setProviderUrl(e.target.value)}
+							placeholder="https://provider.example.com"
+							required
+							type="url"
+							className="h-8 text-sm mt-1"
+						/>
+						<p className="text-[10px] text-muted-foreground/70 mt-1">
+							The URL must serve a{" "}
+							<code className="font-mono text-[10px]">
+								/.well-known/agent-configuration
+							</code>{" "}
+							endpoint.
+						</p>
+					</div>
+
+					<div className="flex gap-2 pt-1">
+						<Button
+							type="submit"
+							size="sm"
+							disabled={isLoading}
+							className="flex-1"
+						>
+							{isLoading ? (
+								<Loader2 className="h-3 w-3 animate-spin mr-1" />
+							) : (
+								<Plus className="h-3 w-3 mr-1" />
+							)}
+							Add Connection
+						</Button>
+					</div>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+// ---------------------------------------------------------------------------
 // OAuthDialog
 // ---------------------------------------------------------------------------
 
@@ -810,7 +971,7 @@ export function ConnectionsClient({
 }) {
 	const router = useRouter();
 	const [dialogMode, setDialogMode] = useState<
-		null | "oauth" | "mcp" | "openapi"
+		null | "oauth" | "mcp" | "openapi" | "agent-auth"
 	>(null);
 
 	const connections = initialConnections;
@@ -846,6 +1007,10 @@ export function ConnectionsClient({
 				<DropdownMenuItem onClick={() => setDialogMode("openapi")}>
 					<FileJson className="h-4 w-4" />
 					OpenAPI
+				</DropdownMenuItem>
+				<DropdownMenuItem onClick={() => setDialogMode("agent-auth")}>
+					<Shield className="h-4 w-4" />
+					Agent Auth
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -884,9 +1049,9 @@ export function ConnectionsClient({
 				<div className="flex items-start gap-2.5 text-xs text-muted-foreground/70 px-1">
 					<Cable className="h-3.5 w-3.5 shrink-0 mt-0.5" />
 					<p>
-						OAuth providers are connected per-user. MCP and OpenAPI connections
-						are shared across the organization. Tokens are stored securely and
-						used only when agents make tool calls on your behalf.
+						OAuth providers are connected per-user. MCP, OpenAPI, and Agent Auth
+						connections are shared across the organization. The IDP proxies tool
+						calls through its gateway using stored credentials.
 					</p>
 				</div>
 			)}
@@ -909,6 +1074,14 @@ export function ConnectionsClient({
 					/>
 					<OpenAPIDialog
 						open={dialogMode === "openapi"}
+						onOpenChange={(open) => {
+							if (!open) setDialogMode(null);
+						}}
+						orgId={orgId}
+						onAdded={handleMutate}
+					/>
+					<AgentAuthDialog
+						open={dialogMode === "agent-auth"}
 						onOpenChange={(open) => {
 							if (!open) setDialogMode(null);
 						}}

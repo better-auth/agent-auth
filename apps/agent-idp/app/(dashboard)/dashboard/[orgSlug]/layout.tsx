@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Sidebar from "@/components/dashboard/sidebar";
 import { auth } from "@/lib/auth/auth";
+import { getOrgBySlug, getSession } from "@/lib/db/queries";
 
 export default async function OrgDashboardLayout({
 	children,
@@ -11,16 +12,20 @@ export default async function OrgDashboardLayout({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const session = await auth.api.getSession({ headers: await headers() });
+	const [session, org] = await Promise.all([
+		getSession(),
+		getOrgBySlug(orgSlug),
+	]);
 	if (!session) throw redirect("/sign-in");
-	const orgs = await auth.api.listOrganizations({ headers: await headers() });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
 	if (!org) throw redirect("/onboarding");
+
+	const orgs = await auth.api.listOrganizations({ headers: await headers() });
 	const orgList = (orgs || []).map((o: any) => ({
 		id: o.id,
 		name: o.name,
 		slug: o.slug,
 	}));
+
 	return (
 		<div className="flex h-dvh">
 			<Sidebar

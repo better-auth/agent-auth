@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Copy } from "lucide-react";
+import { ArrowUpRight, Check, Copy } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { highlight } from "sugar-high";
 import {
@@ -171,18 +172,21 @@ function CLIContent({ baseUrl }: { baseUrl: string }) {
 // Dialog
 // ---------------------------------------------------------------------------
 
-type Tab = "mcp" | "cli" | "sdk";
+type Tab = "mcp" | "cli" | "sdk" | "manual";
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: "mcp", label: "MCP" },
 	{ id: "cli", label: "CLI" },
 	{ id: "sdk", label: "SDK" },
+	{ id: "manual", label: "Manual" },
 ];
 
 export function ConnectDialog({
 	children,
+	orgSlug,
 }: {
 	orgId?: string;
+	orgSlug?: string;
 	children: React.ReactNode;
 }) {
 	const [tab, setTab] = useState<Tab>("mcp");
@@ -247,6 +251,29 @@ export function ConnectDialog({
 								Programmatic agent auth for custom clients and server-to-server
 								flows.
 							</p>
+						</div>
+					)}
+					{tab === "manual" && (
+						<div className="space-y-3">
+							<p className="text-[12px] text-muted-foreground leading-relaxed">
+								Create a host manually with pre-authorized scopes, then enroll
+								your device or set up a remote MCP server.
+							</p>
+							<Link
+								href={orgSlug ? `/dashboard/${orgSlug}/hosts` : "#"}
+								className="flex items-center justify-between rounded-lg border border-border/60 p-4 hover:border-foreground/20 hover:bg-muted/30 transition-all group"
+							>
+								<div>
+									<p className="text-sm font-medium group-hover:text-foreground transition-colors">
+										Go to Hosts
+									</p>
+									<p className="text-[12px] text-muted-foreground mt-0.5">
+										Create local or remote hosts with enrollment tokens and
+										scoped permissions.
+									</p>
+								</div>
+								<ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors" />
+							</Link>
 						</div>
 					)}
 				</div>

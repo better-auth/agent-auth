@@ -1,6 +1,11 @@
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth/auth";
-import { getOrgAvailableScopes, getOrgHosts } from "@/lib/db/queries";
+import {
+	getOrgAvailableScopes,
+	getOrgBySlug,
+	getOrgHosts,
+	getSession,
+} from "@/lib/db/queries";
 import { HostsClient } from "./hosts-client";
 
 export default async function HostsPage({
@@ -9,35 +14,35 @@ export default async function HostsPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const reqHeaders = await headers();
-	const session = await auth.api.getSession({ headers: reqHeaders });
-	const orgs = await auth.api.listOrganizations({ headers: reqHeaders });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
+	const [session, org] = await Promise.all([
+		getSession(),
+		getOrgBySlug(orgSlug),
+	]);
 	const orgId = org?.id ?? "";
 
-	const canReadAll = await auth.api.hasPermission({
-		headers: reqHeaders,
-		body: { permissions: { host: ["readAll"] } },
-	});
-	const canCreate = await auth.api.hasPermission({
-		headers: reqHeaders,
-		body: { permissions: { host: ["create"] } },
-	});
-	const canDelete = await auth.api.hasPermission({
-		headers: reqHeaders,
-		body: { permissions: { host: ["delete"] } },
-	});
+	const reqHeaders = await headers();
+	const [canReadAll, canCreate, canDelete] = await Promise.all([
+		auth.api.hasPermission({
+			headers: reqHeaders,
+			body: { permissions: { host: ["readAll"] } },
+		}),
+		auth.api.hasPermission({
+			headers: reqHeaders,
+			body: { permissions: { host: ["create"] } },
+		}),
+		auth.api.hasPermission({
+			headers: reqHeaders,
+			body: { permissions: { host: ["delete"] } },
+		}),
+	]);
 
-	const allHosts = orgId ? await getOrgHosts(orgId) : [];
+	const [allHosts, availableScopes] = orgId
+		? await Promise.all([getOrgHosts(orgId), getOrgAvailableScopes(orgId)])
+		: [[], []];
 
-	const hosts =
-		canReadAll?.success
-			? allHosts
-			: allHosts.filter((h) => h.userId === session?.user?.id);
-
-	const availableScopes = orgId
-		? await getOrgAvailableScopes(orgId)
-		: [];
+	const hosts = canReadAll?.success
+		? allHosts
+		: allHosts.filter((h) => h.userId === session?.user?.id);
 
 	return (
 		<div className="max-w-5xl mx-auto">

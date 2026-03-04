@@ -1,4 +1,4 @@
-import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { organization, user } from "./better-auth-schema";
 
 // Unified connection model
@@ -48,6 +48,50 @@ export const connectionCredential = pgTable("connection_credential", {
 	metadata: text("metadata"),
 	status: text("status").notNull().default("active"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
+	updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const mcpAgentConnection = pgTable("mcp_agent_connection", {
+	agentId: text("agent_id").primaryKey(),
+	appUrl: text("app_url").notNull(),
+	name: text("name").notNull(),
+	scopes: jsonb("scopes").notNull().$type<string[]>().default([]),
+	provider: text("provider"),
+	keypair: jsonb("keypair").notNull().$type<Record<string, unknown>>(),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const mcpHostKeypair = pgTable("mcp_host_keypair", {
+	appUrl: text("app_url").primaryKey(),
+	hostId: text("host_id").notNull(),
+	keypair: jsonb("keypair").notNull().$type<{
+		privateKey: Record<string, unknown>;
+		publicKey: Record<string, unknown>;
+		kid: string;
+	}>(),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const mcpPendingFlow = pgTable("mcp_pending_flow", {
+	appUrl: text("app_url").primaryKey(),
+	deviceCode: text("device_code").notNull(),
+	clientId: text("client_id").notNull(),
+	name: text("name").notNull(),
+	scopes: jsonb("scopes").notNull().$type<string[]>().default([]),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const mcpProviderConfig = pgTable("mcp_provider_config", {
+	name: text("name").primaryKey(),
+	config: jsonb("config").notNull().$type<Record<string, unknown>>(),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const userPreference = pgTable("user_preference", {
+	userId: text("user_id")
+		.primaryKey()
+		.references(() => user.id, { onDelete: "cascade" }),
+	preferredApprovalMethod: text("preferred_approval_method"),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

@@ -8,8 +8,12 @@ import {
 	ChevronRight,
 	ClipboardCopy,
 	Clock,
+	Cloud,
+	ExternalLink,
 	KeyRound,
+	Link,
 	Loader2,
+	Monitor,
 	Plus,
 	Search,
 	Shield,
@@ -27,8 +31,19 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { createHost, revokeHost, updateHost } from "@/lib/auth/agent-api";
+import {
+	createHost,
+	createRemoteHost,
+	revokeHost,
+	updateHost,
+} from "@/lib/auth/agent-api";
 import { cn } from "@/lib/utils";
 
 type Host = {
@@ -40,6 +55,7 @@ type Host = {
 	activeAgents: number;
 	createdAt: string | null;
 	lastUsedAt: string | null;
+	isRemote: boolean;
 };
 
 type AvailableScope = {
@@ -449,6 +465,8 @@ function HostCard({
 	const [saving, setSaving] = useState(false);
 	const [revoking, setRevoking] = useState(false);
 	const [confirmRevoke, setConfirmRevoke] = useState(false);
+	const [revokeError, setRevokeError] = useState<string | null>(null);
+	const [showConnect, setShowConnect] = useState(false);
 
 	const isActive = host.status === "active";
 	const isRevoked = host.status === "revoked";
@@ -457,8 +475,11 @@ function HostCard({
 
 	const handleRevoke = async () => {
 		setRevoking(true);
+		setRevokeError(null);
 		const res = await revokeHost(host.id);
-		if (!res.error) {
+		if (res.error) {
+			setRevokeError(res.error);
+		} else {
 			onMutate();
 		}
 		setRevoking(false);
@@ -553,6 +574,16 @@ function HostCard({
 					</div>
 				</div>
 				<div className="flex items-center gap-1.5 shrink-0">
+					{host.isRemote && !isRevoked && (
+						<button
+							type="button"
+							onClick={() => setShowConnect(true)}
+							className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+						>
+							<ExternalLink className="h-3 w-3" />
+							Connect
+						</button>
+					)}
 					{!isRevoked && (
 						<button
 							type="button"
@@ -567,45 +598,51 @@ function HostCard({
 							)}
 						</button>
 					)}
-				{!isRevoked &&
-					canDelete &&
-					(confirmRevoke ? (
-						<div className="flex gap-1">
-							<Button
-								variant="destructive"
-								size="sm"
-								className="h-7 text-xs"
-								onClick={handleRevoke}
-								disabled={revoking}
-							>
-								{revoking ? (
-									<Loader2 className="h-3 w-3 animate-spin" />
-								) : (
-									"Confirm"
-								)}
-							</Button>
+					{!isRevoked &&
+						canDelete &&
+						(confirmRevoke ? (
+							<div className="flex gap-1">
+								<Button
+									variant="destructive"
+									size="sm"
+									className="h-7 text-xs"
+									onClick={handleRevoke}
+									disabled={revoking}
+								>
+									{revoking ? (
+										<Loader2 className="h-3 w-3 animate-spin" />
+									) : (
+										"Confirm"
+									)}
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-7 text-xs"
+									onClick={() => setConfirmRevoke(false)}
+								>
+									Cancel
+								</Button>
+							</div>
+						) : (
 							<Button
 								variant="ghost"
 								size="sm"
-								className="h-7 text-xs"
-								onClick={() => setConfirmRevoke(false)}
+								onClick={() => setConfirmRevoke(true)}
+								className="h-7 px-2 text-muted-foreground hover:text-destructive"
+								title="Revoke host and all its agents"
 							>
-								Cancel
+								<Ban className="h-3 w-3" />
 							</Button>
-						</div>
-					) : (
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => setConfirmRevoke(true)}
-							className="h-7 px-2 text-muted-foreground hover:text-destructive"
-							title="Revoke host and all its agents"
-						>
-							<Ban className="h-3 w-3" />
-						</Button>
-					))}
+						))}
 				</div>
 			</div>
+
+			{revokeError && (
+				<div className="mx-4 mb-2 p-2 border border-destructive/30 bg-destructive/5 text-[11px] text-destructive rounded-md">
+					Failed to revoke: {revokeError}
+				</div>
+			)}
 
 			{expanded && !isRevoked && (
 				<ScopeEditor
@@ -615,11 +652,19 @@ function HostCard({
 					saving={saving}
 				/>
 			)}
+
+			{host.isRemote && (
+				<ConnectRemoteHostDialog
+					open={showConnect}
+					onOpenChange={setShowConnect}
+					host={host}
+				/>
+			)}
 		</div>
 	);
 }
 
-function CreateHostDialog({
+function CreateLocalHostDialog({
 	open,
 	onOpenChange,
 	availableScopes,
@@ -944,6 +989,560 @@ function CreateHostDialog({
 	);
 }
 
+function CreatedRemoteHostView({
+	hostId,
+	hostName,
+	status,
+	onDone,
+}: {
+	hostId: string;
+	hostName: string;
+	status: string;
+	onDone: () => void;
+}) {
+	const [client, setClient] = useState<McpClient>("cursor");
+	const [copied, setCopied] = useState<"url" | "config" | null>(null);
+
+	const mcpUrl = `${window.location.origin}/api/host/${hostId}/mcp`;
+	const config = getRemoteMcpConfig(client, mcpUrl, hostName);
+
+	const handleCopy = (text: string, type: "url" | "config") => {
+		navigator.clipboard.writeText(text);
+		setCopied(type);
+		setTimeout(() => setCopied(null), 2000);
+	};
+
+	return (
+		<>
+			<DialogHeader>
+				<DialogTitle>Remote Host Created</DialogTitle>
+				<DialogDescription>
+					The host is active and ready to use. Add the configuration below to
+					your editor to connect.
+				</DialogDescription>
+			</DialogHeader>
+			<div className="px-6 py-4 space-y-4">
+				<div className="space-y-1.5">
+					<label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+						<Link className="h-3 w-3" />
+						MCP Server URL
+					</label>
+					<div className="relative group">
+						<code className="block rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 text-xs font-mono text-foreground break-all pr-10">
+							{mcpUrl}
+						</code>
+						<button
+							type="button"
+							onClick={() => handleCopy(mcpUrl, "url")}
+							className="absolute right-2 top-2 p-1 rounded hover:bg-muted/60 transition-colors"
+							title="Copy URL"
+						>
+							{copied === "url" ? (
+								<Check className="h-3.5 w-3.5 text-emerald-500" />
+							) : (
+								<ClipboardCopy className="h-3.5 w-3.5 text-muted-foreground" />
+							)}
+						</button>
+					</div>
+				</div>
+
+				<div className="space-y-1.5">
+					<label className="text-xs font-medium text-foreground">
+						Editor Configuration
+					</label>
+					<div className="flex gap-1 p-0.5 bg-muted/40 rounded-md w-fit">
+						{MCP_CLIENTS.map((c) => (
+							<button
+								key={c.id}
+								type="button"
+								onClick={() => {
+									setClient(c.id);
+									setCopied(null);
+								}}
+								className={cn(
+									"px-2.5 py-1 text-[11px] font-medium rounded transition-all",
+									client === c.id
+										? "bg-background text-foreground shadow-sm"
+										: "text-muted-foreground hover:text-foreground",
+								)}
+							>
+								{c.label}
+							</button>
+						))}
+					</div>
+					<div className="rounded-md border border-border/60 overflow-hidden">
+						<div className="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/40">
+							<span className="text-[10px] font-mono text-muted-foreground/70 uppercase tracking-wider">
+								{config.label}
+							</span>
+							<button
+								type="button"
+								onClick={() => handleCopy(config.code, "config")}
+								className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted/60"
+							>
+								{copied === "config" ? (
+									<>
+										<Check className="h-3 w-3 text-emerald-500" />
+										<span className="text-emerald-500">Copied</span>
+									</>
+								) : (
+									<>
+										<ClipboardCopy className="h-3 w-3" />
+										<span>Copy</span>
+									</>
+								)}
+							</button>
+						</div>
+						<pre className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap break-all bg-card/20">
+							{config.code}
+						</pre>
+					</div>
+				</div>
+
+				<div className="flex items-start gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+					<Cloud className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+					<div className="text-xs text-emerald-700 dark:text-emerald-300 space-y-0.5">
+						<p className="font-medium">Status: {status}</p>
+						<p className="text-emerald-600/80 dark:text-emerald-400/80">
+							This host is managed server-side. No device enrollment required.
+						</p>
+					</div>
+				</div>
+			</div>
+			<div className="flex justify-end px-6 pb-6">
+				<Button size="sm" className="h-8 text-xs" onClick={onDone}>
+					Done
+				</Button>
+			</div>
+		</>
+	);
+}
+
+function CreateRemoteHostDialog({
+	open,
+	onOpenChange,
+	availableScopes,
+	onCreated,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	availableScopes: AvailableScope[];
+	onCreated: () => void;
+}) {
+	const [name, setName] = useState("");
+	const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
+	const [creating, setCreating] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [createdHost, setCreatedHost] = useState<{
+		hostId: string;
+		status: string;
+	} | null>(null);
+
+	const reset = useCallback(() => {
+		setName("");
+		setSelectedScopes([]);
+		setCreating(false);
+		setError(null);
+		setCreatedHost(null);
+	}, []);
+
+	const handleOpenChange = (open: boolean) => {
+		if (!open) reset();
+		onOpenChange(open);
+	};
+
+	const handleCreate = async () => {
+		if (!name.trim()) {
+			setError("Name is required.");
+			return;
+		}
+		setCreating(true);
+		setError(null);
+
+		const res = await createRemoteHost({
+			name: name.trim(),
+			scopes: selectedScopes.length > 0 ? selectedScopes : undefined,
+		});
+
+		if (res.error) {
+			setError(res.error);
+			setCreating(false);
+			return;
+		}
+
+		if (res.data) {
+			setCreatedHost(res.data);
+			onCreated();
+		}
+		setCreating(false);
+	};
+
+	const providers = [...new Set(availableScopes.map((s) => s.provider))].sort();
+
+	const toggleScope = (scope: string) => {
+		setSelectedScopes((prev) =>
+			prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+		);
+	};
+
+	const toggleWildcard = (provider: string) => {
+		const wildcard = `${provider}.*`;
+		setSelectedScopes((prev) =>
+			prev.includes(wildcard)
+				? prev.filter((s) => s !== wildcard)
+				: [...prev, wildcard],
+		);
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={handleOpenChange}>
+			<DialogContent className="max-w-md">
+				{!createdHost ? (
+					<>
+						<DialogHeader>
+							<DialogTitle>Create Remote Host</DialogTitle>
+							<DialogDescription>
+								The keypair is generated and stored on the server. Use this for
+								cloud-hosted agents that don&apos;t need local device
+								enrollment.
+							</DialogDescription>
+						</DialogHeader>
+						<div className="px-6 py-4 space-y-4">
+							<div className="space-y-1.5">
+								<label className="text-xs font-medium text-foreground">
+									Host Name
+								</label>
+								<Input
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+									placeholder="e.g. Cloud Agent Service"
+									className="h-8 text-sm"
+									autoFocus
+									onKeyDown={(e) => {
+										if (e.key === "Enter") {
+											e.preventDefault();
+											void handleCreate();
+										}
+									}}
+								/>
+							</div>
+
+							{providers.length > 0 && (
+								<div className="space-y-1.5">
+									<label className="text-xs font-medium text-foreground">
+										Pre-authorized Scopes
+										<span className="text-muted-foreground font-normal ml-1">
+											(optional)
+										</span>
+									</label>
+									<div className="max-h-48 overflow-y-auto space-y-2 rounded-md border border-border/40 p-2">
+										{providers.map((provider) => {
+											const providerScopes = availableScopes.filter(
+												(s) => s.provider === provider,
+											);
+											const wildcard = `${provider}.*`;
+											const wildcardActive = selectedScopes.includes(wildcard);
+
+											return (
+												<div key={provider} className="space-y-1">
+													<div className="flex items-center justify-between">
+														<span className="text-[11px] font-mono font-medium text-foreground/80">
+															{provider}
+														</span>
+														<button
+															type="button"
+															onClick={() => toggleWildcard(provider)}
+															className={cn(
+																"text-[10px] px-1.5 py-0.5 rounded transition-colors font-mono",
+																wildcardActive
+																	? "bg-foreground text-background"
+																	: "text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-muted/60",
+															)}
+														>
+															{wildcardActive ? "All granted" : "Grant all"}
+														</button>
+													</div>
+													{providerScopes.map((scope) => {
+														const active =
+															selectedScopes.includes(scope.name) ||
+															wildcardActive;
+														return (
+															<button
+																key={scope.name}
+																type="button"
+																onClick={() => toggleScope(scope.name)}
+																disabled={wildcardActive}
+																className={cn(
+																	"flex items-center gap-2 w-full rounded px-2 py-1 text-left transition-all text-[11px]",
+																	active
+																		? "bg-foreground/5"
+																		: "hover:bg-muted/20",
+																	wildcardActive && "opacity-50 cursor-default",
+																)}
+															>
+																<div
+																	className={cn(
+																		"flex h-3 w-3 shrink-0 items-center justify-center rounded-sm border transition-colors",
+																		active
+																			? "border-foreground bg-foreground text-background"
+																			: "border-border/60",
+																	)}
+																>
+																	{active && <Check className="h-2 w-2" />}
+																</div>
+																<span className="font-mono truncate">
+																	{scope.name}
+																</span>
+															</button>
+														);
+													})}
+												</div>
+											);
+										})}
+									</div>
+								</div>
+							)}
+
+							{error && <p className="text-xs text-red-500">{error}</p>}
+						</div>
+						<div className="flex justify-end gap-2 px-6 pb-6">
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-8 text-xs"
+								onClick={() => handleOpenChange(false)}
+							>
+								Cancel
+							</Button>
+							<Button
+								size="sm"
+								className="h-8 text-xs"
+								onClick={handleCreate}
+								disabled={creating || !name.trim()}
+							>
+								{creating && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+								Create Host
+							</Button>
+						</div>
+					</>
+				) : (
+					<CreatedRemoteHostView
+						hostId={createdHost.hostId}
+						hostName={name}
+						status={createdHost.status}
+						onDone={() => handleOpenChange(false)}
+					/>
+				)}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+type McpClient = "cursor" | "claude-code" | "windsurf" | "opencode";
+
+const MCP_CLIENTS: { id: McpClient; label: string }[] = [
+	{ id: "cursor", label: "Cursor" },
+	{ id: "claude-code", label: "Claude Code" },
+	{ id: "windsurf", label: "Windsurf" },
+	{ id: "opencode", label: "OpenCode" },
+];
+
+function getRemoteMcpConfig(
+	client: McpClient,
+	mcpUrl: string,
+	hostName: string,
+) {
+	const serverName = hostName
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "");
+	const name = serverName || "remote-host";
+
+	switch (client) {
+		case "cursor":
+			return {
+				label: ".cursor/mcp.json",
+				code: `{
+  "mcpServers": {
+    "${name}": {
+      "url": "${mcpUrl}"
+    }
+  }
+}`,
+			};
+		case "claude-code":
+			return {
+				label: ".claude/settings.json",
+				code: `{
+  "mcpServers": {
+    "${name}": {
+      "url": "${mcpUrl}"
+    }
+  }
+}`,
+			};
+		case "windsurf":
+			return {
+				label: "~/.codeium/windsurf/mcp_config.json",
+				code: `{
+  "mcpServers": {
+    "${name}": {
+      "url": "${mcpUrl}"
+    }
+  }
+}`,
+			};
+		case "opencode":
+			return {
+				label: "opencode.json",
+				code: `{
+  "mcp": {
+    "${name}": {
+      "type": "remote",
+      "url": "${mcpUrl}"
+    }
+  }
+}`,
+			};
+	}
+}
+
+function ConnectRemoteHostDialog({
+	open,
+	onOpenChange,
+	host,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	host: Host;
+}) {
+	const [client, setClient] = useState<McpClient>("cursor");
+	const [copied, setCopied] = useState<"url" | "config" | null>(null);
+
+	const mcpUrl = `${window.location.origin}/api/host/${host.id}/mcp`;
+	const config = getRemoteMcpConfig(client, mcpUrl, host.name ?? "");
+
+	const handleCopy = (text: string, type: "url" | "config") => {
+		navigator.clipboard.writeText(text);
+		setCopied(type);
+		setTimeout(() => setCopied(null), 2000);
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-lg">
+				<DialogHeader>
+					<DialogTitle>Connect to {host.name ?? "Remote Host"}</DialogTitle>
+					<DialogDescription>
+						Add this configuration to your editor to connect to this remote MCP
+						server. No device enrollment is needed — agents authenticate via
+						OAuth.
+					</DialogDescription>
+				</DialogHeader>
+				<div className="px-6 py-4 space-y-4">
+					<div className="space-y-1.5">
+						<label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+							<Link className="h-3 w-3" />
+							MCP Server URL
+						</label>
+						<div className="relative group">
+							<code className="block rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 text-xs font-mono text-foreground break-all pr-10">
+								{mcpUrl}
+							</code>
+							<button
+								type="button"
+								onClick={() => handleCopy(mcpUrl, "url")}
+								className="absolute right-2 top-2 p-1 rounded hover:bg-muted/60 transition-colors"
+								title="Copy URL"
+							>
+								{copied === "url" ? (
+									<Check className="h-3.5 w-3.5 text-emerald-500" />
+								) : (
+									<ClipboardCopy className="h-3.5 w-3.5 text-muted-foreground" />
+								)}
+							</button>
+						</div>
+					</div>
+
+					<div className="space-y-1.5">
+						<label className="text-xs font-medium text-foreground">
+							Editor Configuration
+						</label>
+						<div className="flex gap-1 p-0.5 bg-muted/40 rounded-md w-fit">
+							{MCP_CLIENTS.map((c) => (
+								<button
+									key={c.id}
+									type="button"
+									onClick={() => {
+										setClient(c.id);
+										setCopied(null);
+									}}
+									className={cn(
+										"px-2.5 py-1 text-[11px] font-medium rounded transition-all",
+										client === c.id
+											? "bg-background text-foreground shadow-sm"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
+									{c.label}
+								</button>
+							))}
+						</div>
+						<div className="rounded-md border border-border/60 overflow-hidden">
+							<div className="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b border-border/40">
+								<span className="text-[10px] font-mono text-muted-foreground/70 uppercase tracking-wider">
+									{config.label}
+								</span>
+								<button
+									type="button"
+									onClick={() => handleCopy(config.code, "config")}
+									className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted/60"
+								>
+									{copied === "config" ? (
+										<>
+											<Check className="h-3 w-3 text-emerald-500" />
+											<span className="text-emerald-500">Copied</span>
+										</>
+									) : (
+										<>
+											<ClipboardCopy className="h-3 w-3" />
+											<span>Copy</span>
+										</>
+									)}
+								</button>
+							</div>
+							<pre className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap break-all bg-card/20">
+								{config.code}
+							</pre>
+						</div>
+					</div>
+
+					<div className="flex items-start gap-2 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2.5">
+						<Cloud className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+						<div className="text-xs text-blue-700 dark:text-blue-300 space-y-0.5">
+							<p className="font-medium">Remote MCP Server</p>
+							<p className="text-blue-600/80 dark:text-blue-400/80">
+								This host runs on the server. Your editor will connect directly
+								via HTTP — no local CLI or enrollment needed. Agents
+								authenticate through OAuth when they connect.
+							</p>
+						</div>
+					</div>
+				</div>
+				<div className="flex justify-end px-6 pb-6">
+					<Button
+						size="sm"
+						className="h-8 text-xs"
+						onClick={() => onOpenChange(false)}
+					>
+						Done
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
 export interface HostPermissions {
 	canCreate: boolean;
 	canDelete: boolean;
@@ -964,7 +1563,7 @@ export function HostsClient({
 	const router = useRouter();
 	const [refreshing, startTransition] = useTransition();
 	const [showRevoked, setShowRevoked] = useState(false);
-	const [createDialogOpen, setCreateDialogOpen] = useState(false);
+	const [dialogMode, setDialogMode] = useState<null | "local" | "remote">(null);
 
 	const hosts = initialHosts;
 	const availableScopes = initialAvailableScopes;
@@ -1002,21 +1601,42 @@ export function HostsClient({
 						Refresh
 					</Button>
 					{permissions.canCreate && (
-						<Button
-							size="sm"
-							className="h-8 text-xs"
-							onClick={() => setCreateDialogOpen(true)}
-						>
-							<Plus className="h-3 w-3 mr-1" />
-							Create Host
-						</Button>
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button size="sm" className="h-8 text-xs">
+									<Plus className="h-3 w-3 mr-1.5" />
+									Create Host
+									<ChevronDown className="h-3 w-3 ml-1.5" />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end">
+								<DropdownMenuItem onClick={() => setDialogMode("local")}>
+									<Monitor className="h-4 w-4" />
+									Local Host
+								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => setDialogMode("remote")}>
+									<Cloud className="h-4 w-4" />
+									Remote Host
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
 					)}
 				</div>
 			</div>
 
-			<CreateHostDialog
-				open={createDialogOpen}
-				onOpenChange={setCreateDialogOpen}
+			<CreateLocalHostDialog
+				open={dialogMode === "local"}
+				onOpenChange={(open) => {
+					if (!open) setDialogMode(null);
+				}}
+				availableScopes={availableScopes}
+				onCreated={refresh}
+			/>
+			<CreateRemoteHostDialog
+				open={dialogMode === "remote"}
+				onOpenChange={(open) => {
+					if (!open) setDialogMode(null);
+				}}
 				availableScopes={availableScopes}
 				onCreated={refresh}
 			/>
@@ -1035,31 +1655,42 @@ export function HostsClient({
 							: "Hosts are trusted devices that can create and manage agents. Ask an admin to create one for you."}
 					</p>
 					{permissions.canCreate && (
-						<Button
-							size="sm"
-							className="h-8 text-xs"
-							onClick={() => setCreateDialogOpen(true)}
-						>
-							<Plus className="h-3 w-3 mr-1" />
-							Create Host
-						</Button>
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button size="sm" className="h-8 text-xs">
+									<Plus className="h-3 w-3 mr-1.5" />
+									Create Host
+									<ChevronDown className="h-3 w-3 ml-1.5" />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="center">
+								<DropdownMenuItem onClick={() => setDialogMode("local")}>
+									<Monitor className="h-4 w-4" />
+									Local Host
+								</DropdownMenuItem>
+								<DropdownMenuItem onClick={() => setDialogMode("remote")}>
+									<Cloud className="h-4 w-4" />
+									Remote Host
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
 					)}
 				</div>
 			) : (
 				<>
-				{activeHosts.length > 0 && (
-					<div className="space-y-2">
-						{activeHosts.map((host) => (
-							<HostCard
-								key={host.id}
-								host={host}
-								availableScopes={availableScopes}
-								onMutate={refresh}
-								canDelete={permissions.canDelete}
-							/>
-						))}
-					</div>
-				)}
+					{activeHosts.length > 0 && (
+						<div className="space-y-2">
+							{activeHosts.map((host) => (
+								<HostCard
+									key={host.id}
+									host={host}
+									availableScopes={availableScopes}
+									onMutate={refresh}
+									canDelete={permissions.canDelete}
+								/>
+							))}
+						</div>
+					)}
 
 					{revokedHosts.length > 0 && (
 						<div className="pt-2">
@@ -1084,15 +1715,15 @@ export function HostsClient({
 
 							{showRevoked && (
 								<div className="space-y-2 mt-2">
-							{revokedHosts.map((host) => (
-									<HostCard
-										key={host.id}
-										host={host}
-										availableScopes={availableScopes}
-										onMutate={refresh}
-										canDelete={permissions.canDelete}
-									/>
-								))}
+									{revokedHosts.map((host) => (
+										<HostCard
+											key={host.id}
+											host={host}
+											availableScopes={availableScopes}
+											onMutate={refresh}
+											canDelete={permissions.canDelete}
+										/>
+									))}
 								</div>
 							)}
 						</div>

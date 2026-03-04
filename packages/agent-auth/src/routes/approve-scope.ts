@@ -38,12 +38,17 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			if (opts.freshSessionWindow > 0) {
+			const freshWindow =
+				typeof opts.freshSessionWindow === "function"
+					? await opts.freshSessionWindow(ctx)
+					: opts.freshSessionWindow;
+
+			if (freshWindow > 0) {
 				const sessionCreated = session.session?.createdAt
 					? new Date(session.session.createdAt).getTime()
 					: 0;
 				const age = (Date.now() - sessionCreated) / 1000;
-				if (age > opts.freshSessionWindow) {
+				if (age > freshWindow) {
 					throw APIError.from("FORBIDDEN", ERROR_CODES.FRESH_SESSION_REQUIRED);
 				}
 			}

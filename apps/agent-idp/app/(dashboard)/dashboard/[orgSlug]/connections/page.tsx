@@ -1,9 +1,13 @@
 import { and, eq } from "drizzle-orm";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth/auth";
+import {
+	listAgentAuthTools,
+	parseAgentAuthCredential,
+} from "@/lib/agent-auth-proxy";
 import { account } from "@/lib/db/better-auth-schema";
 import { getCredential, listConnectionsByOrg } from "@/lib/db/connections";
 import { db } from "@/lib/db/drizzle";
+import { getOrgBySlug, getSession } from "@/lib/db/queries";
+import { connectionCredential } from "@/lib/db/schema";
 import { listMCPTools } from "@/lib/mcp-client";
 import { listOpenAPITools } from "@/lib/openapi-tools";
 import { ConnectionsClient } from "./connections-client";
@@ -59,12 +63,17 @@ const OAUTH_TOOLS: Record<string, ToolDef[]> = {
 	],
 };
 
-async function getToolsForConnection(conn: {
-	type: string;
-	builtinId: string | null;
-	mcpEndpoint: string | null;
-	specUrl: string | null;
-}): Promise<ToolDef[]> {
+async function getToolsForConnection(
+	conn: {
+		id: string;
+		type: string;
+		builtinId: string | null;
+		mcpEndpoint: string | null;
+		specUrl: string | null;
+		baseUrl: string | null;
+	},
+	orgId: string,
+): Promise<ToolDef[]> {
 	if (conn.type === "oauth" && conn.builtinId) {
 		return OAUTH_TOOLS[conn.builtinId] ?? [];
 	}
@@ -83,6 +92,30 @@ async function getToolsForConnection(conn: {
 			return [];
 		}
 	}
+	if (conn.type === "agent-auth" && conn.baseUrl) {
+		try {
+			const [cred] = await db
+				.select()
+				.from(connectionCredential)
+				.where(
+					and(
+						eq(connectionCredential.connectionId, conn.id),
+						eq(connectionCredential.orgId, orgId),
+						eq(connectionCredential.status, "active"),
+					),
+				)
+				.limit(1);
+
+			const credential = parseAgentAuthCredential(
+				cred?.metadata ?? null,
+				conn.baseUrl,
+			);
+			if (!credential) return [];
+			return await listAgentAuthTools(credential);
+		} catch {
+			return [];
+		}
+	}
 	return [];
 }
 
@@ -92,9 +125,10 @@ export default async function ConnectionsPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const session = await auth.api.getSession({ headers: await headers() });
-	const orgs = await auth.api.listOrganizations({ headers: await headers() });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
+	const [session, org] = await Promise.all([
+		getSession(),
+		getOrgBySlug(orgSlug),
+	]);
 
 	if (!org || !session?.user) {
 		return (
@@ -138,9 +172,23 @@ export default async function ConnectionsPage({
 			} else if (conn.type === "openapi") {
 				connected = true;
 				identifier = conn.specUrl;
+			} else if (conn.type === "agent-auth") {
+				const [cred] = await db
+					.select()
+					.from(connectionCredential)
+					.where(
+						and(
+							eq(connectionCredential.connectionId, conn.id),
+							eq(connectionCredential.orgId, orgId),
+							eq(connectionCredential.status, "active"),
+						),
+					)
+					.limit(1);
+				connected = !!cred;
+				identifier = conn.baseUrl;
 			}
 
-			const tools = await getToolsForConnection(conn);
+			const tools = await getToolsForConnection(conn, orgId);
 
 			return {
 				id: conn.id,

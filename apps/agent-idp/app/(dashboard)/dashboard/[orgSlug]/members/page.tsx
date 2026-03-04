@@ -1,7 +1,5 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth/auth";
-import { getOrgMembers } from "@/lib/db/queries";
+import { getOrgBySlug, getOrgMembers, getSession } from "@/lib/db/queries";
 import { MembersClient } from "./members-client";
 
 export default async function MembersPage({
@@ -10,11 +8,11 @@ export default async function MembersPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const session = await auth.api.getSession({ headers: await headers() });
+	const [session, org] = await Promise.all([
+		getSession(),
+		getOrgBySlug(orgSlug),
+	]);
 	if (!session?.user) redirect("/sign-in");
-
-	const orgs = await auth.api.listOrganizations({ headers: await headers() });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
 	if (!org) redirect("/dashboard");
 
 	const initialMembers = await getOrgMembers(org.id);

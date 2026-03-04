@@ -43,4 +43,6 @@ export const env = {
 	// GitHub OAuth
 	GITHUB_CLIENT_ID: optional("GITHUB_CLIENT_ID", ""),
 	GITHUB_CLIENT_SECRET: optional("GITHUB_CLIENT_SECRET", ""),
+
+	AGENT_ENCRYPTION_KEY: optional("AGENT_ENCRYPTION_KEY"),
 } as const;

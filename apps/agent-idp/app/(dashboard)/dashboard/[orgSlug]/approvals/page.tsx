@@ -1,5 +1,8 @@
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth/auth";
+import {
+	getOrgBySlug,
+	getOrgSecuritySettings,
+	getSession,
+} from "@/lib/db/queries";
 import { ApprovalsClient } from "./approvals-client";
 
 export default async function ApprovalsPage({
@@ -8,15 +11,23 @@ export default async function ApprovalsPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const session = await auth.api.getSession({ headers: await headers() });
-	const orgs = await auth.api.listOrganizations({ headers: await headers() });
-	const org = orgs?.find((o: any) => o.slug === orgSlug);
+	const [session, org] = await Promise.all([
+		getSession(),
+		getOrgBySlug(orgSlug),
+	]);
+
+	const orgId = org?.id ?? "";
+	const securitySettings = orgId
+		? await getOrgSecuritySettings(orgId)
+		: undefined;
 
 	return (
 		<div className="max-w-5xl mx-auto">
 			<ApprovalsClient
 				currentUserId={session?.user?.id ?? ""}
-				orgId={org?.id ?? ""}
+				orgId={orgId}
+				userEmail={session?.user?.email}
+				allowedReAuthMethods={securitySettings?.allowedReAuthMethods}
 			/>
 		</div>
 	);

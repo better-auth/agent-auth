@@ -3,16 +3,8 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth/auth";
 import { organization } from "@/lib/db/better-auth-schema";
 import { db } from "@/lib/db/drizzle";
-
-export interface OrgSecuritySettings {
-	allowDynamicHostRegistration: boolean;
-	allowMemberHostCreation: boolean;
-}
-
-const SETTINGS_DEFAULTS: OrgSecuritySettings = {
-	allowDynamicHostRegistration: true,
-	allowMemberHostCreation: true,
-};
+import type { OrgSecuritySettings } from "@/lib/db/queries";
+import { resolveSecuritySettings } from "@/lib/db/queries";
 
 function parseMetadata(raw: string | null): Record<string, unknown> {
 	if (!raw) return {};
@@ -21,21 +13,6 @@ function parseMetadata(raw: string | null): Record<string, unknown> {
 	} catch {
 		return {};
 	}
-}
-
-export function resolveSettings(
-	meta: Record<string, unknown>,
-): OrgSecuritySettings {
-	return {
-		allowDynamicHostRegistration:
-			meta.allowDynamicHostRegistration !== false
-				? SETTINGS_DEFAULTS.allowDynamicHostRegistration
-				: false,
-		allowMemberHostCreation:
-			meta.allowMemberHostCreation !== false
-				? SETTINGS_DEFAULTS.allowMemberHostCreation
-				: false,
-	};
 }
 
 export async function GET(req: Request) {
@@ -60,8 +37,18 @@ export async function GET(req: Request) {
 		return Response.json({ error: "Org not found" }, { status: 404 });
 	}
 
-	return Response.json(resolveSettings(parseMetadata(org.metadata)));
+	return Response.json(resolveSecuritySettings(parseMetadata(org.metadata)));
 }
+
+const SETTING_KEYS: (keyof OrgSecuritySettings)[] = [
+	"allowDynamicHostRegistration",
+	"allowMemberHostCreation",
+	"dynamicHostDefaultScopes",
+	"defaultApprovalMethod",
+	"reAuthPolicy",
+	"freshSessionWindow",
+	"allowedReAuthMethods",
+];
 
 export async function PATCH(req: Request) {
 	const session = await auth.api.getSession({ headers: await headers() });
@@ -85,9 +72,7 @@ export async function PATCH(req: Request) {
 	const body = await req.json();
 	const { orgId, ...updates } = body as {
 		orgId: string;
-		allowDynamicHostRegistration?: boolean;
-		allowMemberHostCreation?: boolean;
-	};
+	} & Partial<OrgSecuritySettings>;
 
 	if (!orgId) {
 		return Response.json({ error: "orgId required" }, { status: 400 });
@@ -105,11 +90,10 @@ export async function PATCH(req: Request) {
 
 	const meta = parseMetadata(org.metadata);
 
-	if (updates.allowDynamicHostRegistration !== undefined) {
-		meta.allowDynamicHostRegistration = updates.allowDynamicHostRegistration;
-	}
-	if (updates.allowMemberHostCreation !== undefined) {
-		meta.allowMemberHostCreation = updates.allowMemberHostCreation;
+	for (const key of SETTING_KEYS) {
+		if (updates[key] !== undefined) {
+			(meta as Record<string, unknown>)[key] = updates[key];
+		}
 	}
 
 	await db
@@ -117,5 +101,5 @@ export async function PATCH(req: Request) {
 		.set({ metadata: JSON.stringify(meta) })
 		.where(eq(organization.id, orgId));
 
-	return Response.json(resolveSettings(meta));
+	return Response.json(resolveSecuritySettings(meta));
 }

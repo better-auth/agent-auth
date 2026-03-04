@@ -1,4 +1,7 @@
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { headers } from "next/headers";
+import { cache } from "react";
+import { auth } from "../auth/auth";
 import { listMCPTools } from "../mcp-client";
 import { listOpenAPITools } from "../openapi-tools";
 import {
@@ -6,9 +9,23 @@ import {
 	agentHost,
 	agentPermission,
 	member,
+	organization,
 } from "./better-auth-schema";
 import { db } from "./drizzle";
-import { agentActivity, connection } from "./schema";
+import { agentActivity, connection, mcpHostKeypair } from "./schema";
+
+export const getSession = cache(async () => {
+	return auth.api.getSession({ headers: await headers() });
+});
+
+export async function getOrgBySlug(slug: string) {
+	const [row] = await db
+		.select()
+		.from(organization)
+		.where(eq(organization.slug, slug))
+		.limit(1);
+	return row ?? null;
+}
 
 function parseDbScopes(value: unknown): string[] {
 	if (Array.isArray(value)) return value;
@@ -143,27 +160,58 @@ export async function getOverviewData(orgId: string) {
 	};
 }
 
-export async function getOrgActivity(
-	orgId: string,
-	opts?: { limit?: number; offset?: number },
-) {
+export type ActivityFilters = {
+	limit?: number;
+	offset?: number;
+	status?: string;
+	agentId?: string;
+	agentName?: string;
+	provider?: string;
+	search?: string;
+};
+
+export async function getOrgActivity(orgId: string, opts?: ActivityFilters) {
 	const limit = opts?.limit ?? 50;
 	const offset = opts?.offset ?? 0;
 
-	const activities = await db
-		.select()
-		.from(agentActivity)
-		.where(eq(agentActivity.orgId, orgId))
-		.orderBy(desc(agentActivity.createdAt))
-		.limit(limit + 1)
-		.offset(offset);
+	const conditions = [eq(agentActivity.orgId, orgId)];
+	if (opts?.status) {
+		conditions.push(eq(agentActivity.status, opts.status));
+	}
+	if (opts?.agentId) {
+		conditions.push(eq(agentActivity.agentId, opts.agentId));
+	}
+	if (opts?.agentName) {
+		conditions.push(eq(agentActivity.agentName, opts.agentName));
+	}
+	if (opts?.provider) {
+		conditions.push(eq(agentActivity.provider, opts.provider));
+	}
+	if (opts?.search) {
+		conditions.push(
+			sql`(${agentActivity.tool} ilike ${"%" + opts.search + "%"} or ${agentActivity.agentName} ilike ${"%" + opts.search + "%"} or ${agentActivity.provider} ilike ${"%" + opts.search + "%"} or ${agentActivity.error} ilike ${"%" + opts.search + "%"})`,
+		);
+	}
 
-	const hasMore = activities.length > limit;
-	const items = hasMore ? activities.slice(0, limit) : activities;
+	const where = and(...conditions);
+
+	const [totalResult, activities] = await Promise.all([
+		db.select({ count: count() }).from(agentActivity).where(where),
+		db
+			.select()
+			.from(agentActivity)
+			.where(where)
+			.orderBy(desc(agentActivity.createdAt))
+			.limit(limit)
+			.offset(offset),
+	]);
+
+	const total = totalResult[0]?.count ?? 0;
 
 	return {
-		activities: items.map((a) => ({
+		activities: activities.map((a) => ({
 			id: a.id,
+			agentId: a.agentId,
 			tool: a.tool,
 			provider: a.provider,
 			agentName: a.agentName,
@@ -172,7 +220,38 @@ export async function getOrgActivity(
 			error: a.error,
 			createdAt: a.createdAt.toISOString(),
 		})),
-		hasMore,
+		total,
+		hasMore: offset + limit < total,
+	};
+}
+
+export async function getActivityFilterOptions(orgId: string) {
+	const [agents, providers] = await Promise.all([
+		db
+			.select({ agentName: agentActivity.agentName })
+			.from(agentActivity)
+			.where(
+				and(
+					eq(agentActivity.orgId, orgId),
+					sql`${agentActivity.agentName} is not null`,
+				),
+			)
+			.groupBy(agentActivity.agentName),
+		db
+			.select({ provider: agentActivity.provider })
+			.from(agentActivity)
+			.where(
+				and(
+					eq(agentActivity.orgId, orgId),
+					sql`${agentActivity.provider} is not null`,
+				),
+			)
+			.groupBy(agentActivity.provider),
+	]);
+
+	return {
+		agents: agents.map((a) => a.agentName).filter(Boolean) as string[],
+		providers: providers.map((p) => p.provider).filter(Boolean) as string[],
 	};
 }
 
@@ -241,6 +320,20 @@ export async function getOrgHosts(orgId: string) {
 		.from(agentHost)
 		.where(inArray(agentHost.userId, userIds));
 
+	const remoteHostIds = new Set(
+		(
+			await db
+				.select({ hostId: mcpHostKeypair.hostId })
+				.from(mcpHostKeypair)
+				.where(
+					inArray(
+						mcpHostKeypair.hostId,
+						hosts.map((h) => h.id),
+					),
+				)
+		).map((r) => r.hostId),
+	);
+
 	return Promise.all(
 		hosts.map(async (host) => {
 			const [agentCount] = await db
@@ -259,6 +352,7 @@ export async function getOrgHosts(orgId: string) {
 				activeAgents: agentCount?.count ?? 0,
 				createdAt: host.createdAt?.toISOString() ?? null,
 				lastUsedAt: host.lastUsedAt?.toISOString() ?? null,
+				isRemote: remoteHostIds.has(host.id),
 			};
 		}),
 	);
@@ -351,6 +445,90 @@ const OAUTH_TOOLS: Record<
 		{ name: "list_threads", description: "List email threads" },
 	],
 };
+
+type ReAuthPolicy = "none" | "fresh_session" | "always";
+type ApprovalMethod = "auto" | "ciba" | "device_authorization";
+
+export interface OrgSecuritySettings {
+	allowDynamicHostRegistration: boolean;
+	allowMemberHostCreation: boolean;
+	dynamicHostDefaultScopes: string[];
+	defaultApprovalMethod: ApprovalMethod;
+	reAuthPolicy: ReAuthPolicy;
+	freshSessionWindow: number;
+	allowedReAuthMethods: ("password" | "passkey" | "email_otp")[];
+}
+
+const SECURITY_DEFAULTS: OrgSecuritySettings = {
+	allowDynamicHostRegistration: true,
+	allowMemberHostCreation: true,
+	dynamicHostDefaultScopes: [],
+	defaultApprovalMethod: "auto",
+	reAuthPolicy: "fresh_session",
+	freshSessionWindow: 300,
+	allowedReAuthMethods: ["password", "passkey"],
+};
+
+function parseOrgMeta(raw: string | null): Record<string, unknown> {
+	if (!raw) return {};
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return {};
+	}
+}
+
+export function resolveSecuritySettings(
+	meta: Record<string, unknown>,
+): OrgSecuritySettings {
+	return {
+		allowDynamicHostRegistration:
+			typeof meta.allowDynamicHostRegistration === "boolean"
+				? meta.allowDynamicHostRegistration
+				: SECURITY_DEFAULTS.allowDynamicHostRegistration,
+		allowMemberHostCreation:
+			typeof meta.allowMemberHostCreation === "boolean"
+				? meta.allowMemberHostCreation
+				: SECURITY_DEFAULTS.allowMemberHostCreation,
+		dynamicHostDefaultScopes: Array.isArray(meta.dynamicHostDefaultScopes)
+			? meta.dynamicHostDefaultScopes
+			: SECURITY_DEFAULTS.dynamicHostDefaultScopes,
+		defaultApprovalMethod:
+			meta.defaultApprovalMethod === "ciba" ||
+			meta.defaultApprovalMethod === "device_authorization" ||
+			meta.defaultApprovalMethod === "auto"
+				? meta.defaultApprovalMethod
+				: SECURITY_DEFAULTS.defaultApprovalMethod,
+		reAuthPolicy:
+			meta.reAuthPolicy === "none" ||
+			meta.reAuthPolicy === "fresh_session" ||
+			meta.reAuthPolicy === "always"
+				? meta.reAuthPolicy
+				: SECURITY_DEFAULTS.reAuthPolicy,
+		freshSessionWindow:
+			typeof meta.freshSessionWindow === "number"
+				? meta.freshSessionWindow
+				: SECURITY_DEFAULTS.freshSessionWindow,
+		allowedReAuthMethods: Array.isArray(meta.allowedReAuthMethods)
+			? meta.allowedReAuthMethods.filter((m: unknown) =>
+					["password", "passkey", "email_otp"].includes(m as string),
+				)
+			: SECURITY_DEFAULTS.allowedReAuthMethods,
+	};
+}
+
+export async function getOrgSecuritySettings(
+	orgId: string,
+): Promise<OrgSecuritySettings> {
+	const [org] = await db
+		.select({ metadata: organization.metadata })
+		.from(organization)
+		.where(eq(organization.id, orgId))
+		.limit(1);
+
+	if (!org) return SECURITY_DEFAULTS;
+	return resolveSecuritySettings(parseOrgMeta(org.metadata));
+}
 
 export async function getOrgAvailableScopes(
 	orgId: string,

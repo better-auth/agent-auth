@@ -239,6 +239,15 @@ async function isDynamicHostAllowed(
 	return flag;
 }
 
+async function resolveDynamicHostDefaultScopes(
+	opts: ResolvedAgentAuthOptions,
+	ctx: unknown,
+): Promise<string[]> {
+	const val = opts.dynamicHostDefaultScopes;
+	if (typeof val === "function") return val(ctx as never);
+	return val;
+}
+
 export function createAgent(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiReplayCache,
@@ -290,7 +299,6 @@ export function createAgent(
 			let userId: string | null;
 			let hostId: string | null = null;
 			let hostBaseScopes: string[] | null = null;
-			let deviceApprovedScopes: string[] | null = null;
 			let agentPublicKey = bodyPublicKey ?? null;
 			let agentJwksUrl: string | null = null;
 
@@ -578,6 +586,10 @@ export function createAgent(
 					const jwtHostName =
 						typeof decoded.host_name === "string" ? decoded.host_name : null;
 					const resolvedHostName = hostName ?? jwtHostName ?? null;
+					const dynamicDefaults = await resolveDynamicHostDefaultScopes(
+						opts,
+						ctx,
+					);
 					const newHost = await ctx.context.adapter.create<
 						Record<string, unknown>,
 						AgentHost
@@ -590,7 +602,7 @@ export function createAgent(
 							publicKey: JSON.stringify(resolvedHostPubKey),
 							kid: hostKid,
 							jwksUrl: hostJwksUrl,
-							scopes: [],
+							scopes: dynamicDefaults,
 							status: isAutonomousMode ? "active" : "pending",
 							activatedAt: isAutonomousMode ? hostNow : null,
 							expiresAt: null,
@@ -602,7 +614,7 @@ export function createAgent(
 
 					hostId = newHost.id;
 					userId = null;
-					hostBaseScopes = [];
+					hostBaseScopes = dynamicDefaults;
 				}
 			} else {
 				const cookieSession = await getSessionFromCtx(ctx);
@@ -630,29 +642,6 @@ export function createAgent(
 						);
 					}
 					userId = dbSession.user.id;
-
-					try {
-						const deviceCodes = await ctx.context.adapter.findMany<{
-							scope: string | null;
-							status: string;
-						}>({
-							model: "deviceCode",
-							where: [
-								{ field: "userId", value: userId },
-								{ field: "status", value: "approved" },
-							],
-							sortBy: { field: "createdAt", direction: "desc" },
-							limit: 1,
-						});
-						const latestCode = deviceCodes[0];
-						if (deviceCodes.length > 0 && latestCode?.scope) {
-							deviceApprovedScopes = latestCode.scope
-								.split(" ")
-								.filter(Boolean);
-						}
-					} catch {
-						// device code lookup is best-effort
-					}
 				}
 
 				if (hostPublicKey) {
@@ -689,6 +678,10 @@ export function createAgent(
 							);
 						}
 
+						const dynamicDefaults = await resolveDynamicHostDefaultScopes(
+							opts,
+							ctx,
+						);
 						const hostNow = new Date();
 						const newHost = await ctx.context.adapter.create<
 							Record<string, unknown>,
@@ -702,7 +695,7 @@ export function createAgent(
 								publicKey: JSON.stringify(hostPublicKey),
 								kid: hostKid,
 								jwksUrl: null,
-								scopes: [],
+								scopes: dynamicDefaults,
 								status: "active",
 								activatedAt: hostNow,
 								expiresAt: null,
@@ -712,7 +705,7 @@ export function createAgent(
 							},
 						});
 						hostId = newHost.id;
-						hostBaseScopes = [];
+						hostBaseScopes = dynamicDefaults;
 					}
 				} else {
 					try {
@@ -740,6 +733,10 @@ export function createAgent(
 							);
 						}
 
+						const dynamicDefaults = await resolveDynamicHostDefaultScopes(
+							opts,
+							ctx,
+						);
 						const autoHostNow = new Date();
 						const autoHost = await ctx.context.adapter.create<
 							Record<string, unknown>,
@@ -753,7 +750,7 @@ export function createAgent(
 								publicKey: "",
 								kid: null,
 								jwksUrl: null,
-								scopes: [],
+								scopes: dynamicDefaults,
 								status: "active",
 								activatedAt: autoHostNow,
 								expiresAt: null,
@@ -763,7 +760,7 @@ export function createAgent(
 							},
 						});
 						hostId = autoHost.id;
-						hostBaseScopes = [];
+						hostBaseScopes = dynamicDefaults;
 					}
 				}
 			}
@@ -851,11 +848,6 @@ export function createAgent(
 				if (!valid) {
 					throw APIError.from("BAD_REQUEST", ERROR_CODES.UNKNOWN_SCOPES);
 				}
-			}
-
-			if (deviceApprovedScopes !== null && deviceApprovedScopes.length > 0) {
-				resolvedScopes = deviceApprovedScopes;
-				pendingScopes = [];
 			}
 
 			const now = new Date();

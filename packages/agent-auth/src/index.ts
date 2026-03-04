@@ -183,6 +183,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		freshSessionWindow: options?.freshSessionWindow ?? 300,
 		blockedScopes: options?.blockedScopes ?? [],
 		allowDynamicHostRegistration: options?.allowDynamicHostRegistration ?? true,
+		dynamicHostDefaultScopes: options?.dynamicHostDefaultScopes ?? [],
 		modes: options?.modes ?? ["delegated", "autonomous"],
 		approvalMethods: options?.approvalMethods ?? ["device_authorization"],
 		resolveApprovalMethod:
