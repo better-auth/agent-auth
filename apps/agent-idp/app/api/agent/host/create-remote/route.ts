@@ -2,6 +2,7 @@ import { generateAgentKeypair } from "@auth/agents";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { audit } from "@/lib/audit";
 import { auth } from "@/lib/auth/auth";
 import { agentHost } from "@/lib/db/better-auth-schema";
 import { db } from "@/lib/db/drizzle";
@@ -76,6 +77,14 @@ export async function POST(request: Request) {
 		.from(agentHost)
 		.where(eq(agentHost.id, hostId))
 		.limit(1);
+
+	audit.log({
+		eventType: "host.remote_created",
+		orgId: "",
+		actorId: session.user.id,
+		hostId,
+		metadata: { name, scopes },
+	});
 
 	return NextResponse.json({
 		hostId,

@@ -1,10 +1,18 @@
 "use client";
 
-import { Crown, Loader2, Mail, Shield, Trash2, UserPlus } from "lucide-react";
+import { ChevronDown, Loader2, MoreHorizontal, Plus, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth/client";
 
 type OrgMember = {
@@ -14,107 +22,28 @@ type OrgMember = {
 	createdAt: string;
 };
 
+const ROLES = ["admin", "member", "auditor"] as const;
+
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+	owner: "Full access, cannot be changed",
+	admin: "Manage hosts, agents, connections, and settings",
+	member: "Create and view own hosts and agents",
+	auditor: "Read-only access across all resources",
+};
+
 function RoleBadge({ role }: { role: string }) {
-	const styles: Record<string, string> = {
-		owner: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-		admin: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-		member: "bg-muted text-muted-foreground",
-	};
-
-	const icons: Record<string, React.ReactNode> = {
-		owner: <Crown className="h-3 w-3" />,
-		admin: <Shield className="h-3 w-3" />,
-	};
-
 	return (
 		<span
-			className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${styles[role] || styles.member}`}
+			className={cn(
+				"inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-md capitalize",
+				role === "owner" && "bg-foreground/8 text-foreground",
+				role === "admin" && "bg-foreground/8 text-foreground",
+				role === "auditor" && "bg-foreground/5 text-muted-foreground",
+				role === "member" && "bg-foreground/5 text-muted-foreground",
+			)}
 		>
-			{icons[role]}
 			{role}
 		</span>
-	);
-}
-
-function MemberRow({
-	member,
-	currentUserId,
-	onRoleChange,
-	onRemove,
-}: {
-	member: OrgMember;
-	currentUserId: string;
-	onRoleChange: (memberId: string, role: string) => void;
-	onRemove: (memberId: string) => void;
-}) {
-	const [confirmRemove, setConfirmRemove] = useState(false);
-	const isCurrentUser = member.userId === currentUserId;
-	const isOwner = member.role === "owner";
-
-	return (
-		<div className="flex items-center justify-between p-4 border border-border/60 rounded-lg bg-card/50">
-			<div className="flex items-center gap-3 min-w-0">
-				<div className="h-8 w-8 bg-foreground/[0.06] rounded-md flex items-center justify-center text-xs font-medium shrink-0">
-					{member.userId[0]?.toUpperCase() || "U"}
-				</div>
-				<div className="min-w-0">
-					<p className="text-sm font-medium truncate">
-						{member.userId}
-						{isCurrentUser && (
-							<span className="ml-1 text-xs text-muted-foreground">(you)</span>
-						)}
-					</p>
-					<p className="text-xs text-muted-foreground">
-						Joined {new Date(member.createdAt).toLocaleDateString()}
-					</p>
-				</div>
-			</div>
-
-			<div className="flex items-center gap-2 shrink-0">
-				<RoleBadge role={member.role} />
-				{!isOwner && !isCurrentUser && (
-					<>
-						<select
-							value={member.role}
-							onChange={(e) => onRoleChange(member.id, e.target.value)}
-							className="h-7 text-xs bg-muted border-0 font-mono px-2 cursor-pointer rounded"
-						>
-							<option value="member">member</option>
-							<option value="admin">admin</option>
-						</select>
-						{confirmRemove ? (
-							<div className="flex gap-1">
-								<Button
-									variant="destructive"
-									size="sm"
-									className="h-7 text-xs"
-									onClick={() => onRemove(member.id)}
-								>
-									Remove
-								</Button>
-								<Button
-									variant="ghost"
-									size="sm"
-									className="h-7 text-xs"
-									onClick={() => setConfirmRemove(false)}
-								>
-									Cancel
-								</Button>
-							</div>
-						) : (
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-7 px-2 text-muted-foreground hover:text-destructive"
-								onClick={() => setConfirmRemove(true)}
-							>
-								<Trash2 className="h-3 w-3" />
-							</Button>
-						)}
-					</>
-				)}
-			</div>
-		</div>
 	);
 }
 
@@ -132,7 +61,7 @@ export function MembersClient({
 	const [members, setMembers] = useState<OrgMember[]>(initialMembers);
 	const [showInvite, setShowInvite] = useState(false);
 	const [inviteEmail, setInviteEmail] = useState("");
-	const [inviteRole, setInviteRole] = useState("member");
+	const [inviteRole, setInviteRole] = useState<string>("member");
 	const [inviting, setInviting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -158,7 +87,7 @@ export function MembersClient({
 			await ensureActiveOrg();
 			const result = await authClient.organization.inviteMember({
 				email: inviteEmail,
-				role: inviteRole as "member" | "admin",
+				role: inviteRole as "member" | "admin" | "auditor",
 			});
 			if (result.error) {
 				setError(result.error.message || "Failed to invite member");
@@ -179,7 +108,7 @@ export function MembersClient({
 			await ensureActiveOrg();
 			await authClient.organization.updateMemberRole({
 				memberId,
-				role: role as "member" | "admin",
+				role: role as "member" | "admin" | "auditor",
 			});
 			void fetchMembers();
 		} catch {}
@@ -188,7 +117,9 @@ export function MembersClient({
 	const handleRemove = async (memberId: string) => {
 		try {
 			await ensureActiveOrg();
-			await authClient.organization.removeMember({ memberIdOrEmail: memberId });
+			await authClient.organization.removeMember({
+				memberIdOrEmail: memberId,
+			});
 			void fetchMembers();
 		} catch {}
 	};
@@ -205,16 +136,20 @@ export function MembersClient({
 				<Button
 					variant="outline"
 					size="sm"
-					className="h-8 text-xs"
+					className="h-8 text-xs gap-1.5"
 					onClick={() => setShowInvite(!showInvite)}
 				>
-					<UserPlus className="h-3 w-3 mr-1.5" />
-					Invite
+					{showInvite ? (
+						<X className="h-3 w-3" />
+					) : (
+						<Plus className="h-3 w-3" />
+					)}
+					{showInvite ? "Cancel" : "Invite member"}
 				</Button>
 			</div>
 
 			{error && (
-				<div className="p-3 border border-destructive/50 bg-destructive/10 text-sm text-destructive">
+				<div className="p-3 border border-destructive/30 bg-destructive/5 rounded-lg text-sm text-destructive">
 					{error}
 				</div>
 			)}
@@ -222,66 +157,213 @@ export function MembersClient({
 			{showInvite && (
 				<form
 					onSubmit={handleInvite}
-					className="border border-border/60 rounded-lg p-4 space-y-3 bg-card/30"
+					className="border border-border/60 rounded-lg p-4 space-y-4"
 				>
-					<h3 className="text-sm font-medium">Invite member</h3>
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-						<div className="sm:col-span-2">
-							<Label className="text-xs">Email</Label>
+					<div className="grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-3 items-end">
+						<div className="space-y-1.5">
+							<Label className="text-xs text-muted-foreground">
+								Email address
+							</Label>
 							<Input
 								type="email"
 								value={inviteEmail}
 								onChange={(e) => setInviteEmail(e.target.value)}
-								placeholder="colleague@example.com"
+								placeholder="name@company.com"
 								required
-								className="h-8 text-sm"
+								className="h-9 text-sm"
 							/>
 						</div>
-						<div>
-							<Label className="text-xs">Role</Label>
-							<select
-								value={inviteRole}
-								onChange={(e) => setInviteRole(e.target.value)}
-								className="w-full h-8 text-sm bg-background border border-input px-2 font-mono rounded"
-							>
-								<option value="member">member</option>
-								<option value="admin">admin</option>
-							</select>
+						<div className="space-y-1.5">
+							<Label className="text-xs text-muted-foreground">Role</Label>
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<button
+										type="button"
+										className="flex items-center justify-between w-full h-9 px-3 text-sm bg-background border border-input rounded-md capitalize"
+									>
+										{inviteRole}
+										<ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+									</button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="w-64">
+									{ROLES.map((role) => (
+										<DropdownMenuItem
+											key={role}
+											onClick={() => setInviteRole(role)}
+											className="flex flex-col items-start gap-0.5 py-2"
+										>
+											<span className="text-sm font-medium capitalize">
+												{role}
+											</span>
+											<span className="text-[11px] text-muted-foreground">
+												{ROLE_DESCRIPTIONS[role]}
+											</span>
+										</DropdownMenuItem>
+									))}
+								</DropdownMenuContent>
+							</DropdownMenu>
 						</div>
 					</div>
-					<Button type="submit" size="sm" disabled={inviting}>
-						{inviting ? (
-							<Loader2 className="h-3 w-3 animate-spin mr-1" />
-						) : (
-							<Mail className="h-3 w-3 mr-1" />
-						)}
-						Send Invitation
+					<Button type="submit" size="sm" disabled={inviting} className="h-8">
+						{inviting && <Loader2 className="h-3 w-3 animate-spin mr-1.5" />}
+						Send invitation
 					</Button>
 				</form>
 			)}
 
-			<div>
-				<h2 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-3">
-					Members ({members.length})
-				</h2>
-				<div className="space-y-2">
-					{members.length === 0 ? (
-						<div className="border border-dashed border-border/60 rounded-lg p-12 text-center text-sm text-muted-foreground">
-							No members yet
-						</div>
-					) : (
-						members.map((member) => (
-							<MemberRow
-								key={member.id}
-								member={member}
-								currentUserId={currentUserId}
-								onRoleChange={handleRoleChange}
-								onRemove={handleRemove}
-							/>
-						))
-					)}
-				</div>
+			<div className="border border-border/60 rounded-lg overflow-hidden">
+				<table className="w-full">
+					<thead>
+						<tr className="border-b border-border/60 bg-muted/30">
+							<th className="text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider py-2.5 px-4">
+								User
+							</th>
+							<th className="text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider py-2.5 px-4">
+								Role
+							</th>
+							<th className="text-left text-[11px] font-medium text-muted-foreground uppercase tracking-wider py-2.5 px-4 hidden sm:table-cell">
+								Joined
+							</th>
+							<th className="w-10 py-2.5 px-4" />
+						</tr>
+					</thead>
+					<tbody className="divide-y divide-border/40">
+						{members.length === 0 ? (
+							<tr>
+								<td
+									colSpan={4}
+									className="text-center py-12 text-sm text-muted-foreground"
+								>
+									No members yet
+								</td>
+							</tr>
+						) : (
+							members.map((member) => {
+								const isCurrentUser = member.userId === currentUserId;
+								const isOwner = member.role === "owner";
+								const canManage = !isOwner && !isCurrentUser;
+
+								return (
+									<tr
+										key={member.id}
+										className="group hover:bg-muted/20 transition-colors"
+									>
+										<td className="py-3 px-4">
+											<div className="flex items-center gap-3 min-w-0">
+												<div className="h-7 w-7 bg-foreground/6 rounded-full flex items-center justify-center text-[11px] font-medium shrink-0">
+													{member.userId[0]?.toUpperCase() || "U"}
+												</div>
+												<span className="text-sm truncate">
+													{member.userId}
+													{isCurrentUser && (
+														<span className="ml-1.5 text-xs text-muted-foreground">
+															(you)
+														</span>
+													)}
+												</span>
+											</div>
+										</td>
+										<td className="py-3 px-4">
+											<RoleBadge role={member.role} />
+										</td>
+										<td className="py-3 px-4 hidden sm:table-cell">
+											<span className="text-xs text-muted-foreground tabular-nums">
+												{new Date(member.createdAt).toLocaleDateString(
+													"en-US",
+													{
+														month: "short",
+														day: "numeric",
+														year: "numeric",
+													},
+												)}
+											</span>
+										</td>
+										<td className="py-3 px-4">
+											{canManage && (
+												<MemberActions
+													member={member}
+													onRoleChange={handleRoleChange}
+													onRemove={handleRemove}
+												/>
+											)}
+										</td>
+									</tr>
+								);
+							})
+						)}
+					</tbody>
+				</table>
 			</div>
 		</div>
+	);
+}
+
+function MemberActions({
+	member,
+	onRoleChange,
+	onRemove,
+}: {
+	member: OrgMember;
+	onRoleChange: (memberId: string, role: string) => void;
+	onRemove: (memberId: string) => void;
+}) {
+	const [confirmRemove, setConfirmRemove] = useState(false);
+
+	if (confirmRemove) {
+		return (
+			<div className="flex items-center gap-1">
+				<Button
+					variant="destructive"
+					size="sm"
+					className="h-6 text-[11px] px-2"
+					onClick={() => onRemove(member.id)}
+				>
+					Confirm
+				</Button>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-6 text-[11px] px-2"
+					onClick={() => setConfirmRemove(false)}
+				>
+					Cancel
+				</Button>
+			</div>
+		);
+	}
+
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+				>
+					<MoreHorizontal className="h-3.5 w-3.5" />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="w-56">
+				{ROLES.filter((r) => r !== member.role).map((role) => (
+					<DropdownMenuItem
+						key={role}
+						onClick={() => onRoleChange(member.id, role)}
+						className="flex flex-col items-start gap-0.5 py-2"
+					>
+						<span className="text-sm capitalize">Change to {role}</span>
+						<span className="text-[11px] text-muted-foreground">
+							{ROLE_DESCRIPTIONS[role]}
+						</span>
+					</DropdownMenuItem>
+				))}
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					variant="destructive"
+					onClick={() => setConfirmRemove(true)}
+				>
+					Remove from organization
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }

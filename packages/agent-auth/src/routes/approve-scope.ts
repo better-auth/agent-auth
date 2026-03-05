@@ -2,9 +2,15 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import { resolvePermissionExpiresAt } from "../permission-ttl";
 import { findBlockedScopes } from "../scopes";
-import type { AgentPermission, ResolvedAgentAuthOptions } from "../types";
+import type {
+	Agent,
+	AgentPermission,
+	ResolvedAgentAuthOptions,
+} from "../types";
 
 const PERMISSION_TABLE = "agentPermission";
 const AGENT_TABLE = "agent";
@@ -23,6 +29,10 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 				scopes: z.array(z.string()).optional().meta({
 					description:
 						"When approving, the subset of pending scopes the user actually granted. Omit to approve all pending scopes.",
+				}),
+				ttl: z.number().positive().optional().meta({
+					description:
+						"Permission TTL in seconds. Overrides the plugin-level resolvePermissionTTL. Omit for no expiry.",
 				}),
 			}),
 			metadata: {
@@ -53,12 +63,14 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			const { requestId: agentId, action, scopes: userScopes } = ctx.body;
+			const {
+				requestId: agentId,
+				action,
+				scopes: userScopes,
+				ttl: explicitTTL,
+			} = ctx.body;
 
-			const agent = await ctx.context.adapter.findOne<{
-				id: string;
-				userId: string;
-			}>({
+			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: AGENT_TABLE,
 				where: [{ field: "id", value: agentId }],
 			});
@@ -99,6 +111,13 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 					});
 				}
 
+				emit(opts, {
+					type: "scope.denied",
+					actorId: session.user.id,
+					agentId,
+					metadata: { scopes: pendingPerms.map((p) => p.scope) },
+				});
+
 				return ctx.json({ status: "denied" });
 			}
 
@@ -118,16 +137,37 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
+			const alreadyActive = new Set(
+				allPerms.filter((p) => p.status === "active").map((p) => p.scope),
+			);
 			const added: string[] = [];
 
 			for (const perm of pendingPerms) {
 				if (approvedScopes.has(perm.scope)) {
-					await ctx.context.adapter.update({
-						model: PERMISSION_TABLE,
-						where: [{ field: "id", value: perm.id }],
-						update: { status: "active", updatedAt: now },
-					});
-					added.push(perm.scope);
+					if (alreadyActive.has(perm.scope)) {
+						await ctx.context.adapter.delete({
+							model: PERMISSION_TABLE,
+							where: [{ field: "id", value: perm.id }],
+						});
+					} else {
+						const expiresAt = await resolvePermissionExpiresAt(
+							opts,
+							perm.scope,
+							{
+								agentId,
+								hostId: agent.hostId ?? null,
+								userId: agent.userId ?? null,
+							},
+							explicitTTL,
+						);
+						await ctx.context.adapter.update({
+							model: PERMISSION_TABLE,
+							where: [{ field: "id", value: perm.id }],
+							update: { status: "active", expiresAt, updatedAt: now },
+						});
+						alreadyActive.add(perm.scope);
+						added.push(perm.scope);
+					}
 				} else {
 					await ctx.context.adapter.update({
 						model: PERMISSION_TABLE,
@@ -136,6 +176,13 @@ export function approveScope(opts: ResolvedAgentAuthOptions) {
 					});
 				}
 			}
+
+			emit(opts, {
+				type: "scope.approved",
+				actorId: session.user.id,
+				agentId,
+				metadata: { scopes: added },
+			});
 
 			return ctx.json({
 				status: "approved",

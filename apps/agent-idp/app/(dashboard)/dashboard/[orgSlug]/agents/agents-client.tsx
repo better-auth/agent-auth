@@ -3,30 +3,42 @@
 import {
 	AlertCircle,
 	AlertTriangle,
-	Bot,
 	Check,
 	ChevronDown,
 	ChevronLeft,
 	ChevronRight,
 	Copy,
+	Expand,
 	KeyRound,
 	Layers,
 	List,
 	Loader2,
 	Pencil,
+	Plus,
 	RefreshCw,
 	Search,
+	User,
 	Wrench,
 	X,
 } from "lucide-react";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConnectDialog } from "@/components/dashboard/connect-dialog";
+import { AgentBotIcon } from "@/components/icons/agent-bot";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Agent, AgentActivity } from "@/lib/auth/agent-api";
 import {
+	addAgentScope,
 	getAgentActivity,
 	listAgents,
+	removeAgentScope,
 	revokeAgent,
 	revokeAllAgents,
 	updateAgent,
@@ -39,11 +51,19 @@ type HostInfo = {
 	status: string;
 };
 
+type ScopeDetail = {
+	id: string;
+	scope: string;
+	grantedBy: string | null;
+	granterName: string | null;
+};
+
 type OrgAgent = {
 	id: string;
 	name: string;
 	status: string;
 	scopes: string[];
+	scopeDetails?: ScopeDetail[];
 	host: HostInfo | null;
 	createdAt: string;
 	updatedAt: string;
@@ -58,7 +78,18 @@ export type ProviderToolInfo = {
 	tools: Array<{ name: string; description: string }>;
 };
 
-type AgentWithHost = Agent & { host: HostInfo | null };
+type AvailableScopeInfo = {
+	name: string;
+	description: string;
+	provider: string;
+};
+
+type AgentWithHost = Agent & {
+	host: HostInfo | null;
+	scopeDetails: ScopeDetail[];
+	userId: string | null;
+	ownerName: string | null;
+};
 type StatusFilter = "active" | "all" | "revoked";
 type ViewMode = "list" | "grouped";
 
@@ -79,7 +110,10 @@ function mapOrgAgent(orgAgent: OrgAgent): AgentWithHost {
 		name: orgAgent.name,
 		status: orgAgent.status,
 		scopes: normalizeScopes(orgAgent.scopes),
+		scopeDetails: orgAgent.scopeDetails ?? [],
 		host: orgAgent.host,
+		userId: (orgAgent.userId as string) ?? null,
+		ownerName: (orgAgent.ownerName as string) ?? null,
 		metadata: null,
 		createdAt: orgAgent.createdAt,
 		updatedAt: orgAgent.updatedAt,
@@ -136,16 +170,174 @@ function HostBadge({ host }: { host: HostInfo | null }) {
 	);
 }
 
+function parseToolMeta(act: AgentActivity): {
+	toolArgs: Record<string, unknown> | null;
+	toolOutput: string | null;
+} {
+	const raw = act.metadata;
+	if (!raw) return { toolArgs: null, toolOutput: null };
+	try {
+		const parsed = JSON.parse(raw);
+		const args =
+			parsed?.toolArgs && typeof parsed.toolArgs === "object"
+				? (parsed.toolArgs as Record<string, unknown>)
+				: null;
+		const output =
+			parsed?.toolOutput != null ? String(parsed.toolOutput) : null;
+		return { toolArgs: args, toolOutput: output };
+	} catch {}
+	return { toolArgs: null, toolOutput: null };
+}
+
+function ActivityRow({ act }: { act: AgentActivity }) {
+	const [expanded, setExpanded] = useState(false);
+	const { toolArgs, toolOutput } = useMemo(() => parseToolMeta(act), [act]);
+	const hasDetail =
+		(toolArgs !== null && Object.keys(toolArgs).length > 0) ||
+		toolOutput !== null;
+
+	return (
+		<div
+			className={cn(
+				"bg-muted/50 rounded-md text-xs overflow-hidden",
+				hasDetail && "cursor-pointer",
+			)}
+			onClick={() => hasDetail && setExpanded(!expanded)}
+		>
+			<div className="p-2.5 flex items-start gap-2.5">
+				<div className="mt-0.5 shrink-0">
+					{act.error ? (
+						<AlertCircle className="h-3.5 w-3.5 text-destructive" />
+					) : (
+						<Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+					)}
+				</div>
+				<div className="flex-1 min-w-0">
+					<div className="flex items-center gap-2">
+						{act.provider && (
+							<span className="font-mono bg-background px-1.5 py-0.5 rounded text-[10px]">
+								{act.provider}
+							</span>
+						)}
+						<span className="font-medium truncate">{act.tool}</span>
+						{hasDetail && (
+							<ChevronRight
+								className={cn(
+									"h-3 w-3 text-muted-foreground/40 transition-transform",
+									expanded && "rotate-90",
+								)}
+							/>
+						)}
+					</div>
+					{act.error && (
+						<p className="text-destructive mt-0.5 truncate">{act.error}</p>
+					)}
+				</div>
+				<div className="text-muted-foreground shrink-0 text-right flex items-center gap-2">
+					{act.durationMs != null && <span>{act.durationMs}ms</span>}
+					<span>{formatRelativeTime(act.createdAt)}</span>
+				</div>
+			</div>
+			{expanded && hasDetail && (
+				<div className="px-2.5 pb-2.5 pt-0 space-y-1.5">
+					{toolArgs && Object.keys(toolArgs).length > 0 && (
+						<AgentExpandableCode
+							label="Input"
+							value={JSON.stringify(toolArgs, null, 2)}
+						/>
+					)}
+					{toolOutput && (
+						<AgentExpandableCode label="Output" value={toolOutput} />
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function formatJson(value: string): string {
+	try {
+		return JSON.stringify(JSON.parse(value), null, 2);
+	} catch {
+		return value;
+	}
+}
+
+function AgentExpandableCode({
+	label,
+	value,
+}: {
+	label: string;
+	value: string;
+}) {
+	const [open, setOpen] = useState(false);
+	const formatted = formatJson(value);
+
+	return (
+		<div>
+			<div className="flex items-center justify-between mb-1">
+				<p className="text-[9px] font-medium text-muted-foreground/50 uppercase tracking-wider">
+					{label}
+				</p>
+				<button
+					type="button"
+					onClick={(e) => {
+						e.stopPropagation();
+						setOpen(true);
+					}}
+					className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-foreground transition-colors"
+				>
+					<Expand className="h-2.5 w-2.5" />
+					Expand
+				</button>
+			</div>
+			<div className="bg-background rounded border border-border/40 p-2 overflow-x-auto max-h-32 overflow-y-auto">
+				<pre className="text-[10px] font-mono text-muted-foreground whitespace-pre-wrap break-all">
+					{formatted}
+				</pre>
+			</div>
+			<Dialog open={open} onOpenChange={setOpen}>
+				<DialogContent
+					className="max-w-2xl max-h-[80vh] flex flex-col p-0 gap-0"
+					onClick={(e) => e.stopPropagation()}
+				>
+					<DialogHeader className="px-5 pt-5 pb-3 border-b border-border/30 shrink-0">
+						<DialogTitle className="text-sm">{label}</DialogTitle>
+						<DialogDescription className="text-xs text-muted-foreground/60">
+							Full content
+						</DialogDescription>
+					</DialogHeader>
+					<div className="flex-1 min-h-0 overflow-auto p-5">
+						<pre className="text-[12px] font-mono text-foreground/80 whitespace-pre-wrap break-all leading-relaxed">
+							{formatted}
+						</pre>
+					</div>
+				</DialogContent>
+			</Dialog>
+		</div>
+	);
+}
+
 function AgentCard({
 	agent,
+	orgId,
 	onUpdated,
 	onRevoked,
+	onScopeRemoved,
+	onScopeAdded,
 	showHost,
+	currentUserId,
+	availableScopes,
 }: {
 	agent: AgentWithHost;
+	orgId: string;
 	onUpdated: (a: Partial<Agent> & { id: string }) => void;
 	onRevoked: (id: string) => void;
+	onScopeRemoved: (agentId: string, permissionId: string) => void;
+	onScopeAdded: (agentId: string, detail: ScopeDetail) => void;
 	showHost: boolean;
+	currentUserId: string;
+	availableScopes: AvailableScopeInfo[];
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const [tab, setTab] = useState<"details" | "activity">("details");
@@ -158,6 +350,52 @@ function AgentCard({
 	const [loadingActivity, setLoadingActivity] = useState(false);
 	const [activityPage, setActivityPage] = useState(0);
 	const [copied, setCopied] = useState(false);
+	const [removingScopeId, setRemovingScopeId] = useState<string | null>(null);
+	const [showAddScope, setShowAddScope] = useState(false);
+	const [scopeSearch, setScopeSearch] = useState("");
+	const [addingScopeName, setAddingScopeName] = useState<string | null>(null);
+
+	const existingScopeNames = useMemo(
+		() => new Set(agent.scopeDetails.map((sd) => sd.scope)),
+		[agent.scopeDetails],
+	);
+
+	const filteredAvailableScopes = useMemo(() => {
+		const ungranted = availableScopes.filter(
+			(s) => !existingScopeNames.has(s.name),
+		);
+		if (!scopeSearch.trim()) return ungranted;
+		const q = scopeSearch.toLowerCase();
+		return ungranted.filter(
+			(s) =>
+				s.name.toLowerCase().includes(q) ||
+				s.description.toLowerCase().includes(q) ||
+				s.provider.toLowerCase().includes(q),
+		);
+	}, [availableScopes, existingScopeNames, scopeSearch]);
+
+	const handleAddScope = async (scopeName: string) => {
+		setAddingScopeName(scopeName);
+		const res = await addAgentScope(agent.id, scopeName);
+		if (!res.error && res.permissionId) {
+			onScopeAdded(agent.id, {
+				id: res.permissionId,
+				scope: scopeName,
+				grantedBy: currentUserId,
+				granterName: null,
+			});
+		}
+		setAddingScopeName(null);
+	};
+
+	const handleRemoveScope = async (permissionId: string) => {
+		setRemovingScopeId(permissionId);
+		const res = await removeAgentScope(permissionId);
+		if (!res.error) {
+			onScopeRemoved(agent.id, permissionId);
+		}
+		setRemovingScopeId(null);
+	};
 
 	const handleSave = async (field: string, value: unknown) => {
 		setSaving(true);
@@ -181,6 +419,7 @@ function AgentCard({
 		try {
 			const res = await getAgentActivity({
 				agentId: agent.id,
+				orgId,
 				limit: 10,
 				offset: activityPage * 10,
 			});
@@ -200,6 +439,24 @@ function AgentCard({
 	};
 
 	const isActive = agent.status === "active";
+	const isOwner = agent.userId === currentUserId;
+
+	const myGrantedScopes = useMemo(() => {
+		if (isOwner) return null;
+		return new Set(
+			agent.scopeDetails
+				.filter((sd) => sd.grantedBy === currentUserId)
+				.map((sd) => sd.scope),
+		);
+	}, [isOwner, agent.scopeDetails, currentUserId]);
+
+	const filteredActivities = useMemo(() => {
+		if (isOwner || !myGrantedScopes) return activities;
+		return activities.filter((act) => {
+			const scope = act.provider ? `${act.provider}.${act.tool}` : act.tool;
+			return myGrantedScopes.has(scope);
+		});
+	}, [activities, isOwner, myGrantedScopes]);
 
 	return (
 		<div className="border border-border/60 rounded-lg overflow-hidden bg-card/50">
@@ -209,7 +466,7 @@ function AgentCard({
 			>
 				<div className="flex items-center gap-3 min-w-0">
 					<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/50">
-						<Bot className="h-4 w-4 text-muted-foreground" />
+						<AgentBotIcon className="h-4 w-4 text-muted-foreground" />
 					</div>
 					<div className="min-w-0">
 						<div className="flex items-center gap-2">
@@ -224,6 +481,12 @@ function AgentCard({
 							>
 								{agent.status}
 							</span>
+							{!isOwner && agent.ownerName && (
+								<span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+									<User className="h-2.5 w-2.5" />
+									{agent.ownerName}
+								</span>
+							)}
 						</div>
 						<div className="flex items-center gap-2 mt-0.5 flex-wrap">
 							<span className="text-xs text-muted-foreground">
@@ -231,7 +494,7 @@ function AgentCard({
 								{agent.scopes.length !== 1 ? "s" : ""} &middot;{" "}
 								{formatRelativeTime(agent.lastUsedAt)}
 							</span>
-							{showHost && <HostBadge host={agent.host} />}
+							{showHost && agent.host && <HostBadge host={agent.host} />}
 						</div>
 					</div>
 				</div>
@@ -294,7 +557,7 @@ function AgentCard({
 								</div>
 							)}
 
-							{isActive && (
+							{isActive && isOwner && (
 								<div>
 									<p className="text-xs text-muted-foreground mb-1.5">Name</p>
 									{editingName ? (
@@ -341,19 +604,124 @@ function AgentCard({
 								</div>
 							)}
 
-							{isActive && agent.scopes.length > 0 && (
+							{isActive && (
 								<div>
-									<p className="text-xs text-muted-foreground mb-1.5">Scopes</p>
-									<div className="flex flex-wrap gap-1">
-										{agent.scopes.map((s) => (
-											<span
-												key={s}
-												className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground"
+									<div className="flex items-center justify-between mb-1.5">
+										<p className="text-xs text-muted-foreground">Scopes</p>
+										{isOwner && availableScopes.length > 0 && (
+											<button
+												className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+												onClick={() => {
+													setShowAddScope(!showAddScope);
+													setScopeSearch("");
+												}}
 											>
-												{s}
-											</span>
-										))}
+												{showAddScope ? (
+													<X className="h-2.5 w-2.5" />
+												) : (
+													<Plus className="h-2.5 w-2.5" />
+												)}
+												{showAddScope ? "Close" : "Add"}
+											</button>
+										)}
 									</div>
+									{agent.scopeDetails.length > 0 && (
+										<div className="flex flex-wrap gap-1.5">
+											{agent.scopeDetails.map((sd) => {
+												const isOtherUser =
+													sd.grantedBy && sd.grantedBy !== currentUserId;
+												const canRemove =
+													isOwner || sd.grantedBy === currentUserId;
+												return (
+													<span
+														key={sd.id}
+														className={cn(
+															"inline-flex items-center gap-1 font-mono text-[10px] bg-muted rounded text-muted-foreground group",
+															canRemove ? "pl-1.5" : "px-1.5",
+															removingScopeId === sd.id && "opacity-50",
+														)}
+													>
+														<span className="py-0.5">
+															{sd.scope}
+															{isOtherUser && sd.granterName && (
+																<span className="text-muted-foreground/50 ml-1 font-sans">
+																	via {sd.granterName}
+																</span>
+															)}
+														</span>
+														{canRemove && (
+															<button
+																className="p-0.5 pr-1 hover:text-destructive transition-colors disabled:opacity-30"
+																onClick={() => handleRemoveScope(sd.id)}
+																disabled={removingScopeId === sd.id}
+																title="Remove scope"
+															>
+																{removingScopeId === sd.id ? (
+																	<Loader2 className="h-2.5 w-2.5 animate-spin" />
+																) : (
+																	<X className="h-2.5 w-2.5" />
+																)}
+															</button>
+														)}
+													</span>
+												);
+											})}
+										</div>
+									)}
+									{agent.scopeDetails.length === 0 && !showAddScope && (
+										<p className="text-[10px] text-muted-foreground/50">
+											No scopes granted
+										</p>
+									)}
+									{showAddScope && (
+										<div className="mt-2 border border-border/50 rounded-md overflow-hidden">
+											<div className="px-2 py-1.5 border-b border-border/40">
+												<Input
+													value={scopeSearch}
+													onChange={(e) => setScopeSearch(e.target.value)}
+													placeholder="Search available scopes..."
+													className="h-7 text-[11px] border-0 p-0 shadow-none focus-visible:ring-0"
+													autoFocus
+												/>
+											</div>
+											<div className="max-h-48 overflow-y-auto">
+												{filteredAvailableScopes.length === 0 ? (
+													<p className="text-[10px] text-muted-foreground text-center py-4">
+														{scopeSearch
+															? "No matching scopes"
+															: "All scopes already granted"}
+													</p>
+												) : (
+													filteredAvailableScopes.map((s) => (
+														<button
+															key={s.name}
+															className={cn(
+																"w-full text-left px-3 py-2 hover:bg-accent/40 transition-colors flex items-center gap-2 border-b border-border/20 last:border-0",
+																addingScopeName === s.name &&
+																	"opacity-50 pointer-events-none",
+															)}
+															onClick={() => handleAddScope(s.name)}
+															disabled={addingScopeName === s.name}
+														>
+															<div className="flex-1 min-w-0">
+																<p className="font-mono text-[10px] truncate">
+																	{s.name}
+																</p>
+																<p className="text-[9px] text-muted-foreground truncate">
+																	{s.description}
+																</p>
+															</div>
+															{addingScopeName === s.name ? (
+																<Loader2 className="h-3 w-3 animate-spin text-muted-foreground shrink-0" />
+															) : (
+																<Plus className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+															)}
+														</button>
+													))
+												)}
+											</div>
+										</div>
+									)}
 								</div>
 							)}
 
@@ -368,7 +736,7 @@ function AgentCard({
 								</div>
 							</div>
 
-							{isActive && (
+							{isActive && isOwner && (
 								<div className="pt-3 border-t border-border/40">
 									{confirmRevoke ? (
 										<div className="flex items-center gap-2">
@@ -398,13 +766,15 @@ function AgentCard({
 											</Button>
 										</div>
 									) : (
-										<button
-											className="flex items-center gap-1.5 text-xs text-destructive/80 hover:text-destructive transition-colors"
+										<Button
+											variant="destructive"
+											size="sm"
+											className="h-7 text-xs gap-1.5"
 											onClick={() => setConfirmRevoke(true)}
 										>
 											<AlertTriangle className="h-3 w-3" />
 											Revoke Agent
-										</button>
+										</Button>
 									)}
 								</div>
 							)}
@@ -413,48 +783,20 @@ function AgentCard({
 
 					{tab === "activity" && (
 						<div className="p-4">
+							{!isOwner && myGrantedScopes && (
+								<p className="text-[10px] text-muted-foreground mb-2 px-0.5">
+									Showing activity for scopes you granted (
+									{myGrantedScopes.size})
+								</p>
+							)}
 							{loadingActivity ? (
 								<div className="flex items-center justify-center py-6">
 									<Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
 								</div>
-							) : activities.length > 0 ? (
+							) : filteredActivities.length > 0 ? (
 								<div className="space-y-1.5">
-									{activities.map((act) => (
-										<div
-											key={act.id}
-											className="bg-muted/50 rounded-md text-xs p-2.5 flex items-start gap-2.5"
-										>
-											<div className="mt-0.5 shrink-0">
-												{act.error ? (
-													<AlertCircle className="h-3.5 w-3.5 text-destructive" />
-												) : (
-													<Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-												)}
-											</div>
-											<div className="flex-1 min-w-0">
-												<div className="flex items-center gap-2">
-													{act.provider && (
-														<span className="font-mono bg-background px-1.5 py-0.5 rounded text-[10px]">
-															{act.provider}
-														</span>
-													)}
-													<span className="font-medium truncate">
-														{act.tool}
-													</span>
-												</div>
-												{act.error && (
-													<p className="text-destructive mt-0.5 truncate">
-														{act.error}
-													</p>
-												)}
-											</div>
-											<div className="text-muted-foreground shrink-0 text-right flex items-center gap-2">
-												{act.durationMs != null && (
-													<span>{act.durationMs}ms</span>
-												)}
-												<span>{formatRelativeTime(act.createdAt)}</span>
-											</div>
-										</div>
+									{filteredActivities.map((act) => (
+										<ActivityRow key={act.id} act={act} />
 									))}
 									<div className="flex items-center justify-between pt-2">
 										<Button
@@ -484,7 +826,9 @@ function AgentCard({
 								</div>
 							) : (
 								<p className="text-xs text-muted-foreground text-center py-6">
-									No activity recorded
+									{!isOwner && myGrantedScopes && activities.length > 0
+										? "No activity for your granted scopes"
+										: "No activity recorded"}
 								</p>
 							)}
 						</div>
@@ -525,11 +869,13 @@ export function AgentsClient({
 	initialAgents,
 	currentUserId,
 	providerTools: initialProviderTools,
+	availableScopes,
 	orgId,
 }: {
 	initialAgents: OrgAgent[];
 	currentUserId: string;
 	providerTools: ProviderToolInfo[];
+	availableScopes: AvailableScopeInfo[];
 	orgId: string;
 }) {
 	const [agents, setAgents] = useState<AgentWithHost[]>(() =>
@@ -566,7 +912,10 @@ export function AgentsClient({
 				(res.data || []).map((a) => ({
 					...a,
 					host: (a as unknown as OrgAgent).host ?? null,
+					userId: ((a as unknown as OrgAgent).userId as string) ?? null,
+					ownerName: ((a as unknown as OrgAgent).ownerName as string) ?? null,
 					scopes: normalizeScopes(a.scopes),
+					scopeDetails: (a as unknown as OrgAgent).scopeDetails ?? [],
 				})),
 			);
 		} catch {
@@ -591,6 +940,36 @@ export function AgentsClient({
 			prev.map((a) =>
 				a.id === agentId ? { ...a, status: "revoked" as const } : a,
 			),
+		);
+	}
+
+	function handleScopeRemoved(agentId: string, permissionId: string) {
+		setAgents((prev) =>
+			prev.map((a) => {
+				if (a.id !== agentId) return a;
+				const newDetails = a.scopeDetails.filter(
+					(sd) => sd.id !== permissionId,
+				);
+				return {
+					...a,
+					scopes: newDetails.map((sd) => sd.scope),
+					scopeDetails: newDetails,
+				};
+			}),
+		);
+	}
+
+	function handleScopeAdded(agentId: string, detail: ScopeDetail) {
+		setAgents((prev) =>
+			prev.map((a) => {
+				if (a.id !== agentId) return a;
+				const newDetails = [...a.scopeDetails, detail];
+				return {
+					...a,
+					scopes: newDetails.map((sd) => sd.scope),
+					scopeDetails: newDetails,
+				};
+			}),
 		);
 	}
 
@@ -874,12 +1253,15 @@ export function AgentsClient({
 								</Button>
 							</div>
 						) : (
-							<button
-								className="text-xs text-destructive/70 hover:text-destructive transition-colors"
+							<Button
+								variant="destructive"
+								size="sm"
+								className="h-7 text-xs gap-1.5"
 								onClick={() => setShowRevokeAllConfirm(true)}
 							>
+								<AlertTriangle className="h-3 w-3" />
 								Revoke All
-							</button>
+							</Button>
 						)}
 					</div>
 				)}
@@ -890,7 +1272,7 @@ export function AgentsClient({
 			<div className="flex-1 min-h-0 pt-4 pb-8">
 				{filteredAgents.length === 0 ? (
 					<div className="border border-dashed border-border/60 rounded-lg p-12 text-center">
-						<Bot className="h-6 w-6 mx-auto mb-3 text-muted-foreground/30" />
+						<AgentBotIcon className="h-6 w-6 mx-auto mb-3 text-muted-foreground/30" />
 						<p className="text-sm text-muted-foreground">
 							{search
 								? "No agents match your search."
@@ -914,9 +1296,14 @@ export function AgentsClient({
 										<AgentCard
 											key={a.id}
 											agent={a}
+											orgId={orgId}
 											onUpdated={handleAgentUpdated}
 											onRevoked={handleAgentRevoked}
+											onScopeRemoved={handleScopeRemoved}
+											onScopeAdded={handleScopeAdded}
 											showHost={false}
+											currentUserId={currentUserId}
+											availableScopes={availableScopes}
 										/>
 									))}
 								</div>
@@ -925,14 +1312,19 @@ export function AgentsClient({
 					</div>
 				) : (
 					<div className="space-y-2">
-						{filteredAgents.map((a) => (
-							<AgentCard
-								key={a.id}
-								agent={a}
-								onUpdated={handleAgentUpdated}
-								onRevoked={handleAgentRevoked}
-								showHost
-							/>
+					{filteredAgents.map((a) => (
+						<AgentCard
+							key={a.id}
+							agent={a}
+							orgId={orgId}
+							onUpdated={handleAgentUpdated}
+							onRevoked={handleAgentRevoked}
+							onScopeRemoved={handleScopeRemoved}
+							onScopeAdded={handleScopeAdded}
+							showHost
+							currentUserId={currentUserId}
+							availableScopes={availableScopes}
+						/>
 						))}
 					</div>
 				)}

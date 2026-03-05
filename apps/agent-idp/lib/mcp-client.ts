@@ -15,6 +15,7 @@ const CONNECTION_TIMEOUT = 3_000;
 async function withClient<T>(
 	endpoint: string,
 	fn: (client: Client) => Promise<T>,
+	headers?: Record<string, string>,
 ): Promise<T> {
 	const abortController = new AbortController();
 	const timeout = setTimeout(() => abortController.abort(), CONNECTION_TIMEOUT);
@@ -22,6 +23,7 @@ async function withClient<T>(
 		const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
 			requestInit: {
 				signal: abortController.signal,
+				headers,
 			},
 		});
 		const client = new Client({
@@ -52,23 +54,33 @@ async function withClient<T>(
 	}
 }
 
-export async function listMCPTools(endpoint: string): Promise<MCPTool[]> {
-	const cached = toolsCache.get(endpoint);
+export async function listMCPTools(
+	endpoint: string,
+	headers?: Record<string, string>,
+): Promise<MCPTool[]> {
+	const cacheKey = headers?.Authorization
+		? `${endpoint}::${headers.Authorization.slice(-8)}`
+		: endpoint;
+	const cached = toolsCache.get(cacheKey);
 	if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
 		return cached.tools;
 	}
 
 	try {
-		const tools = await withClient(endpoint, async (client) => {
-			const result = await client.listTools();
-			return result.tools.map((t) => ({
-				name: t.name,
-				description: t.description ?? "",
-				inputSchema: t.inputSchema as Record<string, unknown>,
-			}));
-		});
+		const tools = await withClient(
+			endpoint,
+			async (client) => {
+				const result = await client.listTools();
+				return result.tools.map((t) => ({
+					name: t.name,
+					description: t.description ?? "",
+					inputSchema: t.inputSchema as Record<string, unknown>,
+				}));
+			},
+			headers,
+		);
 
-		toolsCache.set(endpoint, { tools, fetchedAt: Date.now() });
+		toolsCache.set(cacheKey, { tools, fetchedAt: Date.now() });
 		return tools;
 	} catch {
 		return [];
@@ -79,23 +91,28 @@ export async function callMCPTool(
 	endpoint: string,
 	toolName: string,
 	args: Record<string, unknown>,
+	headers?: Record<string, string>,
 ): Promise<{
 	content: Array<{ type: string; text: string }>;
 	isError?: boolean;
 }> {
-	return withClient(endpoint, async (client) => {
-		const result = await client.callTool({
-			name: toolName,
-			arguments: args,
-		});
-		return {
-			content: (result.content as Array<{ type: string; text: string }>).map(
-				(c) => ({
-					type: c.type ?? "text",
-					text: c.text ?? JSON.stringify(c),
-				}),
-			),
-			isError: (result.isError as boolean) ?? false,
-		};
-	});
+	return withClient(
+		endpoint,
+		async (client) => {
+			const result = await client.callTool({
+				name: toolName,
+				arguments: args,
+			});
+			return {
+				content: (result.content as Array<{ type: string; text: string }>).map(
+					(c) => ({
+						type: c.type ?? "text",
+						text: c.text ?? JSON.stringify(c),
+					}),
+				),
+				isError: (result.isError as boolean) ?? false,
+			};
+		},
+		headers,
+	);
 }

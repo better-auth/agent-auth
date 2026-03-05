@@ -4,6 +4,7 @@ import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
 import { findBlockedScopes, parseScopes } from "../scopes";
@@ -226,6 +227,13 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 						update: reactivateUpdate,
 					});
 
+					emit(opts, {
+						type: "host.reactivated",
+						actorId: session.user.id,
+						hostId: existing.id,
+						metadata: { scopes: hostScopes },
+					});
+
 					return ctx.json({
 						hostId: existing.id,
 						scopes: hostScopes,
@@ -269,6 +277,16 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 					lastUsedAt: null,
 					createdAt: now,
 					updatedAt: now,
+				},
+			});
+
+			emit(opts, {
+				type: "host.created",
+				actorId: session.user.id,
+				hostId: host.id,
+				metadata: {
+					scopes: hostScopes,
+					status: isEnrollmentFlow ? "pending_enrollment" : "active",
 				},
 			});
 
@@ -399,7 +417,7 @@ export function getHost() {
 	);
 }
 
-export function revokeHost() {
+export function revokeHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/host/revoke",
 		{
@@ -482,6 +500,13 @@ export function revokeHost() {
 					},
 				});
 			}
+
+			emit(opts, {
+				type: "host.revoked",
+				actorId: session.user.id,
+				hostId: host.id,
+				metadata: { agentsRevoked: toRevoke.length },
+			});
 
 			return ctx.json({
 				host_id: host.id,
@@ -604,6 +629,12 @@ export function reactivateHost(
 					lastUsedAt: now,
 					updatedAt: now,
 				},
+			});
+
+			emit(opts, {
+				type: "host.reactivated",
+				hostId: host.id,
+				actorType: "system",
 			});
 
 			return ctx.json({
@@ -740,6 +771,13 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 				where: [{ field: "id", value: host.id }],
 			});
 
+			emit(opts, {
+				type: "host.updated",
+				actorId: session.user.id,
+				hostId: host.id,
+				metadata: { name, scopes, jwksUrl },
+			});
+
 			return ctx.json({
 				id: updated!.id,
 				scopes: parseScopes(updated!.scopes),
@@ -862,6 +900,13 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 				model: HOST_TABLE,
 				where: [{ field: "id", value: host.id }],
 				update,
+			});
+
+			emit(opts, {
+				type: "host.enrolled",
+				hostId: host.id,
+				actorType: "system",
+				metadata: { name: name ?? host.name },
 			});
 
 			return ctx.json({

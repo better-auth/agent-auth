@@ -35,6 +35,7 @@
  * ```
  */
 
+import { openInBrowser } from "./agent-client";
 import type { AgentJWK } from "./crypto";
 import { generateAgentKeypair, signAgentJWT } from "./crypto";
 import { detectHostName } from "./host-name";
@@ -363,10 +364,32 @@ function buildScopeTools(
 						"Content-Type": "application/json",
 						Authorization: `Bearer ${jwt}`,
 					},
-					body: JSON.stringify({ scopes, reason }),
+					body: JSON.stringify({ scopes, reason, preferredMethod: "device_authorization" }),
 				});
-				const data = await res.json();
-				results.push(data as Record<string, unknown>);
+				const data = (await res.json()) as {
+					status?: string;
+					approval?: {
+						method?: string;
+						verification_uri?: string;
+						verification_uri_complete?: string;
+					};
+					[key: string]: unknown;
+				};
+
+				if (
+					data.approval?.method === "device_authorization" &&
+					(data.approval.verification_uri_complete ??
+						data.approval.verification_uri)
+				) {
+					const verificationUrl =
+						data.approval.verification_uri_complete ??
+						data.approval.verification_uri;
+					if (verificationUrl) {
+						await openInBrowser(verificationUrl).catch(() => {});
+					}
+				}
+
+				results.push(data);
 			}
 
 			return results.length === 1
@@ -537,7 +560,7 @@ async function connectProvider(
 				additionalClaims,
 			});
 
-			const regBody: Record<string, unknown> = { name, scopes, mode };
+			const regBody: Record<string, unknown> = { name, scopes, mode, preferredMethod: "device_authorization" };
 			if (opts.hostName) regBody.hostName = opts.hostName;
 
 			const res = await globalThis.fetch(registerUrl, {
@@ -620,6 +643,8 @@ async function connectProvider(
 			userCode: codeData.user_code,
 			providerUrl: appUrl,
 		});
+	} else {
+		await openInBrowser(codeData.verification_uri_complete).catch(() => {});
 	}
 
 	const effectiveInterval = Math.max(
@@ -679,6 +704,7 @@ async function connectProvider(
 		publicKey: agentKeypair.publicKey,
 		scopes,
 		mode,
+		preferredMethod: "device_authorization",
 	};
 	if (hostKeypair) regBody.hostPublicKey = hostKeypair.publicKey;
 	if (opts.hostName) regBody.hostName = opts.hostName;

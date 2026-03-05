@@ -5,9 +5,11 @@ import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
 import { JWKSCache } from "../jwks-cache";
+import { resolvePermissionExpiresAt } from "../permission-ttl";
 import { findBlockedScopes, hasScope, parseScopes } from "../scopes";
 import type {
 	Agent,
@@ -96,6 +98,13 @@ const createAgentBodySchema = z.object({
 		)
 		.meta({ description: "Optional metadata" })
 		.optional(),
+	preferredMethod: z
+		.enum(["device_authorization", "ciba"])
+		.meta({
+			description:
+				"Preferred approval method. The server may honor or override this based on user/org settings.",
+		})
+		.optional(),
 });
 
 async function createPermissionRows(
@@ -116,13 +125,18 @@ async function createPermissionRows(
 	agentId: string,
 	scopes: string[],
 	grantedBy: string | null,
-	opts?: {
+	permOpts?: {
 		clearExisting?: boolean;
 		status?: "active" | "pending";
 		reason?: string | null;
 	},
+	ttlContext?: {
+		pluginOpts: ResolvedAgentAuthOptions;
+		hostId: string | null;
+		userId: string | null;
+	},
 ) {
-	if (opts?.clearExisting) {
+	if (permOpts?.clearExisting) {
 		const existing = await adapter.findMany<{ id: string }>({
 			model: PERMISSION_TABLE,
 			where: [{ field: "agentId", value: agentId }],
@@ -135,8 +149,17 @@ async function createPermissionRows(
 		}
 	}
 
+	const status = permOpts?.status ?? "active";
 	const now = new Date();
 	for (const scope of scopes) {
+		const expiresAt =
+			status === "active" && ttlContext
+				? await resolvePermissionExpiresAt(ttlContext.pluginOpts, scope, {
+						agentId,
+						hostId: ttlContext.hostId,
+						userId: ttlContext.userId,
+					})
+				: null;
 		await adapter.create({
 			model: PERMISSION_TABLE,
 			data: {
@@ -144,9 +167,9 @@ async function createPermissionRows(
 				scope,
 				referenceId: null,
 				grantedBy,
-				expiresAt: null,
-				status: opts?.status ?? "active",
-				reason: opts?.reason ?? null,
+				expiresAt,
+				status,
+				reason: permOpts?.reason ?? null,
 				createdAt: now,
 				updatedAt: now,
 			},
@@ -172,6 +195,7 @@ async function buildApprovalInfo(
 		agentName: string;
 		hostId: string | null;
 		scopes: string[];
+		preferredMethod?: string;
 	},
 ): Promise<Record<string, unknown>> {
 	const method = await opts.resolveApprovalMethod({
@@ -179,6 +203,7 @@ async function buildApprovalInfo(
 		agentName: context.agentName,
 		hostId: context.hostId,
 		scopes: context.scopes,
+		preferredMethod: context.preferredMethod,
 	});
 
 	if (method === "ciba" && context.userId) {
@@ -200,7 +225,6 @@ async function buildApprovalInfo(
 					clientNotificationEndpoint: null,
 					deliveryMode: "poll",
 					status: "pending",
-					accessToken: null,
 					interval: CIBA_DEFAULT_INTERVAL,
 					lastPolledAt: null,
 					expiresAt,
@@ -270,16 +294,17 @@ export function createAgent(
 			},
 		},
 		async (ctx) => {
-			const {
-				name,
-				publicKey: bodyPublicKey,
-				scopes,
-				hostJWT: bodyHostJWT,
-				hostPublicKey,
-				hostName,
-				mode: rawMode,
-				metadata,
-			} = ctx.body;
+		const {
+			name,
+			publicKey: bodyPublicKey,
+			scopes,
+			hostJWT: bodyHostJWT,
+			hostPublicKey,
+			hostName,
+			mode: rawMode,
+			metadata,
+			preferredMethod,
+		} = ctx.body;
 
 			const authHeader = ctx.headers?.get("authorization");
 			const bearerToken = authHeader?.replace(/^Bearer\s+/i, "");
@@ -888,12 +913,18 @@ export function createAgent(
 					});
 
 					const grantedBy = userId || null;
+					const ttlCtx = {
+						pluginOpts: opts,
+						hostId,
+						userId,
+					};
 					await createPermissionRows(
 						ctx.context.adapter,
 						existing.id,
 						resolvedScopes,
 						grantedBy,
 						{ clearExisting: true },
+						ttlCtx,
 					);
 
 					if (pendingScopes.length > 0) {
@@ -941,20 +972,34 @@ export function createAgent(
 					if (pendingScopes.length > 0) {
 						const origin = new URL(ctx.context.baseURL).origin;
 						response.pending_scopes = pendingScopes;
-						response.approval = await buildApprovalInfo(
-							opts,
-							ctx.context.adapter,
-							ctx.context.internalAdapter,
-							{
-								origin,
-								agentId: existing.id,
-								userId,
-								agentName: name,
-								hostId,
-								scopes: [...resolvedScopes, ...pendingScopes],
-							},
-						);
+					response.approval = await buildApprovalInfo(
+						opts,
+						ctx.context.adapter,
+						ctx.context.internalAdapter,
+						{
+							origin,
+							agentId: existing.id,
+							userId,
+							agentName: name,
+							hostId,
+							scopes: [...resolvedScopes, ...pendingScopes],
+							preferredMethod,
+						},
+					);
 					}
+					emit(opts, {
+						type: "agent.created",
+						actorId: userId ?? undefined,
+						agentId: existing.id,
+						hostId: hostId ?? undefined,
+						metadata: {
+							name,
+							mode,
+							scopes: resolvedScopes,
+							pendingScopes,
+							reused: true,
+						},
+					});
 					return ctx.json(response);
 				}
 			}
@@ -989,6 +1034,8 @@ export function createAgent(
 				agent.id,
 				resolvedScopes,
 				grantedBy,
+				undefined,
+				{ pluginOpts: opts, hostId, userId },
 			);
 
 			if (pendingScopes.length > 0) {
@@ -1038,20 +1085,33 @@ export function createAgent(
 			if (pendingScopes.length > 0 || isHostPending) {
 				const origin = new URL(ctx.context.baseURL).origin;
 				response.pending_scopes = pendingScopes;
-				response.approval = await buildApprovalInfo(
-					opts,
-					ctx.context.adapter,
-					ctx.context.internalAdapter,
-					{
-						origin,
-						agentId: agent.id,
-						userId,
-						agentName: name,
-						hostId,
-						scopes: [...resolvedScopes, ...pendingScopes],
-					},
-				);
+			response.approval = await buildApprovalInfo(
+				opts,
+				ctx.context.adapter,
+				ctx.context.internalAdapter,
+				{
+					origin,
+					agentId: agent.id,
+					userId,
+					agentName: name,
+					hostId,
+					scopes: [...resolvedScopes, ...pendingScopes],
+					preferredMethod,
+				},
+			);
 			}
+			emit(opts, {
+				type: "agent.created",
+				actorId: userId ?? undefined,
+				agentId: agent.id,
+				hostId: hostId ?? undefined,
+				metadata: {
+					name,
+					mode,
+					scopes: resolvedScopes,
+					pendingScopes,
+				},
+			});
 			return ctx.json(response);
 		},
 	);

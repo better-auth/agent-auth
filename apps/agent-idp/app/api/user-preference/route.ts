@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
+import { audit } from "@/lib/audit";
 import { auth } from "@/lib/auth/auth";
 import { db } from "@/lib/db/drizzle";
 import { userPreference } from "@/lib/db/schema";
@@ -56,6 +57,13 @@ export async function PATCH(req: Request) {
 				updatedAt: new Date(),
 			},
 		});
+
+	audit.log({
+		eventType: "user_preference.updated",
+		orgId: "",
+		actorId: session.user.id,
+		metadata: { preferredApprovalMethod: method },
+	});
 
 	return Response.json({
 		preferredApprovalMethod: method ?? "auto",

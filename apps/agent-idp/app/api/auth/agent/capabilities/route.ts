@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/drizzle";
 import { connection } from "@/lib/db/schema";
+import { IDP_PROVIDER_NAME, IDP_TOOLS } from "@/lib/idp-tools";
 import { rankByIntent } from "@/lib/intent-search";
 import { listMCPTools } from "@/lib/mcp-client";
+import { getOAuthAdapter } from "@/lib/oauth-adapters";
 import { listOpenAPITools } from "@/lib/openapi-tools";
 import { resolveAuth } from "@/lib/resolve-auth";
 
@@ -40,70 +42,6 @@ export async function GET(request: Request) {
 		.from(connection)
 		.where(and(eq(connection.orgId, orgId), eq(connection.status, "active")));
 
-	const OAUTH_TOOLS: Record<
-		string,
-		Array<{ name: string; description: string }>
-	> = {
-		github: [
-			{
-				name: "list_repos",
-				description: "List repositories for the authenticated user",
-			},
-			{
-				name: "get_repo",
-				description: "Get details of a specific repository",
-			},
-			{ name: "list_issues", description: "List issues in a repository" },
-			{
-				name: "create_issue",
-				description: "Create a new issue in a repository",
-			},
-			{
-				name: "list_pull_requests",
-				description: "List pull requests in a repository",
-			},
-			{
-				name: "create_pull_request",
-				description: "Create a new pull request",
-			},
-			{
-				name: "get_file_contents",
-				description: "Get contents of a file in a repository",
-			},
-			{
-				name: "search_code",
-				description: "Search for code across repositories",
-			},
-			{
-				name: "list_branches",
-				description: "List branches in a repository",
-			},
-			{
-				name: "list_commits",
-				description: "List commits in a repository",
-			},
-		],
-		google: [
-			{
-				name: "list_messages",
-				description: "List email messages in the inbox",
-			},
-			{
-				name: "get_message",
-				description: "Get the full content of an email message",
-			},
-			{ name: "send_email", description: "Send a new email message" },
-			{ name: "search_emails", description: "Search emails with a query" },
-			{ name: "list_labels", description: "List all email labels" },
-			{
-				name: "modify_labels",
-				description: "Add or remove labels from a message",
-			},
-			{ name: "create_draft", description: "Create a new email draft" },
-			{ name: "list_threads", description: "List email threads" },
-		],
-	};
-
 	const allCapabilities: Array<{
 		name: string;
 		description: string;
@@ -112,20 +50,18 @@ export async function GET(request: Request) {
 		provider: string;
 	}> = [];
 
-	for (const conn of connections) {
-		if (conn.type === "oauth" && conn.builtinId) {
-			const tools = OAUTH_TOOLS[conn.builtinId] ?? [];
-			for (const t of tools) {
-				allCapabilities.push({
-					name: `${conn.name}.${t.name}`,
-					description: t.description,
-					type: "http",
-					provider: conn.name,
-				});
-			}
-			continue;
-		}
+	// Built-in IDP tools
+	for (const t of IDP_TOOLS) {
+		allCapabilities.push({
+			name: `${IDP_PROVIDER_NAME}.${t.name}`,
+			description: t.description,
+			type: "idp",
+			input_schema: t.inputSchema as Record<string, unknown>,
+			provider: IDP_PROVIDER_NAME,
+		});
+	}
 
+	for (const conn of connections) {
 		if (conn.type === "openapi" && conn.specUrl) {
 			try {
 				const tools = await listOpenAPITools(conn.specUrl);
@@ -159,6 +95,26 @@ export async function GET(request: Request) {
 			} catch {
 				// Skip failed connections
 			}
+			continue;
+		}
+
+		if (conn.type === "oauth" && conn.builtinId) {
+			const adapter = getOAuthAdapter(conn.builtinId);
+			if (adapter) {
+				const grantedScopes =
+					conn.oauthScopes?.split(/[\s,]+/).filter(Boolean) ?? undefined;
+				const tools = adapter.listTools(grantedScopes);
+				for (const t of tools) {
+					allCapabilities.push({
+						name: `${conn.name}.${t.name}`,
+						description: t.description,
+						type: "http",
+						input_schema: t.inputSchema,
+						provider: conn.name,
+					});
+				}
+			}
+			continue;
 		}
 	}
 

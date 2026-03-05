@@ -3,7 +3,6 @@ import {
 	AlertTriangle,
 	ArrowRight,
 	ArrowUpRight,
-	Bot,
 	Cable,
 	Check,
 	KeyRound,
@@ -12,8 +11,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { AgentBotIcon } from "@/components/icons/agent-bot";
 import { listConnectionsByOrg } from "@/lib/db/connections";
-import { getOrgBySlug, getOverviewData } from "@/lib/db/queries";
+import {
+	getOrgBySlug,
+	getOrgType,
+	getOverviewData,
+	getSession,
+} from "@/lib/db/queries";
+import { OverviewChatDialog } from "./overview-chat-dialog";
 
 function formatRelativeTime(d: string | null): string {
 	if (!d) return "Never";
@@ -37,9 +43,17 @@ export default async function OverviewPage({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const org = await getOrgBySlug(orgSlug);
+	const [org, session] = await Promise.all([
+		getOrgBySlug(orgSlug),
+		getSession(),
+	]);
+	const orgType = getOrgType(org?.metadata ?? null);
+	const isPersonal = orgType === "personal";
 	const [data, connections] = org
-		? await Promise.all([getOverviewData(org.id), listConnectionsByOrg(org.id)])
+		? await Promise.all([
+				getOverviewData(org.id, session?.user?.id),
+				listConnectionsByOrg(org.id),
+			])
 		: [null, []];
 	const hasAgents = (data?.agents.total ?? 0) > 0;
 	const hasConnections = connections.length > 0;
@@ -76,7 +90,7 @@ export default async function OverviewPage({
 			label: "Active Agents",
 			value: data?.agents.active ?? 0,
 			sub: `${data?.agents.total ?? 0} total`,
-			icon: Bot,
+			icon: AgentBotIcon,
 			href: `/dashboard/${orgSlug}/agents`,
 		},
 		{
@@ -93,13 +107,17 @@ export default async function OverviewPage({
 			icon: Cable,
 			href: `/dashboard/${orgSlug}/connections`,
 		},
-		{
-			label: "Members",
-			value: data?.members.count ?? 0,
-			sub: "In organization",
-			icon: Users,
-			href: `/dashboard/${orgSlug}/members`,
-		},
+		...(!isPersonal
+			? [
+					{
+						label: "Members",
+						value: data?.members.count ?? 0,
+						sub: "In organization",
+						icon: Users,
+						href: `/dashboard/${orgSlug}/members`,
+					},
+				]
+			: []),
 	];
 
 	return (
@@ -227,7 +245,7 @@ export default async function OverviewPage({
 										className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-muted/20 transition-colors group first:rounded-t-lg last:rounded-b-lg"
 									>
 										<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/40">
-											<Bot className="h-3.5 w-3.5 text-muted-foreground/60" />
+											<AgentBotIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
 										</div>
 										<div className="flex-1 min-w-0">
 											<p className="text-[13px] font-medium truncate leading-tight">
@@ -257,7 +275,7 @@ export default async function OverviewPage({
 							</div>
 						) : (
 							<div className="border border-dashed border-border/50 rounded-lg p-6 text-center">
-								<Bot className="h-4 w-4 mx-auto mb-1.5 text-muted-foreground/20" />
+								<AgentBotIcon className="h-4 w-4 mx-auto mb-1.5 text-muted-foreground/20" />
 								<p className="text-[11px] text-muted-foreground/60">
 									No active agents
 								</p>
@@ -398,6 +416,14 @@ export default async function OverviewPage({
 						)}
 					</section>
 
+					{/* Agent Chat Demo */}
+					<section className="shrink-0">
+						<h2 className="text-xs font-medium text-muted-foreground mb-2">
+							Try It Out
+						</h2>
+						<OverviewChatDialog />
+					</section>
+
 					{/* Quick Links */}
 					<section className="shrink-0">
 						<h2 className="text-xs font-medium text-muted-foreground mb-2">
@@ -406,7 +432,7 @@ export default async function OverviewPage({
 						<div className="space-y-px">
 							{[
 								{
-									icon: Bot,
+									icon: AgentBotIcon,
 									label: "Agents",
 									href: `/dashboard/${orgSlug}/agents`,
 								},
@@ -420,11 +446,15 @@ export default async function OverviewPage({
 									label: "All Activity",
 									href: `/dashboard/${orgSlug}/activity`,
 								},
-								{
-									icon: Users,
-									label: "Members",
-									href: `/dashboard/${orgSlug}/members`,
-								},
+								...(!isPersonal
+									? [
+											{
+												icon: Users,
+												label: "Members",
+												href: `/dashboard/${orgSlug}/members`,
+											},
+										]
+									: []),
 							].map((action) => (
 								<Link
 									key={action.label}

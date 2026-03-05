@@ -108,11 +108,13 @@ function PermRow({
 	owner,
 	admin,
 	member,
+	auditor,
 }: {
 	label: string;
 	owner: boolean;
 	admin: boolean;
 	member: boolean;
+	auditor: boolean;
 }) {
 	const dot = (allowed: boolean) => (
 		<span
@@ -128,6 +130,7 @@ function PermRow({
 			<td className="py-1.5 px-3 text-center">{dot(owner)}</td>
 			<td className="py-1.5 px-3 text-center">{dot(admin)}</td>
 			<td className="py-1.5 px-3 text-center">{dot(member)}</td>
+			<td className="py-1.5 px-3 text-center">{dot(auditor)}</td>
 		</tr>
 	);
 }
@@ -788,37 +791,44 @@ export function SecurityClient({
 										<th className="text-center py-2 px-3 font-medium text-muted-foreground">
 											Member
 										</th>
+										<th className="text-center py-2 px-3 font-medium text-muted-foreground">
+											Auditor
+										</th>
 									</tr>
 								</thead>
 								<tbody className="divide-y divide-border/50">
-									<PermRow label="View own hosts" owner admin member />
-									<PermRow label="View all hosts" owner admin member={false} />
+									<PermRow label="View own hosts" owner admin member auditor />
+									<PermRow label="View all hosts" owner admin member={false} auditor />
 									<PermRow
 										label="Create hosts"
 										owner
 										admin
 										member={settings.allowMemberHostCreation}
+										auditor={false}
 									/>
 									<PermRow
 										label="Delete / revoke hosts"
 										owner
 										admin
 										member={false}
+										auditor={false}
 									/>
-									<PermRow label="Create agents" owner admin member />
-									<PermRow label="View all agents" owner admin member={false} />
-									<PermRow label="Approve agents" owner admin member={false} />
+									<PermRow label="Create agents" owner admin member auditor={false} />
+									<PermRow label="View all agents" owner admin member={false} auditor />
+									<PermRow label="Approve agents" owner admin member={false} auditor={false} />
 									<PermRow
 										label="Manage connections"
 										owner
 										admin
 										member={false}
+										auditor={false}
 									/>
 									<PermRow
 										label="Update security settings"
 										owner
 										admin
 										member={false}
+										auditor={false}
 									/>
 								</tbody>
 							</table>

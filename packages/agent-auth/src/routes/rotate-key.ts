@@ -1,6 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { Agent, AgentSession, ResolvedAgentAuthOptions } from "../types";
 
@@ -67,6 +68,13 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 					kid,
 					updatedAt: new Date(),
 				},
+			});
+
+			emit(opts, {
+				type: "agent.key_rotated",
+				actorId: agentSession.user?.id ?? undefined,
+				actorType: "agent",
+				agentId,
 			});
 
 			return ctx.json({ agent_id: agentId, status: "active" });

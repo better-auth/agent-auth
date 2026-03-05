@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
+import { audit } from "@/lib/audit";
 import { auth } from "@/lib/auth/auth";
 import { organization } from "@/lib/db/better-auth-schema";
 import { db } from "@/lib/db/drizzle";
@@ -44,10 +45,13 @@ const SETTING_KEYS: (keyof OrgSecuritySettings)[] = [
 	"allowDynamicHostRegistration",
 	"allowMemberHostCreation",
 	"dynamicHostDefaultScopes",
+	"disabledScopes",
+	"inputScopePolicies",
 	"defaultApprovalMethod",
 	"reAuthPolicy",
 	"freshSessionWindow",
 	"allowedReAuthMethods",
+	"scopeTTLs",
 ];
 
 export async function PATCH(req: Request) {
@@ -100,6 +104,13 @@ export async function PATCH(req: Request) {
 		.update(organization)
 		.set({ metadata: JSON.stringify(meta) })
 		.where(eq(organization.id, orgId));
+
+	audit.log({
+		eventType: "settings.updated",
+		orgId,
+		actorId: session.user.id,
+		metadata: updates,
+	});
 
 	return Response.json(resolveSecuritySettings(meta));
 }

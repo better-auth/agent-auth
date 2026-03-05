@@ -1,7 +1,9 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
+import { resolvePermissionExpiresAt } from "../permission-ttl";
 import { findBlockedScopes, hasScope, parseScopes } from "../scopes";
 import type {
 	AgentHost,
@@ -57,12 +59,14 @@ async function buildScopeApproval(
 	userId: string | null,
 	hostId: string | null,
 	pendingScopes: string[],
+	preferredMethod?: string,
 ): Promise<Record<string, unknown>> {
 	const method = await opts.resolveApprovalMethod({
 		userId,
 		agentName,
 		hostId,
 		scopes: pendingScopes,
+		preferredMethod,
 	});
 
 	const origin = new URL(ctx.context.baseURL).origin;
@@ -86,7 +90,6 @@ async function buildScopeApproval(
 					clientNotificationEndpoint: null,
 					deliveryMode: "poll",
 					status: "pending",
-					accessToken: null,
 					interval: CIBA_DEFAULT_INTERVAL,
 					lastPolledAt: null,
 					expiresAt,
@@ -128,18 +131,24 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 		"/agent/request-scope",
 		{
 			method: "POST",
-			body: z.object({
-				scopes: z
-					.array(z.string())
-					.min(1)
-					.describe("Scopes the agent wants to add"),
-				reason: z
-					.string()
-					.optional()
-					.describe(
-						"Human-readable reason for the request (displayed verbatim to user)",
-					),
-			}),
+		body: z.object({
+			scopes: z
+				.array(z.string())
+				.min(1)
+				.describe("Scopes the agent wants to add"),
+			reason: z
+				.string()
+				.optional()
+				.describe(
+					"Human-readable reason for the request (displayed verbatim to user)",
+				),
+			preferredMethod: z
+				.enum(["device_authorization", "ciba"])
+				.optional()
+				.describe(
+					"Preferred approval method. The server may honor or override this based on user/org settings.",
+				),
+		}),
 			requireHeaders: true,
 			metadata: {
 				openapi: {
@@ -162,7 +171,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERROR_CODES.UNAUTHORIZED_SESSION);
 			}
 
-			const { scopes, reason } = ctx.body;
+			const { scopes, reason, preferredMethod } = ctx.body;
 
 			if (opts.blockedScopes.length > 0) {
 				const blocked = findBlockedScopes(scopes, opts.blockedScopes);
@@ -180,12 +189,20 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				},
 			);
 
+			const ownerId = agentSession.user?.id ?? null;
+
 			const activeScopes = existingPerms
 				.filter((p) => p.status === "active")
 				.map((p) => p.scope);
 
+			// Only consider permissions pending for this user (or unassigned).
+			// Permissions pending for a different grantedBy are managed by
+			// a cross-user flow and should not trigger owner approval.
 			const pendingScopesList = existingPerms
-				.filter((p) => p.status === "pending")
+				.filter(
+					(p) =>
+						p.status === "pending" && (!p.grantedBy || p.grantedBy === ownerId),
+				)
 				.map((p) => p.scope);
 
 			const alreadyActive = new Set(activeScopes);
@@ -213,6 +230,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 					agentSession.user?.id ?? null,
 					agentSession.agent.hostId ?? null,
 					stillPending,
+					preferredMethod,
 				);
 				return ctx.json({
 					agent_id: agentSession.agent.id,
@@ -250,6 +268,11 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			const now = new Date();
 
 			for (const scope of autoApprove) {
+				const expiresAt = await resolvePermissionExpiresAt(opts, scope, {
+					agentId: agentSession.agent.id,
+					hostId: agentSession.agent.hostId ?? null,
+					userId: agentSession.user?.id ?? null,
+				});
 				await ctx.context.adapter.create<AgentPermission>({
 					model: PERMISSION_TABLE,
 					data: {
@@ -257,7 +280,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 						scope,
 						referenceId: null,
 						grantedBy: agentSession.user?.id ?? null,
-						expiresAt: null,
+						expiresAt,
 						status: "active",
 						reason: null,
 						createdAt: now,
@@ -267,6 +290,15 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			}
 
 			if (needsApproval.length === 0) {
+				if (autoApprove.length > 0) {
+					emit(opts, {
+						type: "scope.granted",
+						actorType: "system",
+						agentId: agentSession.agent.id,
+						hostId: agentSession.agent.hostId ?? undefined,
+						metadata: { scopes: autoApprove, auto: true },
+					});
+				}
 				return ctx.json({
 					agent_id: agentSession.agent.id,
 					status: "granted",
@@ -299,7 +331,21 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				agentSession.user?.id ?? null,
 				agentSession.agent.hostId ?? null,
 				needsApproval,
+				preferredMethod,
 			);
+
+			emit(opts, {
+				type: "scope.requested",
+				actorType: "agent",
+				actorId: agentSession.user?.id ?? undefined,
+				agentId: agentSession.agent.id,
+				hostId: agentSession.agent.hostId ?? undefined,
+				metadata: {
+					autoApproved: autoApprove,
+					pending: needsApproval,
+					reason,
+				},
+			});
 
 			return ctx.json({
 				agent_id: agentSession.agent.id,

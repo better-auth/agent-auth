@@ -81,10 +81,21 @@ export async function refreshSessionToken(): Promise<boolean> {
 	if (!idpUrl) return false;
 	const result = await findSessionFromCookies(idpUrl);
 	if (!result) return false;
+
 	const currentToken = await storage.getSessionToken();
-	if (result.token === currentToken) return false;
-	await storage.setSessionToken(result.token);
-	await storage.setUser(result.user);
+	const currentUser = await storage.getUser();
+
+	const tokenChanged = result.token !== currentToken;
+	const userChanged =
+		!currentUser ||
+		currentUser.id !== result.user.id ||
+		currentUser.email !== result.user.email ||
+		currentUser.name !== result.user.name;
+
+	if (!tokenChanged && !userChanged) return false;
+
+	if (tokenChanged) await storage.setSessionToken(result.token);
+	if (userChanged) await storage.setUser(result.user);
 	return true;
 }
 
@@ -156,11 +167,14 @@ export async function listAgents(): Promise<{
 		try {
 			json = JSON.parse(text);
 		} catch {
-			return { error: `Invalid response (${res.status}): ${text.slice(0, 120)}` };
+			return {
+				error: `Invalid response (${res.status}): ${text.slice(0, 120)}`,
+			};
 		}
 		if (!res.ok)
 			return {
-				error: (json.message as string) ?? `Failed to list agents (${res.status})`,
+				error:
+					(json.message as string) ?? `Failed to list agents (${res.status})`,
 			};
 		const raw = (json.agents as Record<string, unknown>[]) ?? [];
 		const agents: Agent[] = raw.map(
@@ -193,5 +207,103 @@ export async function revokeAgent(
 		return {};
 	} catch {
 		return { error: "Failed to connect" };
+	}
+}
+
+export async function fetchReAuthConfig(): Promise<{
+	allowedMethods: string[];
+}> {
+	try {
+		const { idpUrl, token } = await getAuth();
+		const res = await fetch(`${idpUrl}/api/re-auth-config`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		if (!res.ok) return { allowedMethods: ["password"] };
+		const data = await res.json();
+		return {
+			allowedMethods:
+				data.allowedMethods?.length > 0
+					? data.allowedMethods
+					: ["password"],
+		};
+	} catch {
+		return { allowedMethods: ["password"] };
+	}
+}
+
+export async function reAuthWithPassword(
+	email: string,
+	password: string,
+): Promise<{ error?: string }> {
+	try {
+		const { idpUrl } = await getAuth();
+		const res = await fetch(`${idpUrl}/api/auth/sign-in/email`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ email, password }),
+		});
+		const data = await res.json();
+		if (!res.ok) {
+			return { error: data.message ?? "Incorrect password" };
+		}
+		if (data.session?.token || data.token) {
+			await storage.setSessionToken(data.session?.token ?? data.token);
+		}
+		if (data.user) {
+			await storage.setUser(data.user);
+		}
+		return {};
+	} catch {
+		return { error: "Authentication failed" };
+	}
+}
+
+export async function reAuthSendOtp(
+	email: string,
+): Promise<{ error?: string }> {
+	try {
+		const { idpUrl } = await getAuth();
+		const res = await fetch(
+			`${idpUrl}/api/auth/email-otp/send-verification-otp`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email, type: "sign-in" }),
+			},
+		);
+		if (!res.ok) {
+			const data = await res.json().catch(() => ({}));
+			return { error: (data as { message?: string }).message ?? "Failed to send code" };
+		}
+		return {};
+	} catch {
+		return { error: "Failed to send code" };
+	}
+}
+
+export async function reAuthVerifyOtp(
+	email: string,
+	otp: string,
+): Promise<{ error?: string }> {
+	try {
+		const { idpUrl } = await getAuth();
+		const res = await fetch(`${idpUrl}/api/auth/sign-in/email-otp`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ email, otp }),
+		});
+		const data = await res.json();
+		if (!res.ok) {
+			return { error: data.message ?? "Invalid code" };
+		}
+		if (data.session?.token || data.token) {
+			await storage.setSessionToken(data.session?.token ?? data.token);
+		}
+		if (data.user) {
+			await storage.setUser(data.user);
+		}
+		return {};
+	} catch {
+		return { error: "Verification failed" };
 	}
 }

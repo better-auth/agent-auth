@@ -3,8 +3,10 @@ import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
+import { resolvePermissionExpiresAt } from "../permission-ttl";
 import { parseScopes } from "../scopes";
 import type {
 	Agent,
@@ -141,6 +143,11 @@ export function reactivateAgent(
 					});
 				}
 				for (const scope of baseScopes) {
+					const expiresAt = await resolvePermissionExpiresAt(opts, scope, {
+						agentId: agent.id,
+						hostId: agent.hostId,
+						userId: agent.userId,
+					});
 					await ctx.context.adapter.create({
 						model: PERMISSION_TABLE,
 						data: {
@@ -148,7 +155,7 @@ export function reactivateAgent(
 							scope,
 							referenceId: null,
 							grantedBy: agent.userId,
-							expiresAt: null,
+							expiresAt,
 							status: "active",
 							reason: null,
 							createdAt: now,
@@ -184,6 +191,16 @@ export function reactivateAgent(
 			const activePermissions = permissions.filter(
 				(p) => p.status === "active",
 			);
+
+			emit(opts, {
+				type: "agent.reactivated",
+				actorType: "agent",
+				agentId: agent.id,
+				hostId: agent.hostId ?? undefined,
+				metadata: {
+					scopes: activePermissions.map((p) => p.scope),
+				},
+			});
 
 			return ctx.json({
 				status: "active",

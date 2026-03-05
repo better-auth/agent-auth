@@ -7,6 +7,7 @@ import type { AgentJWK } from "./crypto";
 import { hashRequestBody, verifyAgentJWT } from "./crypto";
 import { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 import { JtiReplayCache } from "./jti-cache";
+import { resolvePermissionExpiresAt } from "./permission-ttl";
 import { createAgentRoutes } from "./routes";
 import { agentSchema } from "./schema";
 import { parseScopes } from "./scopes";
@@ -125,6 +126,11 @@ async function tryTransparentReactivation(
 			});
 		}
 		for (const scope of baseScopes) {
+			const expiresAt = await resolvePermissionExpiresAt(opts, scope, {
+				agentId: agent.id,
+				hostId: agent.hostId,
+				userId: agent.userId,
+			});
 			await adapter.create({
 				model: PERMISSION_TABLE,
 				data: {
@@ -132,7 +138,7 @@ async function tryTransparentReactivation(
 					scope,
 					referenceId: null,
 					grantedBy: agent.userId,
-					expiresAt: null,
+					expiresAt,
 					status: "active",
 					reason: null,
 					createdAt: now,

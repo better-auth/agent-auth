@@ -4,11 +4,14 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { getSessionFromCtx } from "better-auth/api";
 import { bearer, deviceAuthorization, organization } from "better-auth/plugins";
-import { ac, admin, member, owner } from "@/lib/auth/permissions";
+import { audit, initAuditTables } from "@/lib/audit";
+import { ac, admin, auditor, member, owner } from "@/lib/auth/permissions";
 import * as betterAuthSchema from "@/lib/db/better-auth-schema";
 import { db } from "@/lib/db/drizzle";
 import { syncConnectionOnAccountLink } from "@/lib/db/sync-connection";
 import { env } from "@/lib/env";
+
+initAuditTables().catch(() => {});
 
 async function getOrgMetadataFromCtx(
 	ctx: GenericEndpointContext,
@@ -74,18 +77,64 @@ async function getOrgFreshSessionWindow(
 	return 300;
 }
 
+async function getOrgMetadataForUser(
+	userId: string,
+): Promise<Record<string, unknown> | null> {
+	try {
+		const membership = await db.query.member.findFirst({
+			where: (m, { eq }) => eq(m.userId, userId),
+			columns: { organizationId: true },
+		});
+		if (!membership) return null;
+		const org = await db.query.organization.findFirst({
+			where: (o, { eq }) => eq(o.id, membership.organizationId),
+			columns: { metadata: true },
+		});
+		if (!org?.metadata) return null;
+		return typeof org.metadata === "string"
+			? JSON.parse(org.metadata)
+			: (org.metadata as Record<string, unknown>);
+	} catch {
+		return null;
+	}
+}
+
+async function resolveOrgScopeTTL({
+	scope,
+	userId,
+}: {
+	scope: string;
+	agentId: string;
+	hostId: string | null;
+	userId: string | null;
+}): Promise<number | null> {
+	if (!userId) return null;
+	const meta = await getOrgMetadataForUser(userId);
+	if (!meta) return null;
+	const raw = meta.scopeTTLs;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+		return null;
+	const ttls = raw as Record<string, unknown>;
+	const val = ttls[scope];
+	return typeof val === "number" && val > 0 ? val : null;
+}
+
 const VALID_APPROVAL_METHODS = new Set(["ciba", "device_authorization"]);
 
 async function resolveApproval({
 	userId,
+	preferredMethod,
 }: {
 	userId: string | null;
 	agentName: string;
 	hostId: string | null;
 	scopes: string[];
+	preferredMethod?: string;
 }): Promise<string> {
-	if (!userId) return "device_authorization";
+	if (!userId) return preferredMethod ?? "device_authorization";
 
+	// Explicit user preference overrides everything (including agent hint).
+	// null / "auto" means "let the agent or org decide".
 	try {
 		const pref = await db.query.userPreference.findFirst({
 			where: (t, { eq }) => eq(t.userId, userId),
@@ -97,10 +146,14 @@ async function resolveApproval({
 		) {
 			return pref.preferredApprovalMethod;
 		}
-	} catch {
-		// user pref lookup is best-effort
+	} catch {}
+
+	// User pref is auto — honor agent's preferred method if valid
+	if (preferredMethod && VALID_APPROVAL_METHODS.has(preferredMethod)) {
+		return preferredMethod;
 	}
 
+	// Fall back to org default
 	try {
 		const memberships = await db.query.member.findMany({
 			where: (m, { eq }) => eq(m.userId, userId),
@@ -123,9 +176,7 @@ async function resolveApproval({
 				}
 			}
 		}
-	} catch {
-		// org setting lookup is best-effort
-	}
+	} catch {}
 
 	return "ciba";
 }
@@ -184,17 +235,22 @@ export const auth = betterAuth({
 		bearer(),
 		organization({
 			ac,
-			roles: { owner, admin, member },
+			roles: { owner, admin, member, auditor },
+			async sendInvitationEmail(data, request) {
+				console.log("[send invitation email]", data);
+			},
 		}),
 		agentAuth({
-			rateLimit: false, 
+			rateLimit: false,
 			freshSessionWindow: (ctx) => getOrgFreshSessionWindow(ctx),
 			approvalMethods: ["device_authorization", "ciba"],
 			resolveApprovalMethod: resolveApproval,
+			resolvePermissionTTL: resolveOrgScopeTTL,
 			providerName: "agent-idp",
 			providerDescription: "Agent Auth Identity Provider",
 			allowDynamicHostRegistration: (ctx) => isOrgDynamicHostAllowed(ctx),
 			dynamicHostDefaultScopes: (ctx) => getOrgDynamicHostDefaultScopes(ctx),
+			onEvent: audit.onEvent,
 		}),
 		deviceAuthorization(),
 	],

@@ -305,11 +305,6 @@ export const agentSchema = () =>
 					input: false,
 					defaultValue: "pending",
 				},
-				accessToken: {
-					type: "string",
-					required: false,
-					input: false,
-				},
 				interval: {
 					type: "number",
 					required: true,

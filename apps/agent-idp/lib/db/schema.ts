@@ -95,6 +95,23 @@ export const userPreference = pgTable("user_preference", {
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const approvalHistory = pgTable("approval_history", {
+	id: text("id").primaryKey(),
+	orgId: text("org_id")
+		.notNull()
+		.references(() => organization.id, { onDelete: "cascade" }),
+	userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+	action: text("action").notNull(), // "approved" | "denied"
+	requestType: text("request_type").notNull(), // "ciba" | "device_authorization" | "direct"
+	requestId: text("request_id"),
+	agentId: text("agent_id"),
+	agentName: text("agent_name"),
+	clientId: text("client_id"),
+	scopes: text("scopes"),
+	bindingMessage: text("binding_message"),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const agentActivity = pgTable("agent_activity", {
 	id: text("id").primaryKey(),
 	orgId: text("org_id")
@@ -105,6 +122,7 @@ export const agentActivity = pgTable("agent_activity", {
 	userId: text("user_id"),
 	tool: text("tool").notNull(),
 	provider: text("provider"),
+	toolArgs: text("tool_args"),
 	status: text("status").notNull().default("success"),
 	durationMs: integer("duration_ms"),
 	error: text("error"),

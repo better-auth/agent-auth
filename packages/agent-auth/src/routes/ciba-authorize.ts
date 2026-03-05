@@ -1,6 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { CibaAuthRequest, ResolvedAgentAuthOptions } from "../types";
 
@@ -112,13 +113,20 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 					clientNotificationEndpoint: client_notification_endpoint ?? null,
 					deliveryMode,
 					status: "pending",
-					accessToken: null,
 					interval: DEFAULT_INTERVAL,
 					lastPolledAt: null,
 					expiresAt,
 					createdAt: now,
 					updatedAt: now,
 				},
+			});
+
+			emit(opts, {
+				type: "ciba.authorized",
+				actorId: user.user.id,
+				targetId: request.id,
+				targetType: "cibaAuthRequest",
+				metadata: { scope, bindingMessage: binding_message, deliveryMode },
 			});
 
 			return ctx.json({

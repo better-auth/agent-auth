@@ -2,8 +2,9 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
-import type { Agent } from "../types";
+import type { Agent, ResolvedAgentAuthOptions } from "../types";
 
 const AGENT_TABLE = "agent";
 
@@ -18,7 +19,7 @@ const updateAgentBodySchema = z.object({
 		.optional(),
 });
 
-export function updateAgent() {
+export function updateAgent(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/update",
 		{
@@ -66,6 +67,13 @@ export function updateAgent() {
 			if (!updated) {
 				throw APIError.from("NOT_FOUND", ERROR_CODES.AGENT_NOT_FOUND);
 			}
+
+			emit(opts, {
+				type: "agent.updated",
+				actorId: session.user.id,
+				agentId: updated.id,
+				metadata: { name, metadata },
+			});
 
 			return ctx.json({
 				id: updated.id,

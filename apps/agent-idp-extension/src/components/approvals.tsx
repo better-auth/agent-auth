@@ -3,9 +3,10 @@ import {
 	ChevronDown,
 	ChevronRight,
 	Clock,
-	ExternalLink,
 	Fingerprint,
+	KeyRound,
 	Loader2,
+	Mail,
 	RefreshCw,
 	ShieldCheck,
 	X,
@@ -15,8 +16,11 @@ import { Button } from "@/components/ui/button";
 import {
 	approveRequest,
 	denyRequest,
+	fetchReAuthConfig,
 	listPendingApprovals,
-	refreshSessionToken,
+	reAuthSendOtp,
+	reAuthVerifyOtp,
+	reAuthWithPassword,
 } from "@/lib/api";
 import { storage } from "@/lib/storage";
 import type { CibaPendingRequest } from "@/lib/types";
@@ -44,48 +48,7 @@ function RequestCard({
 		return () => clearInterval(interval);
 	}, []);
 
-	const [waitingReAuth, setWaitingReAuth] = useState(false);
-	const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-	const retryStartRef = useRef<number>(0);
-
-	const REAUTH_TIMEOUT_MS = 120_000;
-
-	useEffect(() => {
-		return () => {
-			if (retryIntervalRef.current) clearInterval(retryIntervalRef.current);
-		};
-	}, []);
-
-	const stopRetryPolling = () => {
-		if (retryIntervalRef.current) clearInterval(retryIntervalRef.current);
-		retryIntervalRef.current = null;
-		retryStartRef.current = 0;
-	};
-
-	const startRetryPolling = (reqId: string) => {
-		stopRetryPolling();
-		retryStartRef.current = Date.now();
-		retryIntervalRef.current = setInterval(async () => {
-			if (Date.now() - retryStartRef.current > REAUTH_TIMEOUT_MS) {
-				stopRetryPolling();
-				setWaitingReAuth(false);
-				setError("Re-authentication timed out. Please try again.");
-				setApproving(false);
-				return;
-			}
-			await refreshSessionToken();
-			const retry = await approveRequest(reqId);
-			if (retry.code === "FRESH_SESSION_REQUIRED") return;
-			stopRetryPolling();
-			setWaitingReAuth(false);
-			if (retry.error) {
-				setError(retry.error);
-				setApproving(false);
-			} else {
-				onResponded(reqId);
-			}
-		}, 3000);
-	};
+	const [showReAuth, setShowReAuth] = useState(false);
 
 	const handleApprove = async (e: React.MouseEvent) => {
 		e.stopPropagation();
@@ -93,21 +56,23 @@ function RequestCard({
 		setApproving(true);
 		const res = await approveRequest(request.auth_req_id);
 		if (res.code === "FRESH_SESSION_REQUIRED") {
-			const idpUrl = await storage.getIdpUrl();
-			if (idpUrl) {
-				setWaitingReAuth(true);
-				setError(null);
-				chrome.tabs.create({
-					url: `${idpUrl}/re-auth?returnTo=extension`,
-					active: true,
-				});
-				startRetryPolling(request.auth_req_id);
-			} else {
-				setError("Re-authentication required but IDP URL is not configured.");
-				setApproving(false);
-			}
+			setShowReAuth(true);
+			setApproving(false);
 			return;
 		}
+		if (res.error) {
+			setError(res.error);
+			setApproving(false);
+		} else {
+			onResponded(request.auth_req_id);
+		}
+	};
+
+	const handleReAuthSuccess = async () => {
+		setShowReAuth(false);
+		setError(null);
+		setApproving(true);
+		const res = await approveRequest(request.auth_req_id);
 		if (res.error) {
 			setError(res.error);
 			setApproving(false);
@@ -183,48 +148,48 @@ function RequestCard({
 				</div>
 			</div>
 
-			{!expanded && !expired && (
-				<div className="px-3 pb-2.5 flex items-center gap-1.5">
-					{waitingReAuth ? (
-						<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-							<ExternalLink className="h-3 w-3" />
-							<span>Re-authenticate in browser to continue...</span>
-						</div>
-					) : (
-						<>
-							<Button
-								variant="outline"
-								size="xs"
-								onClick={handleDeny}
-								disabled={denying || approving}
-							>
-								{denying ? (
-									<Loader2 className="h-3 w-3 animate-spin" />
-								) : (
-									<>
-										<X className="h-3 w-3" />
-										Deny
-									</>
-								)}
-							</Button>
-							<Button
-								size="xs"
-								onClick={handleApprove}
-								disabled={approving || denying}
-							>
-								{approving ? (
-									<Loader2 className="h-3 w-3 animate-spin" />
-								) : (
-									<>
-										<Check className="h-3 w-3" />
-										Approve
-									</>
-								)}
-							</Button>
-						</>
-					)}
-				</div>
-			)}
+		{!expanded && !expired && (
+			<div className="px-3 pb-2.5">
+				{showReAuth ? (
+					<InlineReAuth
+						onSuccess={handleReAuthSuccess}
+						onCancel={() => setShowReAuth(false)}
+					/>
+				) : (
+					<div className="flex items-center gap-1.5">
+						<Button
+							variant="outline"
+							size="xs"
+							onClick={handleDeny}
+							disabled={denying || approving}
+						>
+							{denying ? (
+								<Loader2 className="h-3 w-3 animate-spin" />
+							) : (
+								<>
+									<X className="h-3 w-3" />
+									Deny
+								</>
+							)}
+						</Button>
+						<Button
+							size="xs"
+							onClick={handleApprove}
+							disabled={approving || denying}
+						>
+							{approving ? (
+								<Loader2 className="h-3 w-3 animate-spin" />
+							) : (
+								<>
+									<Check className="h-3 w-3" />
+									Approve
+								</>
+							)}
+						</Button>
+					</div>
+				)}
+			</div>
+		)}
 
 			{expanded && (
 				<div className="border-t border-border/40 px-3 py-2.5 space-y-2">
@@ -288,42 +253,256 @@ function RequestCard({
 						</div>
 					</div>
 
-					{!expired && (
-						<div className="flex items-center gap-1.5 pt-1">
-							<Button
-								variant="outline"
-								size="xs"
-								className="flex-1"
-								onClick={handleDeny}
-								disabled={denying || approving}
-							>
-								{denying ? (
-									<Loader2 className="h-3 w-3 animate-spin" />
-								) : (
-									<>
-										<X className="h-3 w-3" />
-										Deny
-									</>
-								)}
-							</Button>
-							<Button
-								size="xs"
-								className="flex-1"
-								onClick={handleApprove}
-								disabled={approving || denying}
-							>
-								{approving ? (
-									<Loader2 className="h-3 w-3 animate-spin" />
-								) : (
-									<>
-										<Check className="h-3 w-3" />
-										Approve
-									</>
-								)}
-							</Button>
-						</div>
-					)}
+				{!expired && (
+					<div className="pt-1">
+						{showReAuth ? (
+							<InlineReAuth
+								onSuccess={handleReAuthSuccess}
+								onCancel={() => setShowReAuth(false)}
+							/>
+						) : (
+							<div className="flex items-center gap-1.5">
+								<Button
+									variant="outline"
+									size="xs"
+									className="flex-1"
+									onClick={handleDeny}
+									disabled={denying || approving}
+								>
+									{denying ? (
+										<Loader2 className="h-3 w-3 animate-spin" />
+									) : (
+										<>
+											<X className="h-3 w-3" />
+											Deny
+										</>
+									)}
+								</Button>
+								<Button
+									size="xs"
+									className="flex-1"
+									onClick={handleApprove}
+									disabled={approving || denying}
+								>
+									{approving ? (
+										<Loader2 className="h-3 w-3 animate-spin" />
+									) : (
+										<>
+											<Check className="h-3 w-3" />
+											Approve
+										</>
+									)}
+								</Button>
+							</div>
+						)}
+					</div>
+				)}
 				</div>
+			)}
+		</div>
+	);
+}
+
+type ReAuthMethod = "password" | "passkey" | "email_otp";
+
+function InlineReAuth({
+	onSuccess,
+	onCancel,
+}: {
+	onSuccess: () => void;
+	onCancel: () => void;
+}) {
+	const [methods, setMethods] = useState<ReAuthMethod[] | null>(null);
+	const [method, setMethod] = useState<ReAuthMethod>("password");
+	const [email, setEmail] = useState("");
+	const [password, setPassword] = useState("");
+	const [otp, setOtp] = useState("");
+	const [otpSent, setOtpSent] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		void storage.getUser().then((user) => {
+			if (user?.email) setEmail(user.email);
+		});
+		void fetchReAuthConfig().then((config) => {
+			const all = (config.allowedMethods ?? ["password"]) as ReAuthMethod[];
+			const inline = all.filter((m) => m !== "passkey");
+			const allowed = inline.length > 0 ? inline : (["password"] as ReAuthMethod[]);
+			setMethods(allowed);
+			setMethod(allowed[0]);
+		});
+	}, []);
+
+	const handlePassword = async () => {
+		if (!email || !password) return;
+		setLoading(true);
+		setError(null);
+		const res = await reAuthWithPassword(email, password);
+		if (res.error) {
+			setError(res.error);
+			setLoading(false);
+			return;
+		}
+		onSuccess();
+	};
+
+	const handleSendOtp = async () => {
+		if (!email) return;
+		setLoading(true);
+		setError(null);
+		const res = await reAuthSendOtp(email);
+		if (res.error) {
+			setError(res.error);
+			setLoading(false);
+			return;
+		}
+		setOtpSent(true);
+		setLoading(false);
+	};
+
+	const handleVerifyOtp = async () => {
+		if (!email || !otp) return;
+		setLoading(true);
+		setError(null);
+		const res = await reAuthVerifyOtp(email, otp);
+		if (res.error) {
+			setError(res.error);
+			setLoading(false);
+			return;
+		}
+		onSuccess();
+	};
+
+	if (!methods) {
+		return (
+			<div className="flex items-center justify-center py-3">
+				<Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+			</div>
+		);
+	}
+
+	return (
+		<div className="space-y-2">
+			<div className="flex items-center justify-between">
+				<p className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+					Confirm identity to approve
+				</p>
+				<button
+					type="button"
+					onClick={onCancel}
+					className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+				>
+					Cancel
+				</button>
+			</div>
+
+			{methods.length > 1 && (
+				<div className="flex gap-px p-px bg-muted/50 rounded-sm border border-border/40">
+					{methods.map((m) => {
+						const Icon = m === "password" ? KeyRound : Mail;
+						const label = m === "password" ? "Password" : "Email Code";
+						return (
+							<button
+								key={m}
+								type="button"
+								onClick={() => {
+									setMethod(m);
+									setError(null);
+								}}
+								className={cn(
+									"flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-medium rounded-[2px] transition-all",
+									method === m
+										? "bg-background text-foreground shadow-xs"
+										: "text-muted-foreground hover:text-foreground",
+								)}
+							>
+								<Icon className="h-2.5 w-2.5" />
+								{label}
+							</button>
+						);
+					})}
+				</div>
+			)}
+
+			{method === "password" && (
+				<form
+				onSubmit={(e) => {
+					e.preventDefault();
+					void handlePassword();
+				}}
+					className="flex gap-1.5"
+				>
+					<input
+						type="password"
+						value={password}
+						onChange={(e) => setPassword(e.target.value)}
+						placeholder="Password"
+						autoFocus
+						className="flex-1 min-w-0 h-7 px-2 text-xs bg-background border border-border rounded-sm outline-none focus:border-foreground/30 transition-colors"
+					/>
+					<Button type="submit" size="xs" disabled={loading || !password}>
+						{loading ? (
+							<Loader2 className="h-3 w-3 animate-spin" />
+						) : (
+							<Check className="h-3 w-3" />
+						)}
+					</Button>
+				</form>
+			)}
+
+			{method === "email_otp" && !otpSent && (
+				<Button
+					size="xs"
+					className="w-full"
+					onClick={handleSendOtp}
+					disabled={loading || !email}
+				>
+					{loading ? (
+						<Loader2 className="h-3 w-3 animate-spin" />
+					) : (
+						<>
+							<Mail className="h-3 w-3" />
+							Send code to {email}
+						</>
+					)}
+				</Button>
+			)}
+
+			{method === "email_otp" && otpSent && (
+				<form
+				onSubmit={(e) => {
+					e.preventDefault();
+					void handleVerifyOtp();
+				}}
+					className="space-y-1.5"
+				>
+					<p className="text-[10px] text-muted-foreground">
+						Code sent to {email}
+					</p>
+					<div className="flex gap-1.5">
+						<input
+							value={otp}
+							onChange={(e) => setOtp(e.target.value)}
+							placeholder="Enter code"
+							autoFocus
+							className="flex-1 min-w-0 h-7 px-2 text-xs bg-background border border-border rounded-sm outline-none focus:border-foreground/30 transition-colors font-mono text-center tracking-widest"
+						/>
+						<Button type="submit" size="xs" disabled={loading || !otp}>
+							{loading ? (
+								<Loader2 className="h-3 w-3 animate-spin" />
+							) : (
+								<Check className="h-3 w-3" />
+							)}
+						</Button>
+					</div>
+				</form>
+			)}
+
+			{error && (
+				<p className="text-[10px] text-destructive bg-destructive/5 border border-destructive/20 rounded-sm px-2 py-1">
+					{error}
+				</p>
 			)}
 		</div>
 	);

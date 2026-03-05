@@ -19,6 +19,7 @@ export type AgentActivity = {
 	status: string;
 	durationMs: number | null;
 	error: string | null;
+	metadata: string | null;
 	createdAt: string;
 };
 
@@ -50,15 +51,16 @@ export async function listAgents(): Promise<{
 export async function updateAgent(body: {
 	agentId: string;
 	name?: string;
-	scopes?: string[];
 }): Promise<{ data?: Partial<Agent>; error?: string }> {
 	try {
-		const res = await authFetch("/agent/update", {
+		const res = await fetch("/api/agent/update", {
 			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
 		});
 		const json = await res.json();
-		if (!res.ok) return { error: json.message || "Failed to update agent" };
+		if (!res.ok) return { error: json.error || "Failed to update agent" };
 		return { data: json };
 	} catch (e: unknown) {
 		return { error: e instanceof Error ? e.message : "Failed to update agent" };
@@ -101,12 +103,14 @@ export async function revokeAllAgents(
 
 export async function getAgentActivity(params: {
 	agentId: string;
+	orgId?: string;
 	limit?: number;
 	offset?: number;
 }): Promise<{ data?: AgentActivity[] }> {
 	try {
 		const url = new URL("/api/agent/activity", window.location.origin);
 		url.searchParams.set("agentId", params.agentId);
+		if (params.orgId) url.searchParams.set("orgId", params.orgId);
 		if (params.limit) url.searchParams.set("limit", String(params.limit));
 		if (params.offset) url.searchParams.set("offset", String(params.offset));
 		const res = await fetch(url.toString(), { credentials: "include" });
@@ -187,6 +191,111 @@ export async function denyCibaRequest(
 	} catch (e: unknown) {
 		return {
 			error: e instanceof Error ? e.message : "Failed to deny request",
+		};
+	}
+}
+
+export type ApprovalHistoryEntry = {
+	id: string;
+	action: string;
+	requestType: string;
+	requestId: string | null;
+	agentId: string | null;
+	agentName: string | null;
+	clientId: string | null;
+	scopes: string | null;
+	bindingMessage: string | null;
+	userId: string | null;
+	createdAt: string;
+};
+
+export async function fetchApprovalHistory(
+	orgId: string,
+	opts?: { limit?: number; offset?: number },
+): Promise<{
+	entries: ApprovalHistoryEntry[];
+	total: number;
+	error?: string;
+}> {
+	try {
+		const url = new URL("/api/approval-history", window.location.origin);
+		url.searchParams.set("orgId", orgId);
+		if (opts?.limit) url.searchParams.set("limit", String(opts.limit));
+		if (opts?.offset) url.searchParams.set("offset", String(opts.offset));
+		const res = await fetch(url.toString(), { credentials: "include" });
+		const json = await res.json();
+		if (!res.ok) return { entries: [], total: 0, error: json.error };
+		return { entries: json.entries ?? [], total: json.total ?? 0 };
+	} catch {
+		return { entries: [], total: 0, error: "Failed to load approval history" };
+	}
+}
+
+export async function recordApprovalEvent(body: {
+	orgId: string;
+	action: string;
+	requestType: string;
+	requestId?: string;
+	agentId?: string;
+	agentName?: string;
+	clientId?: string;
+	scopes?: string;
+	bindingMessage?: string;
+}): Promise<{ id?: string; error?: string }> {
+	try {
+		const res = await fetch("/api/approval-history", {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		});
+		const json = await res.json();
+		if (!res.ok) return { error: json.error };
+		return { id: json.id };
+	} catch {
+		return { error: "Failed to record approval" };
+	}
+}
+
+export async function addAgentScope(
+	agentId: string,
+	scope: string,
+): Promise<{ permissionId?: string; error?: string }> {
+	try {
+		const res = await fetch("/api/agent/add-scope", {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ agentId, scope }),
+		});
+		const json = await res.json();
+		if (!res.ok) return { error: json.error || "Failed to add scope" };
+		return { permissionId: json.permissionId };
+	} catch (e: unknown) {
+		return {
+			error: e instanceof Error ? e.message : "Failed to add scope",
+		};
+	}
+}
+
+export async function removeAgentScope(
+	permissionId: string,
+): Promise<{ error?: string }> {
+	try {
+		const res = await fetch("/api/agent/remove-scope", {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ permissionId }),
+		});
+		if (!res.ok) {
+			const json = await res.json();
+			return { error: json.error || "Failed to remove scope" };
+		}
+		return {};
+	} catch (e: unknown) {
+		return {
+			error: e instanceof Error ? e.message : "Failed to remove scope",
 		};
 	}
 }

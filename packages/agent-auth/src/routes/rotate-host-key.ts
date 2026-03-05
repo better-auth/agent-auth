@@ -4,6 +4,7 @@ import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import type { JtiReplayCache } from "../jti-cache";
 import { JWKSCache } from "../jwks-cache";
@@ -138,6 +139,12 @@ export function rotateHostKey(
 					kid,
 					updatedAt: new Date(),
 				},
+			});
+
+			emit(opts, {
+				type: "host.key_rotated",
+				hostId: host.id,
+				actorType: "system",
 			});
 
 			return ctx.json({

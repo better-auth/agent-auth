@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { audit } from "@/lib/audit";
 import { auth } from "@/lib/auth/auth";
 import { agentHost } from "@/lib/db/better-auth-schema";
 import { db } from "@/lib/db/drizzle";
@@ -84,6 +85,13 @@ export async function POST(request: Request) {
 			updatedAt: now,
 		})
 		.where(eq(agentHost.id, hostId));
+
+	audit.log({
+		eventType: "host.token_regenerated",
+		orgId: "",
+		actorId: session.user.id,
+		hostId,
+	});
 
 	return NextResponse.json({
 		hostId,

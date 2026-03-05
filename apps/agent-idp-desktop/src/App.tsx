@@ -3,14 +3,12 @@ import {
 	Bot,
 	ExternalLink,
 	Loader2,
-	PlugZap,
 	Settings,
 	ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Agents } from "@/components/agents";
 import { Approvals } from "@/components/approvals";
-import { Connect } from "@/components/connect";
 import { BetterAuthLogo } from "@/components/icons/logo";
 import { SettingsPanel } from "@/components/settings";
 import { SignIn } from "@/components/sign-in";
@@ -21,12 +19,11 @@ import type { User } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type AppState = "loading" | "setup" | "ready";
-type Tab = "approvals" | "agents" | "connect";
+type Tab = "approvals" | "agents";
 
 const TABS: { id: Tab; label: string; icon: typeof ShieldCheck }[] = [
 	{ id: "approvals", label: "Approvals", icon: ShieldCheck },
 	{ id: "agents", label: "Agents", icon: Bot },
-	{ id: "connect", label: "Connect", icon: PlugZap },
 ];
 
 export function App() {
@@ -143,7 +140,7 @@ export function App() {
 						key={t.id}
 						onClick={() => setTab(t.id)}
 						className={cn(
-							"relative flex-1 flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors cursor-pointer first:pl-0 last:pr-0",
+							"relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors cursor-pointer",
 							tab === t.id
 								? "text-foreground"
 								: "text-muted-foreground hover:text-foreground",
@@ -166,7 +163,6 @@ export function App() {
 			<main className="flex-1 overflow-y-auto no-scrollbar">
 				{tab === "approvals" && <Approvals onCountChange={setPendingCount} />}
 				{tab === "agents" && <Agents />}
-				{tab === "connect" && <Connect />}
 			</main>
 
 			{user && (

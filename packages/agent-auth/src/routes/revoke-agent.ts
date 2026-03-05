@@ -5,6 +5,7 @@ import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import type { AgentJWK } from "../crypto";
 import { verifyAgentJWT } from "../crypto";
+import { emit } from "../emit";
 import { AGENT_AUTH_ERROR_CODES as ERROR_CODES } from "../error-codes";
 import { JWKSCache } from "../jwks-cache";
 import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../types";
@@ -193,6 +194,13 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 					kid: null,
 					updatedAt: new Date(),
 				},
+			});
+
+			emit(opts, {
+				type: "agent.revoked",
+				actorId: ownerUserId ?? undefined,
+				agentId: agent.id,
+				hostId: agent.hostId ?? undefined,
 			});
 
 			return ctx.json({

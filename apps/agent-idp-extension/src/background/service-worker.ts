@@ -193,6 +193,85 @@ chrome.storage.onChanged.addListener((changes) => {
 	}
 });
 
+// ── Cookie monitoring ────────────────────────────────────────────────────────
+
+let cookieRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+chrome.cookies.onChanged.addListener((changeInfo) => {
+	if (
+		changeInfo.cause === "explicit" ||
+		changeInfo.cause === "expired_overwrite"
+	) {
+		chrome.storage.local.get("idpUrl").then((data) => {
+			if (!data.idpUrl) return;
+			try {
+				const idpHost = new URL(data.idpUrl).hostname;
+				if (changeInfo.cookie.domain.replace(/^\./, "") !== idpHost) return;
+			} catch {
+				return;
+			}
+			if (cookieRefreshTimer) clearTimeout(cookieRefreshTimer);
+			cookieRefreshTimer = setTimeout(() => {
+				cookieRefreshTimer = null;
+				void refreshSession();
+			}, 1500);
+		});
+	}
+});
+
+async function refreshSession(): Promise<void> {
+	const data = await chrome.storage.local.get(["idpUrl", "sessionToken"]);
+	if (!data.idpUrl) return;
+
+	const cookies = await chrome.cookies.getAll({ url: data.idpUrl });
+	for (const cookie of cookies) {
+		if (!cookie.value || cookie.value.length < 16) continue;
+		try {
+			const res = await fetch(`${data.idpUrl}/api/auth/get-session`, {
+				method: "GET",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${cookie.value}`,
+				},
+			});
+			if (!res.ok) continue;
+			const session = await res.json();
+			if (!session?.user) continue;
+
+			const newUser: UserData = {
+				id: session.user.id,
+				name: session.user.name ?? session.user.email,
+				email: session.user.email,
+				image: session.user.image ?? null,
+			};
+
+			const currentToken = data.sessionToken;
+			const currentUser = (await chrome.storage.local.get("user")).user as
+				| UserData
+				| undefined;
+
+			if (
+				cookie.value !== currentToken ||
+				newUser.id !== currentUser?.id ||
+				newUser.email !== currentUser?.email ||
+				newUser.name !== currentUser?.name
+			) {
+				await chrome.storage.local.set({
+					sessionToken: cookie.value,
+					user: newUser,
+				});
+			}
+			return;
+		} catch {
+			continue;
+		}
+	}
+
+	if (data.sessionToken) {
+		await chrome.storage.local.remove(["sessionToken", "user", "lastSeenIds"]);
+	}
+}
+
 // If SW restarts with a pending sign-in, re-attach listeners
 chrome.storage.local.get("pendingSignIn").then((data) => {
 	if (data.pendingSignIn?.tabId && data.pendingSignIn.tabId > 0) {
@@ -221,7 +300,16 @@ async function openSidePanel(): Promise<boolean> {
 			return true;
 		}
 	} catch {
-		// Side panel may already be open or restricted context
+		// active tab query may fail — try last focused window as fallback
+	}
+	try {
+		const win = await chrome.windows.getLastFocused();
+		if (win?.id) {
+			await chrome.sidePanel.open({ windowId: win.id });
+			return true;
+		}
+	} catch {
+		// Side panel may already be open or no window available
 	}
 	return false;
 }
@@ -258,6 +346,7 @@ async function pollApprovals(): Promise<void> {
 
 		if (!res.ok) {
 			if (res.status === 401) {
+				await refreshSession();
 				await chrome.action.setBadgeText({ text: "!" });
 				await chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
 			}

@@ -8,6 +8,10 @@ const BUILTIN_DISPLAY_NAMES: Record<string, string> = {
 	google: "Google",
 };
 
+const BUILTIN_MCP_ENDPOINTS: Record<string, string> = {
+	github: "https://api.githubcopilot.com/mcp/",
+};
+
 export async function syncConnectionOnAccountLink(account: {
 	id: string;
 	userId: string;
@@ -15,6 +19,7 @@ export async function syncConnectionOnAccountLink(account: {
 	accessToken?: string | null;
 	refreshToken?: string | null;
 	accessTokenExpiresAt?: Date | null;
+	scope?: string | null;
 }) {
 	const builtinId = account.providerId;
 	if (!["github", "google"].includes(builtinId)) return;
@@ -43,6 +48,12 @@ export async function syncConnectionOnAccountLink(account: {
 
 		if (existing) {
 			connectionId = existing.id;
+			if (account.scope) {
+				await db
+					.update(connection)
+					.set({ oauthScopes: account.scope, updatedAt: new Date() })
+					.where(eq(connection.id, existing.id));
+			}
 		} else {
 			const id = crypto.randomUUID();
 			await db.insert(connection).values({
@@ -52,6 +63,8 @@ export async function syncConnectionOnAccountLink(account: {
 				displayName: BUILTIN_DISPLAY_NAMES[builtinId] ?? builtinId,
 				type: "oauth",
 				builtinId,
+				mcpEndpoint: BUILTIN_MCP_ENDPOINTS[builtinId] ?? null,
+				oauthScopes: account.scope ?? null,
 				credentialType: "oauth",
 				status: "active",
 			});

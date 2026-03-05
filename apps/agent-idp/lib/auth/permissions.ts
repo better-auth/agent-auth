@@ -33,8 +33,16 @@ export const admin = ac.newRole({
 });
 
 export const member = ac.newRole({
+	...memberAc.statements,
 	host: ["read"],
-	agent: ["create", "read"],
+	agent: ["create", "read", "approve"],
+	connection: ["read"],
+	settings: ["read"],
+});
+
+export const auditor = ac.newRole({
+	host: ["read", "readAll"],
+	agent: ["read", "readAll"],
 	connection: ["read"],
 	settings: ["read"],
 });

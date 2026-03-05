@@ -1,16 +1,14 @@
-import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BetterAuthLogo } from "@/components/icons/logo";
 import { LandingShell } from "@/components/landing/landing-shell";
-import { auth } from "@/lib/auth/auth";
+import { getSession, getUserOrg } from "@/lib/db/queries";
 
 export default async function LandingPage() {
-	const session = await auth.api.getSession({ headers: await headers() });
+	const session = await getSession();
 	if (session?.user) {
-		const orgs = await auth.api.listOrganizations({ headers: await headers() });
-		if (orgs && orgs.length > 0)
-			throw redirect(`/dashboard/${(orgs[0] as any).slug}`);
+		const org = await getUserOrg(session.user.id);
+		if (org) throw redirect(`/dashboard/${org.slug}`);
 		throw redirect("/onboarding");
 	}
 	return (

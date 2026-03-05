@@ -8,6 +8,7 @@ import {
 	deleteCredential,
 	getConnectionById,
 	getCredential,
+	updateConnection,
 } from "@/lib/db/connections";
 import { db } from "@/lib/db/drizzle";
 
@@ -86,7 +87,8 @@ export async function DELETE(
 	{ params }: { params: Promise<{ id: string }> },
 ) {
 	const { id } = await params;
-	const session = await auth.api.getSession({ headers: await headers() });
+	const reqHeaders = await headers();
+	const session = await auth.api.getSession({ headers: reqHeaders });
 	if (!session?.user) {
 		return Response.json({ error: "Unauthorized" }, { status: 401 });
 	}
@@ -98,8 +100,11 @@ export async function DELETE(
 			return Response.json({ error: "Not found" }, { status: 404 });
 		}
 
-		if (conn.type === "oauth" && conn.builtinId) {
-			// Delete the Better Auth account row so it shows as "not connected"
+		const url = new URL(_request.url);
+		const action = url.searchParams.get("action");
+
+		if (conn.type === "oauth" && conn.builtinId && action !== "delete") {
+			// Per-user disconnect — any member can disconnect their own account
 			await db
 				.delete(account)
 				.where(
@@ -108,16 +113,28 @@ export async function DELETE(
 						eq(account.providerId, conn.builtinId),
 					),
 				);
-			// Also delete any credential row
 			const cred = await getCredential(session.user.id, conn.id, conn.orgId);
 			if (cred) {
 				await deleteCredential(cred.id);
 			}
-			// Keep the connection row so it appears as "not connected"
 			return Response.json({ success: true });
 		}
 
-		// MCP / OpenAPI → delete the connection entirely
+		// Delete the connection template — admin-only
+		const canDelete = await auth.api.hasPermission({
+			headers: reqHeaders,
+			body: {
+				permissions: { connection: ["delete"] },
+				organizationId: conn.orgId,
+			},
+		});
+		if (!canDelete?.success) {
+			return Response.json(
+				{ error: "Only admins can delete connections." },
+				{ status: 403 },
+			);
+		}
+
 		await deleteConnection(id, conn.orgId);
 		return Response.json({ success: true });
 	}
@@ -134,4 +151,56 @@ export async function DELETE(
 		);
 
 	return Response.json({ success: true });
+}
+
+export async function PATCH(
+	request: NextRequest,
+	{ params }: { params: Promise<{ id: string }> },
+) {
+	const { id } = await params;
+	const reqHeaders = await headers();
+	const session = await auth.api.getSession({ headers: reqHeaders });
+	if (!session?.user) {
+		return Response.json({ error: "Unauthorized" }, { status: 401 });
+	}
+
+	const conn = await getConnectionById(id);
+	if (!conn) {
+		return Response.json({ error: "Not found" }, { status: 404 });
+	}
+
+	const canUpdate = await auth.api.hasPermission({
+		headers: reqHeaders,
+		body: {
+			permissions: { connection: ["create"] },
+			organizationId: conn.orgId,
+		},
+	});
+	if (!canUpdate?.success) {
+		return Response.json(
+			{ error: "Only admins can update connections." },
+			{ status: 403 },
+		);
+	}
+
+	const body = (await request.json()) as {
+		displayName?: string;
+		oauthScopes?: string;
+		mcpEndpoint?: string;
+	};
+
+	const updated = await updateConnection(conn.id, conn.orgId, {
+		...(body.displayName
+			? { name: body.displayName.toLowerCase().replace(/[^a-z0-9-]/g, "-") }
+			: {}),
+		...(body.displayName ? { displayName: body.displayName } : {}),
+		...(body.oauthScopes !== undefined
+			? { oauthScopes: body.oauthScopes }
+			: {}),
+		...(body.mcpEndpoint !== undefined
+			? { mcpEndpoint: body.mcpEndpoint }
+			: {}),
+	});
+
+	return Response.json(updated ?? { success: true });
 }

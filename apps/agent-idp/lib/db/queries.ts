@@ -2,7 +2,9 @@ import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { cache } from "react";
 import { auth } from "../auth/auth";
+import { resolveInputScopePolicies } from "../auth/input-scope-policy";
 import { listMCPTools } from "../mcp-client";
+import { getOAuthAdapter } from "../oauth-adapters";
 import { listOpenAPITools } from "../openapi-tools";
 import {
 	agent,
@@ -10,13 +12,42 @@ import {
 	agentPermission,
 	member,
 	organization,
+	session as sessionTable,
+	user,
 } from "./better-auth-schema";
 import { db } from "./drizzle";
-import { agentActivity, connection, mcpHostKeypair } from "./schema";
+import {
+	agentActivity,
+	approvalHistory,
+	connection,
+	connectionCredential,
+	mcpHostKeypair,
+} from "./schema";
 
 export const getSession = cache(async () => {
 	return auth.api.getSession({ headers: await headers() });
 });
+
+export async function ensureActiveOrg(sessionToken: string, orgId: string) {
+	await db
+		.update(sessionTable)
+		.set({ activeOrganizationId: orgId })
+		.where(and(eq(sessionTable.token, sessionToken)));
+}
+
+export async function getUserOrg(userId: string) {
+	const [row] = await db
+		.select({
+			id: organization.id,
+			name: organization.name,
+			slug: organization.slug,
+		})
+		.from(member)
+		.innerJoin(organization, eq(organization.id, member.organizationId))
+		.where(eq(member.userId, userId))
+		.limit(1);
+	return row ?? null;
+}
 
 export async function getOrgBySlug(slug: string) {
 	const [row] = await db
@@ -25,6 +56,22 @@ export async function getOrgBySlug(slug: string) {
 		.where(eq(organization.slug, slug))
 		.limit(1);
 	return row ?? null;
+}
+
+export type OrgType = "personal" | "organization";
+
+export function getOrgType(metadata: string | null): OrgType {
+	if (!metadata) return "organization";
+	try {
+		const meta = JSON.parse(metadata) as Record<string, unknown>;
+		return meta.orgType === "personal" ? "personal" : "organization";
+	} catch {
+		return "organization";
+	}
+}
+
+export function isPersonalOrg(metadata: string | null): boolean {
+	return getOrgType(metadata) === "personal";
 }
 
 function parseDbScopes(value: unknown): string[] {
@@ -39,14 +86,13 @@ function parseDbScopes(value: unknown): string[] {
 	}
 }
 
-export async function getOverviewData(orgId: string) {
-	// Get agents for this org via member → user → agent
+export async function getOverviewData(orgId: string, userId?: string) {
 	const orgMembers = await db
 		.select({ userId: member.userId })
 		.from(member)
 		.where(eq(member.organizationId, orgId));
 
-	const userIds = orgMembers.map((m) => m.userId);
+	const userIds = userId ? [userId] : orgMembers.map((m) => m.userId);
 
 	if (userIds.length === 0) {
 		return {
@@ -90,41 +136,48 @@ export async function getOverviewData(orgId: string) {
 		}),
 	);
 
-	// Activity (limited for overview; full listing uses getOrgActivity)
+	const activityConditions = [eq(agentActivity.orgId, orgId)];
+	if (userId) {
+		activityConditions.push(eq(agentActivity.userId, userId));
+	}
+	const activityWhere = and(...activityConditions);
+
 	const activities = await db
-		.select()
+		.select({
+			id: agentActivity.id,
+			tool: agentActivity.tool,
+			provider: agentActivity.provider,
+			agentName: agentActivity.agentName,
+			status: agentActivity.status,
+			durationMs: agentActivity.durationMs,
+			error: agentActivity.error,
+			createdAt: agentActivity.createdAt,
+		})
 		.from(agentActivity)
-		.where(eq(agentActivity.orgId, orgId))
+		.where(activityWhere)
 		.orderBy(desc(agentActivity.createdAt))
 		.limit(8);
 
 	const totalCalls = await db
 		.select({ count: count() })
 		.from(agentActivity)
-		.where(eq(agentActivity.orgId, orgId));
+		.where(activityWhere);
+
+	const last24hConditions = [
+		...activityConditions,
+		sql`${agentActivity.createdAt} > now() - interval '24 hours'`,
+	];
 
 	const last24h = await db
 		.select({ count: count() })
 		.from(agentActivity)
-		.where(
-			and(
-				eq(agentActivity.orgId, orgId),
-				sql`${agentActivity.createdAt} > now() - interval '24 hours'`,
-			),
-		);
+		.where(and(...last24hConditions));
 
 	const recentErrors = await db
 		.select({ count: count() })
 		.from(agentActivity)
-		.where(
-			and(
-				eq(agentActivity.orgId, orgId),
-				eq(agentActivity.status, "error"),
-				sql`${agentActivity.createdAt} > now() - interval '24 hours'`,
-			),
-		);
+		.where(and(...last24hConditions, eq(agentActivity.status, "error")));
 
-	// Tool calls by provider
 	const byProvider = await db
 		.select({
 			provider: agentActivity.provider,
@@ -132,7 +185,7 @@ export async function getOverviewData(orgId: string) {
 			errorCount: sql<number>`count(*) filter (where ${agentActivity.status} = 'error')`,
 		})
 		.from(agentActivity)
-		.where(eq(agentActivity.orgId, orgId))
+		.where(activityWhere)
 		.groupBy(agentActivity.provider);
 
 	return {
@@ -168,6 +221,7 @@ export type ActivityFilters = {
 	agentName?: string;
 	provider?: string;
 	search?: string;
+	userId?: string;
 };
 
 export async function getOrgActivity(orgId: string, opts?: ActivityFilters) {
@@ -175,6 +229,9 @@ export async function getOrgActivity(orgId: string, opts?: ActivityFilters) {
 	const offset = opts?.offset ?? 0;
 
 	const conditions = [eq(agentActivity.orgId, orgId)];
+	if (opts?.userId) {
+		conditions.push(eq(agentActivity.userId, opts.userId));
+	}
 	if (opts?.status) {
 		conditions.push(eq(agentActivity.status, opts.status));
 	}
@@ -198,7 +255,17 @@ export async function getOrgActivity(orgId: string, opts?: ActivityFilters) {
 	const [totalResult, activities] = await Promise.all([
 		db.select({ count: count() }).from(agentActivity).where(where),
 		db
-			.select()
+			.select({
+				id: agentActivity.id,
+				agentId: agentActivity.agentId,
+				tool: agentActivity.tool,
+				provider: agentActivity.provider,
+				agentName: agentActivity.agentName,
+				status: agentActivity.status,
+				durationMs: agentActivity.durationMs,
+				error: agentActivity.error,
+				createdAt: agentActivity.createdAt,
+			})
 			.from(agentActivity)
 			.where(where)
 			.orderBy(desc(agentActivity.createdAt))
@@ -255,20 +322,55 @@ export async function getActivityFilterOptions(orgId: string) {
 	};
 }
 
-export async function getOrgAgents(orgId: string) {
-	const orgMembers = await db
-		.select({ userId: member.userId })
-		.from(member)
-		.where(eq(member.organizationId, orgId));
+export async function getOrgAgents(orgId: string, userId?: string) {
+	let userIds: string[];
 
-	const userIds = orgMembers.map((m) => m.userId);
+	if (userId) {
+		userIds = [userId];
+	} else {
+		const orgMembers = await db
+			.select({ userId: member.userId })
+			.from(member)
+			.where(eq(member.organizationId, orgId));
+		userIds = orgMembers.map((m) => m.userId);
+	}
+
 	if (userIds.length === 0) return [];
 
-	const agents = await db
+	const ownAgents = await db
 		.select()
 		.from(agent)
 		.where(inArray(agent.userId, userIds))
 		.orderBy(desc(agent.createdAt));
+
+	// Include agents where this user has granted cross-user permissions
+	let crossUserAgentIds: string[] = [];
+	if (userId) {
+		const crossPerms = await db
+			.select({ agentId: agentPermission.agentId })
+			.from(agentPermission)
+			.where(
+				and(
+					eq(agentPermission.grantedBy, userId),
+					eq(agentPermission.status, "active"),
+				),
+			);
+		const ownIds = new Set(ownAgents.map((a) => a.id));
+		crossUserAgentIds = [...new Set(crossPerms.map((p) => p.agentId))].filter(
+			(id) => !ownIds.has(id),
+		);
+	}
+
+	const crossAgents =
+		crossUserAgentIds.length > 0
+			? await db
+					.select()
+					.from(agent)
+					.where(inArray(agent.id, crossUserAgentIds))
+					.orderBy(desc(agent.createdAt))
+			: [];
+
+	const agents = [...ownAgents, ...crossAgents];
 
 	const hostIds = [
 		...new Set(agents.map((a) => a.hostId).filter(Boolean)),
@@ -279,21 +381,52 @@ export async function getOrgAgents(orgId: string) {
 			: [];
 	const hostMap = new Map(hosts.map((h) => [h.id, h]));
 
+	const ownerIds = [
+		...new Set(agents.map((a) => a.userId).filter(Boolean)),
+	] as string[];
+	const owners =
+		ownerIds.length > 0
+			? await db
+					.select({ id: user.id, name: user.name })
+					.from(user)
+					.where(inArray(user.id, ownerIds))
+			: [];
+	const ownerMap = new Map(owners.map((o) => [o.id, o.name]));
+
 	return Promise.all(
 		agents.map(async (a) => {
 			const perms = await db
 				.select({
+					id: agentPermission.id,
 					scope: agentPermission.scope,
 					status: agentPermission.status,
+					grantedBy: agentPermission.grantedBy,
+					granterName: user.name,
 				})
 				.from(agentPermission)
+				.leftJoin(user, eq(user.id, agentPermission.grantedBy))
 				.where(eq(agentPermission.agentId, a.id));
 
 			const host = a.hostId ? hostMap.get(a.hostId) : null;
+			const activePerms = perms.filter((p) => p.status === "active");
+
+			const seenScopes = new Set<string>();
+			const dedupedPerms = activePerms.filter((p) => {
+				if (seenScopes.has(p.scope)) return false;
+				seenScopes.add(p.scope);
+				return true;
+			});
 
 			return {
 				...a,
-				scopes: perms.filter((p) => p.status === "active").map((p) => p.scope),
+				ownerName: a.userId ? (ownerMap.get(a.userId) ?? null) : null,
+				scopes: dedupedPerms.map((p) => p.scope),
+				scopeDetails: dedupedPerms.map((p) => ({
+					id: p.id,
+					scope: p.scope,
+					grantedBy: p.grantedBy,
+					granterName: p.granterName ?? null,
+				})),
 				host: host
 					? { id: host.id, name: host.name ?? null, status: host.status }
 					: null,
@@ -304,6 +437,48 @@ export async function getOrgAgents(orgId: string) {
 			};
 		}),
 	);
+}
+
+export async function removeAgentPermission(permissionId: string) {
+	await db.delete(agentPermission).where(eq(agentPermission.id, permissionId));
+}
+
+export async function addAgentPermission(
+	agentId: string,
+	scope: string,
+	grantedBy: string,
+) {
+	const existing = await db
+		.select({ id: agentPermission.id })
+		.from(agentPermission)
+		.where(
+			and(
+				eq(agentPermission.agentId, agentId),
+				eq(agentPermission.scope, scope),
+				eq(agentPermission.status, "active"),
+			),
+		)
+		.limit(1);
+
+	if (existing.length > 0) {
+		return existing[0]!.id;
+	}
+
+	const id = crypto.randomUUID();
+	const now = new Date();
+	await db.insert(agentPermission).values({
+		id,
+		agentId,
+		scope,
+		referenceId: null,
+		grantedBy,
+		expiresAt: null,
+		status: "active",
+		reason: null,
+		createdAt: now,
+		updatedAt: now,
+	});
+	return id;
 }
 
 export async function getOrgHosts(orgId: string) {
@@ -382,91 +557,53 @@ export type AvailableScope = {
 	provider: string;
 };
 
-const OAUTH_TOOLS: Record<
-	string,
-	Array<{ name: string; description: string }>
-> = {
-	github: [
-		{
-			name: "list_repos",
-			description: "List repositories for the authenticated user",
-		},
-		{
-			name: "get_repo",
-			description: "Get details of a specific repository",
-		},
-		{ name: "list_issues", description: "List issues in a repository" },
-		{
-			name: "create_issue",
-			description: "Create a new issue in a repository",
-		},
-		{
-			name: "list_pull_requests",
-			description: "List pull requests in a repository",
-		},
-		{
-			name: "create_pull_request",
-			description: "Create a new pull request",
-		},
-		{
-			name: "get_file_contents",
-			description: "Get contents of a file in a repository",
-		},
-		{
-			name: "search_code",
-			description: "Search for code across repositories",
-		},
-		{
-			name: "list_branches",
-			description: "List branches in a repository",
-		},
-		{
-			name: "list_commits",
-			description: "List commits in a repository",
-		},
-	],
-	google: [
-		{
-			name: "list_messages",
-			description: "List email messages in the inbox",
-		},
-		{
-			name: "get_message",
-			description: "Get the full content of an email message",
-		},
-		{ name: "send_email", description: "Send a new email message" },
-		{ name: "search_emails", description: "Search emails with a query" },
-		{ name: "list_labels", description: "List all email labels" },
-		{
-			name: "modify_labels",
-			description: "Add or remove labels from a message",
-		},
-		{ name: "create_draft", description: "Create a new email draft" },
-		{ name: "list_threads", description: "List email threads" },
-	],
-};
-
 type ReAuthPolicy = "none" | "fresh_session" | "always";
 type ApprovalMethod = "auto" | "ciba" | "device_authorization";
+
+export interface CrossUserCallsConfig {
+	enabled: boolean;
+	disabledScopes: string[];
+}
 
 export interface OrgSecuritySettings {
 	allowDynamicHostRegistration: boolean;
 	allowMemberHostCreation: boolean;
 	dynamicHostDefaultScopes: string[];
+	disabledScopes: string[];
+	inputScopePolicies: {
+		id: string;
+		parentScope: string;
+		scope: string;
+		description?: string;
+		hidden?: boolean;
+		constraints: {
+			type: "number_range";
+			path: string;
+			min?: number;
+			max?: number;
+		}[];
+	}[];
 	defaultApprovalMethod: ApprovalMethod;
 	reAuthPolicy: ReAuthPolicy;
 	freshSessionWindow: number;
 	allowedReAuthMethods: ("password" | "passkey" | "email_otp")[];
+	crossUserCalls: CrossUserCallsConfig;
+	/** Per-scope permission TTL in seconds. Key = scope name, value = TTL. */
+	scopeTTLs: Record<string, number>;
 }
 
 const SECURITY_DEFAULTS: OrgSecuritySettings = {
 	allowDynamicHostRegistration: true,
 	allowMemberHostCreation: true,
 	dynamicHostDefaultScopes: [],
+	disabledScopes: [],
+	inputScopePolicies: [],
 	defaultApprovalMethod: "auto",
 	reAuthPolicy: "fresh_session",
 	freshSessionWindow: 300,
 	allowedReAuthMethods: ["password", "passkey"],
+	crossUserCalls: { enabled: true, disabledScopes: [] },
+	scopeTTLs: {},
 };
 
 function parseOrgMeta(raw: string | null): Record<string, unknown> {
@@ -476,6 +613,25 @@ function parseOrgMeta(raw: string | null): Record<string, unknown> {
 	} catch {
 		return {};
 	}
+}
+
+function resolveCrossUserCalls(
+	meta: Record<string, unknown>,
+): CrossUserCallsConfig {
+	const raw = meta.crossUserCalls;
+	if (typeof raw !== "object" || raw === null) {
+		return SECURITY_DEFAULTS.crossUserCalls;
+	}
+	const obj = raw as Record<string, unknown>;
+	return {
+		enabled:
+			typeof obj.enabled === "boolean"
+				? obj.enabled
+				: SECURITY_DEFAULTS.crossUserCalls.enabled,
+		disabledScopes: Array.isArray(obj.disabledScopes)
+			? (obj.disabledScopes as string[])
+			: SECURITY_DEFAULTS.crossUserCalls.disabledScopes,
+	};
 }
 
 export function resolveSecuritySettings(
@@ -493,6 +649,12 @@ export function resolveSecuritySettings(
 		dynamicHostDefaultScopes: Array.isArray(meta.dynamicHostDefaultScopes)
 			? meta.dynamicHostDefaultScopes
 			: SECURITY_DEFAULTS.dynamicHostDefaultScopes,
+		disabledScopes: Array.isArray(meta.disabledScopes)
+			? (meta.disabledScopes as string[]).filter(
+					(s) => typeof s === "string",
+				)
+			: SECURITY_DEFAULTS.disabledScopes,
+		inputScopePolicies: resolveInputScopePolicies(meta),
 		defaultApprovalMethod:
 			meta.defaultApprovalMethod === "ciba" ||
 			meta.defaultApprovalMethod === "device_authorization" ||
@@ -514,7 +676,23 @@ export function resolveSecuritySettings(
 					["password", "passkey", "email_otp"].includes(m as string),
 				)
 			: SECURITY_DEFAULTS.allowedReAuthMethods,
+		crossUserCalls: resolveCrossUserCalls(meta),
+		scopeTTLs: resolveScopeTTLs(meta),
 	};
+}
+
+function resolveScopeTTLs(
+	meta: Record<string, unknown>,
+): Record<string, number> {
+	const raw = meta.scopeTTLs;
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+	const result: Record<string, number> = {};
+	for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+		if (typeof val === "number" && val > 0) {
+			result[key] = val;
+		}
+	}
+	return result;
 }
 
 export async function getOrgSecuritySettings(
@@ -533,32 +711,38 @@ export async function getOrgSecuritySettings(
 export async function getOrgAvailableScopes(
 	orgId: string,
 ): Promise<AvailableScope[]> {
+	const [org] = await db
+		.select({ metadata: organization.metadata })
+		.from(organization)
+		.where(eq(organization.id, orgId))
+		.limit(1);
+	const orgMeta = parseOrgMeta(org?.metadata ?? null);
+	const inputPolicies = resolveInputScopePolicies(orgMeta);
+
 	const connections = await db
 		.select()
 		.from(connection)
 		.where(and(eq(connection.orgId, orgId), eq(connection.status, "active")));
 
+	const replacedBySubScopes = new Set(inputPolicies.map((p) => p.parentScope));
+
 	const scopes: AvailableScope[] = [];
+	const seen = new Set<string>();
+	const pushScope = (scope: AvailableScope) => {
+		if (seen.has(scope.name)) return;
+		seen.add(scope.name);
+		scopes.push(scope);
+	};
 
 	for (const conn of connections) {
-		if (conn.type === "oauth" && conn.builtinId) {
-			const tools = OAUTH_TOOLS[conn.builtinId] ?? [];
-			for (const t of tools) {
-				scopes.push({
-					name: `${conn.name}.${t.name}`,
-					description: t.description,
-					provider: conn.name,
-				});
-			}
-			continue;
-		}
-
 		if (conn.type === "openapi" && conn.specUrl) {
 			try {
 				const tools = await listOpenAPITools(conn.specUrl);
 				for (const t of tools) {
-					scopes.push({
-						name: `${conn.name}.${t.name}`,
+					const scopeName = `${conn.name}.${t.name}`;
+					if (replacedBySubScopes.has(scopeName)) continue;
+					pushScope({
+						name: scopeName,
 						description: t.description,
 						provider: conn.name,
 					});
@@ -573,8 +757,10 @@ export async function getOrgAvailableScopes(
 			try {
 				const tools = await listMCPTools(conn.mcpEndpoint);
 				for (const t of tools) {
-					scopes.push({
-						name: `${conn.name}.${t.name}`,
+					const scopeName = `${conn.name}.${t.name}`;
+					if (replacedBySubScopes.has(scopeName)) continue;
+					pushScope({
+						name: scopeName,
 						description: t.description,
 						provider: conn.name,
 					});
@@ -582,8 +768,249 @@ export async function getOrgAvailableScopes(
 			} catch {
 				// Skip failed connections
 			}
+			continue;
+		}
+
+		if (conn.type === "oauth" && conn.builtinId) {
+			const adapter = getOAuthAdapter(conn.builtinId);
+			if (adapter) {
+				const grantedScopes =
+					conn.oauthScopes?.split(/[\s,]+/).filter(Boolean) ?? undefined;
+				const tools = adapter.listTools(grantedScopes);
+				for (const t of tools) {
+					const scopeName = `${conn.name}.${t.name}`;
+					if (replacedBySubScopes.has(scopeName)) continue;
+					pushScope({
+						name: scopeName,
+						description: t.description,
+						provider: conn.name,
+					});
+				}
+			}
+			continue;
 		}
 	}
 
+	for (const policy of inputPolicies) {
+		if (policy.hidden) continue;
+		pushScope({
+			name: policy.scope,
+			description:
+				policy.description ??
+				`Derived from ${policy.parentScope} with input constraints`,
+			provider: policy.parentScope.split(".")[0] ?? "custom",
+		});
+	}
+
 	return scopes;
+}
+
+export type ScopeWithSchema = {
+	name: string;
+	description: string;
+	provider: string;
+	connectionId: string;
+	connectionType: string;
+	inputSchema: Record<string, unknown> | null;
+	hasInput: boolean;
+};
+
+export type ConnectionScopes = {
+	connectionId: string;
+	connectionName: string;
+	connectionDisplayName: string;
+	connectionType: string;
+	scopes: ScopeWithSchema[];
+};
+
+export async function getOrgScopesWithSchema(
+	orgId: string,
+	userId?: string,
+): Promise<ConnectionScopes[]> {
+	const connections = await db
+		.select()
+		.from(connection)
+		.where(and(eq(connection.orgId, orgId), eq(connection.status, "active")));
+
+	const result: ConnectionScopes[] = [];
+
+	for (const conn of connections) {
+		const entry: ConnectionScopes = {
+			connectionId: conn.id,
+			connectionName: conn.name,
+			connectionDisplayName: conn.displayName,
+			connectionType: conn.type,
+			scopes: [],
+		};
+
+		if (conn.type === "openapi" && conn.specUrl) {
+			try {
+				const tools = await listOpenAPITools(conn.specUrl);
+				for (const t of tools) {
+					const props = (t.inputSchema?.properties ?? {}) as Record<
+						string,
+						unknown
+					>;
+					entry.scopes.push({
+						name: `${conn.name}.${t.name}`,
+						description: t.description,
+						provider: conn.name,
+						connectionId: conn.id,
+						connectionType: conn.type,
+						inputSchema: t.inputSchema,
+						hasInput: Object.keys(props).length > 0,
+					});
+				}
+			} catch {
+				// skip
+			}
+		} else if (conn.mcpEndpoint) {
+			let authHeaders: Record<string, string> | undefined;
+			if (conn.type === "oauth" && userId) {
+				const [cred] = await db
+					.select()
+					.from(connectionCredential)
+					.where(
+						and(
+							eq(connectionCredential.connectionId, conn.id),
+							eq(connectionCredential.orgId, orgId),
+							eq(connectionCredential.userId, userId),
+							eq(connectionCredential.status, "active"),
+						),
+					)
+					.limit(1);
+				if (cred?.accessToken) {
+					authHeaders = { Authorization: `Bearer ${cred.accessToken}` };
+				}
+			}
+			try {
+				const tools = await listMCPTools(conn.mcpEndpoint, authHeaders);
+				for (const t of tools) {
+					const props = (t.inputSchema?.properties ?? {}) as Record<
+						string,
+						unknown
+					>;
+					entry.scopes.push({
+						name: `${conn.name}.${t.name}`,
+						description: t.description,
+						provider: conn.name,
+						connectionId: conn.id,
+						connectionType: conn.type,
+						inputSchema: t.inputSchema,
+						hasInput: Object.keys(props).length > 0,
+					});
+				}
+			} catch {
+				// skip
+			}
+		} else if (conn.type === "oauth" && conn.builtinId) {
+			const adapter = getOAuthAdapter(conn.builtinId);
+			if (adapter) {
+				const grantedScopes =
+					conn.oauthScopes?.split(/[\s,]+/).filter(Boolean) ?? undefined;
+				const tools = adapter.listTools(grantedScopes);
+				for (const t of tools) {
+					const props = (t.inputSchema?.properties ?? {}) as Record<
+						string,
+						unknown
+					>;
+					entry.scopes.push({
+						name: `${conn.name}.${t.name}`,
+						description: t.description,
+						provider: conn.name,
+						connectionId: conn.id,
+						connectionType: conn.type,
+						inputSchema: t.inputSchema,
+						hasInput: Object.keys(props).length > 0,
+					});
+				}
+			}
+		}
+
+		if (entry.scopes.length > 0) {
+			result.push(entry);
+		}
+	}
+
+	return result;
+}
+
+export type ApprovalHistoryEntry = {
+	id: string;
+	action: string;
+	requestType: string;
+	requestId: string | null;
+	agentId: string | null;
+	agentName: string | null;
+	clientId: string | null;
+	scopes: string | null;
+	bindingMessage: string | null;
+	userId: string | null;
+	createdAt: string;
+};
+
+export async function recordApproval(entry: {
+	orgId: string;
+	userId: string;
+	action: string;
+	requestType: string;
+	requestId?: string;
+	agentId?: string;
+	agentName?: string;
+	clientId?: string;
+	scopes?: string;
+	bindingMessage?: string;
+}) {
+	const id = crypto.randomUUID();
+	await db.insert(approvalHistory).values({
+		id,
+		orgId: entry.orgId,
+		userId: entry.userId,
+		action: entry.action,
+		requestType: entry.requestType,
+		requestId: entry.requestId ?? null,
+		agentId: entry.agentId ?? null,
+		agentName: entry.agentName ?? null,
+		clientId: entry.clientId ?? null,
+		scopes: entry.scopes ?? null,
+		bindingMessage: entry.bindingMessage ?? null,
+	});
+	return id;
+}
+
+export async function getApprovalHistory(
+	orgId: string,
+	opts?: { limit?: number; offset?: number },
+): Promise<{ entries: ApprovalHistoryEntry[]; total: number }> {
+	const limit = opts?.limit ?? 50;
+	const offset = opts?.offset ?? 0;
+	const where = eq(approvalHistory.orgId, orgId);
+
+	const [totalResult, entries] = await Promise.all([
+		db.select({ count: count() }).from(approvalHistory).where(where),
+		db
+			.select()
+			.from(approvalHistory)
+			.where(where)
+			.orderBy(desc(approvalHistory.createdAt))
+			.limit(limit)
+			.offset(offset),
+	]);
+
+	return {
+		entries: entries.map((e) => ({
+			id: e.id,
+			action: e.action,
+			requestType: e.requestType,
+			requestId: e.requestId,
+			agentId: e.agentId,
+			agentName: e.agentName,
+			clientId: e.clientId,
+			scopes: e.scopes,
+			bindingMessage: e.bindingMessage,
+			userId: e.userId,
+			createdAt: e.createdAt.toISOString(),
+		})),
+		total: totalResult[0]?.count ?? 0,
+	};
 }

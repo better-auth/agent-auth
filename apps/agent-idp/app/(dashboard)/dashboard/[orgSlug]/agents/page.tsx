@@ -1,5 +1,10 @@
 import { listConnectionsByOrg } from "@/lib/db/connections";
-import { getOrgAgents, getOrgBySlug, getSession } from "@/lib/db/queries";
+import {
+	getOrgAgents,
+	getOrgAvailableScopes,
+	getOrgBySlug,
+	getSession,
+} from "@/lib/db/queries";
 import { AgentsClient } from "./agents-client";
 
 export default async function AgentsPage({
@@ -20,15 +25,17 @@ export default async function AgentsPage({
 					initialAgents={[]}
 					currentUserId=""
 					providerTools={[]}
+					availableScopes={[]}
 					orgId=""
 				/>
 			</div>
 		);
 	}
 
-	const [agents, connections] = await Promise.all([
-		getOrgAgents(org.id),
+	const [agents, connections, availableScopes] = await Promise.all([
+		getOrgAgents(org.id, session?.user?.id),
 		listConnectionsByOrg(org.id),
+		getOrgAvailableScopes(org.id),
 	]);
 
 	const providerTools = connections
@@ -45,6 +52,7 @@ export default async function AgentsPage({
 				initialAgents={agents}
 				currentUserId={session?.user?.id ?? ""}
 				providerTools={providerTools}
+				availableScopes={availableScopes}
 				orgId={org.id}
 			/>
 		</div>

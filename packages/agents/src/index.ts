@@ -14,6 +14,7 @@ export {
 	connectAgentViaCiba,
 	createAgentClient,
 	enrollHost,
+	openInBrowser,
 } from "./agent-client";
 export type {
 	AgentJWK,

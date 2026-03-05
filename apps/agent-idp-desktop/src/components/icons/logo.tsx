@@ -14,7 +14,7 @@ export function BetterAuthLogo(props: SVGProps<SVGSVGElement>) {
 				fillRule="evenodd"
 				clipRule="evenodd"
 				d="M0 0H15V15H30V30H15V45H0V30V15V0ZM45 30V15H30V0H45H60V15V30V45H45H30V30H45Z"
-				className="fill-black dark:fill-white"
+				className="fill-white"
 			/>
 		</svg>
 	);

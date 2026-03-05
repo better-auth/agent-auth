@@ -11,6 +11,7 @@
  */
 
 import * as z from "zod";
+import { openInBrowser } from "./agent-client";
 import type { AgentJWK } from "./crypto";
 import { generateAgentKeypair, hashRequestBody, signAgentJWT } from "./crypto";
 import { detectHostName } from "./host-name";
@@ -221,6 +222,7 @@ async function tryHostJWTRegistration(
 		mode?: string;
 		metadata?: Record<string, unknown>;
 		hostName?: string | null;
+		preferredMethod?: string;
 	},
 ): Promise<{
 	agent_id: string;
@@ -252,6 +254,7 @@ async function tryHostJWTRegistration(
 			scopes: body.scopes,
 			mode: body.mode,
 			metadata: body.metadata,
+			preferredMethod: body.preferredMethod,
 		};
 		if (body.hostName) {
 			registerBody.hostName = body.hostName;
@@ -374,10 +377,10 @@ export function getAgentAuthInstructions(): string {
 		"### Step 1 — Connect",
 		"",
 		"If you already know a provider name (from `list_providers`), use it directly:",
-		'  `connect_agent(provider="<provider-name>", name="<task-specific name>")`',
+		'  `connect_agent(provider="<provider-name>", name="<task-based name>")`',
 		"If you have a URL instead, pass it — discovery happens automatically:",
-		'  `connect_agent(url="<app-url>", name="<task-specific name>")`',
-		"- Pick a descriptive name reflecting the user's request.",
+		'  `connect_agent(url="<app-url>", name="<task-based name>")`',
+		"- Pick a short, memorable name based on the user's request (e.g. 'PR Reviewer', 'Email Drafter').",
 		"- Scopes are optional — omit them to let the server decide what to grant.",
 		"- The user may need to approve in their browser. Tell them and wait.",
 		"- **Save the returned Agent ID.** Pass it to every subsequent tool call.",
@@ -407,7 +410,7 @@ export function getAgentAuthInstructions(): string {
 		"3. **NEVER guess provider or capability names.** Use exact names from discover or list_capabilities.",
 		"4. **NEVER disconnect and reconnect** just to get more scopes.",
 		"5. If a `call_tool` returns **403**, then and only then call `request_scope` with the specific scope that was denied.",
-		"6. Use descriptive agent names that reflect the task (e.g. 'PR Review Agent'), not generic ones.",
+		"6. Name agents after their task (e.g. 'PR Reviewer', 'Deploy my-app'). Pick something the user would recognize.",
 		"7. Call `disconnect_agent` when you are done with a task to clean up.",
 	].join("\n");
 }
@@ -436,6 +439,19 @@ export function createAgentMCPTools(
 
 	const resolvedHostName =
 		options.hostName === false ? null : (options.hostName ?? detectHostName());
+
+	async function openVerificationUrl(url: string): Promise<void> {
+		if (onVerificationUrl) {
+			await onVerificationUrl(url);
+		} else {
+			await openInBrowser(url).catch(() => {});
+		}
+	}
+
+	const defaultPreferredMethod =
+		typeof globalThis.window !== "undefined"
+			? "ciba"
+			: "device_authorization";
 
 	// Session-scoped agent tracking: only agents created or explicitly
 	// authorized during this process lifetime can be used by tools.
@@ -919,7 +935,8 @@ export function createAgentMCPTools(
 				name: z
 					.string()
 					.describe(
-						"Short task-based name (e.g. 'PR Review Agent', 'Issue Creator'). NOT generic names like 'Cursor Agent'.",
+						"A short task-based name describing what you're doing (e.g. 'PR Reviewer', 'Deploy my-app', 'Email Drafter'). " +
+							"Pick something the user would recognize from their request.",
 					),
 				scopes: z
 					.array(z.string())
@@ -1049,7 +1066,7 @@ export function createAgentMCPTools(
 							registerUrl,
 							hostData,
 							keypair.publicKey,
-							{ name, scopes, hostName: resolvedHostName },
+							{ name, scopes, hostName: resolvedHostName, preferredMethod: defaultPreferredMethod },
 						);
 
 						if (result && result.status === "active") {
@@ -1088,10 +1105,8 @@ export function createAgentMCPTools(
 								(result.approval as Record<string, string>)
 									.verification_uri_complete ??
 								(result.approval as Record<string, string>).verification_uri;
-							if (approvalUrl && onVerificationUrl) {
-								try {
-									await onVerificationUrl(approvalUrl);
-								} catch {}
+							if (approvalUrl) {
+								await openVerificationUrl(approvalUrl);
 							}
 
 							return {
@@ -1109,14 +1124,15 @@ export function createAgentMCPTools(
 				// Direct auth mode (cookie/token in env)
 				if (getAuthHeaders) {
 					const authHeaders = await resolveAuthHeaders();
-					const directBody: Record<string, unknown> = {
-						name,
-						publicKey: keypair.publicKey,
-						scopes,
-					};
-					if (resolvedHostName) {
-						directBody.hostName = resolvedHostName;
-					}
+				const directBody: Record<string, unknown> = {
+					name,
+					publicKey: keypair.publicKey,
+					scopes,
+					preferredMethod: defaultPreferredMethod,
+				};
+				if (resolvedHostName) {
+					directBody.hostName = resolvedHostName;
+				}
 					const res = await globalThis.fetch(registerUrl, {
 						method: "POST",
 						headers: {
@@ -1346,11 +1362,12 @@ export function createAgentMCPTools(
 						: null;
 
 					try {
-						const cibaRegisterBody: Record<string, unknown> = {
-							name,
-							publicKey: keypair.publicKey,
-							scopes,
-						};
+					const cibaRegisterBody: Record<string, unknown> = {
+						name,
+						publicKey: keypair.publicKey,
+						scopes,
+						preferredMethod: defaultPreferredMethod,
+					};
 						if (cibaHostKeypair) {
 							cibaRegisterBody.hostPublicKey = cibaHostKeypair.publicKey;
 						}
@@ -1480,14 +1497,7 @@ export function createAgentMCPTools(
 					});
 				}
 
-				// Auto-open browser if callback is provided
-				if (onVerificationUrl) {
-					try {
-						await onVerificationUrl(codeData.verification_uri_complete);
-					} catch {
-						// Best-effort — fall back to showing the URL
-					}
-				}
+				await openVerificationUrl(codeData.verification_uri_complete);
 
 				// Poll for approval
 				const maxAttempts = 60;
@@ -1595,17 +1605,18 @@ export function createAgentMCPTools(
 
 				// Register the agent
 				try {
-					const registerBody: Record<string, unknown> = {
-						name,
-						publicKey: keypair.publicKey,
-						scopes,
-					};
-					if (hostKeypair) {
-						registerBody.hostPublicKey = hostKeypair.publicKey;
-					}
-					if (resolvedHostName) {
-						registerBody.hostName = resolvedHostName;
-					}
+				const registerBody: Record<string, unknown> = {
+					name,
+					publicKey: keypair.publicKey,
+					scopes,
+					preferredMethod: defaultPreferredMethod,
+				};
+				if (hostKeypair) {
+					registerBody.hostPublicKey = hostKeypair.publicKey;
+				}
+				if (resolvedHostName) {
+					registerBody.hostName = resolvedHostName;
+				}
 
 					const res = await globalThis.fetch(registerUrl, {
 						method: "POST",
@@ -2010,10 +2021,11 @@ export function createAgentMCPTools(
 							"Content-Type": "application/json",
 							Authorization: `Bearer ${jwt}`,
 						},
-						body: JSON.stringify({
-							scopes: newScopes,
-							reason: reason || undefined,
-						}),
+					body: JSON.stringify({
+						scopes: newScopes,
+						reason: reason || undefined,
+						preferredMethod: defaultPreferredMethod,
+					}),
 					});
 
 					if (!res.ok) {
@@ -2084,16 +2096,12 @@ export function createAgentMCPTools(
 						};
 					}
 
-					// For device_authorization, open the verification URL.
-					// For CIBA, the user gets a notification in their dashboard.
 					if (!isCiba) {
 						const verificationUrl =
 							data.approval?.verification_uri_complete ??
 							data.approval?.verification_uri;
-						if (verificationUrl && onVerificationUrl) {
-							try {
-								await onVerificationUrl(verificationUrl);
-							} catch {}
+						if (verificationUrl) {
+							await openVerificationUrl(verificationUrl);
 						}
 					}
 
@@ -2425,9 +2433,7 @@ export function createAgentMCPTools(
 						data.status === "pending" &&
 						data.approval?.verification_uri_complete
 					) {
-						if (onVerificationUrl) {
-							await onVerificationUrl(data.approval.verification_uri_complete);
-						}
+						await openVerificationUrl(data.approval.verification_uri_complete);
 						return {
 							content: [
 								{

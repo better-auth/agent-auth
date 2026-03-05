@@ -143,16 +143,10 @@ export function cibaToken(opts: ResolvedAgentAuthOptions) {
 				return ctx.json({ error: "authorization_pending" }, { status: 400 });
 			}
 
-			if (request.status === "approved" && request.accessToken) {
+			if (request.status === "approved") {
 				return ctx.json({
-					access_token: request.accessToken,
-					token_type: "Bearer",
-					expires_in: Math.max(
-						0,
-						Math.floor(
-							(new Date(request.expiresAt).getTime() - Date.now()) / 1000,
-						),
-					),
+					auth_req_id: request.id,
+					status: "approved",
 				});
 			}
 

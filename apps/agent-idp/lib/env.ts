@@ -45,4 +45,6 @@ export const env = {
 	GITHUB_CLIENT_SECRET: optional("GITHUB_CLIENT_SECRET", ""),
 
 	AGENT_ENCRYPTION_KEY: optional("AGENT_ENCRYPTION_KEY"),
+
+	CLICKHOUSE_URL: optional("CLICKHOUSE_URL"),
 } as const;

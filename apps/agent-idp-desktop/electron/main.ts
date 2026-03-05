@@ -58,7 +58,6 @@ function createTrayIcon(): NativeImage {
 
 	if (fs.existsSync(iconPath)) {
 		const loaded = nativeImage.createFromPath(iconPath);
-		if (isMac) loaded.setTemplateImage(true);
 		return loaded.resize({ width: iconSize, height: iconSize });
 	}
 
@@ -67,7 +66,6 @@ function createTrayIcon(): NativeImage {
 		const fp = path.join(resourcesPath, file);
 		if (fs.existsSync(fp)) {
 			const loaded = nativeImage.createFromPath(fp);
-			if (isMac) loaded.setTemplateImage(true);
 			return loaded.resize({ width: iconSize, height: iconSize });
 		}
 	}

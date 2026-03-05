@@ -2,7 +2,6 @@
 
 import {
 	Ban,
-	Bot,
 	Check,
 	ChevronDown,
 	ChevronRight,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { AgentBotIcon } from "@/components/icons/agent-bot";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -546,7 +546,7 @@ function HostCard({
 					</div>
 					<div className="flex items-center gap-3 mt-0.5 flex-wrap">
 						<span className="text-xs text-muted-foreground flex items-center gap-1">
-							<Bot className="h-3 w-3" />
+							<AgentBotIcon className="h-3 w-3" />
 							{host.activeAgents} agent
 							{host.activeAgents !== 1 ? "s" : ""}
 						</span>

@@ -1,8 +1,12 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { ChatDialogProvider } from "@/components/chat-dialog";
 import Sidebar from "@/components/dashboard/sidebar";
-import { auth } from "@/lib/auth/auth";
-import { getOrgBySlug, getSession } from "@/lib/db/queries";
+import {
+	ensureActiveOrg,
+	getOrgBySlug,
+	getOrgType,
+	getSession,
+} from "@/lib/db/queries";
 
 export default async function OrgDashboardLayout({
 	children,
@@ -19,30 +23,32 @@ export default async function OrgDashboardLayout({
 	if (!session) throw redirect("/sign-in");
 	if (!org) throw redirect("/onboarding");
 
-	const orgs = await auth.api.listOrganizations({ headers: await headers() });
-	const orgList = (orgs || []).map((o: any) => ({
-		id: o.id,
-		name: o.name,
-		slug: o.slug,
-	}));
+	if (session.session.activeOrganizationId !== org.id) {
+		await ensureActiveOrg(session.session.token, org.id);
+	}
+
+	const orgType = getOrgType(org.metadata);
 
 	return (
-		<div className="flex h-dvh">
-			<Sidebar
-				slug={orgSlug}
-				orgId={org.id}
-				orgs={orgList}
-				session={{
-					user: {
-						name: session.user.name || "",
-						email: session.user.email,
-						image: session.user.image,
-					},
-				}}
-			/>
-			<main className="ml-[252px] flex-1 overflow-y-auto px-6 lg:px-8">
-				{children}
-			</main>
-		</div>
+		<ChatDialogProvider orgSlug={orgSlug}>
+			<div className="flex h-dvh">
+				<Sidebar
+					slug={orgSlug}
+					orgId={org.id}
+					orgName={org.name}
+					orgType={orgType}
+					session={{
+						user: {
+							name: session.user.name || "",
+							email: session.user.email,
+							image: session.user.image,
+						},
+					}}
+				/>
+				<main className="ml-[252px] flex-1 overflow-y-auto px-6 lg:px-8">
+					{children}
+				</main>
+			</div>
+		</ChatDialogProvider>
 	);
 }

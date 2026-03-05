@@ -53,6 +53,7 @@ type UnifiedConnection = {
 	builtinId: string | null;
 	transport: string | null;
 	mcpEndpoint: string | null;
+	oauthScopes: string | null;
 	credentialType: string | null;
 	status: string;
 	createdAt: string;
@@ -100,24 +101,85 @@ function GoogleIcon({ className }: { className?: string }) {
 // OAuth providers config
 // ---------------------------------------------------------------------------
 
-const OAUTH_PROVIDERS = [
+const GOOGLE_SERVICES = [
 	{
-		id: "github",
-		name: "GitHub",
-		description:
-			"Browse repos, manage issues & PRs, analyze code, and automate workflows.",
-		icon: <GitHubIcon className="h-5 w-5" />,
-	},
-	{
-		id: "google",
-		name: "Google (Gmail)",
-		description: "Search, read, send, and manage emails through AI agents.",
-		icon: <GoogleIcon className="h-5 w-5" />,
+		id: "gmail",
+		name: "Gmail",
+		description: "Read, send, and manage emails",
 		scopes: [
 			"https://www.googleapis.com/auth/gmail.readonly",
 			"https://www.googleapis.com/auth/gmail.modify",
 			"https://www.googleapis.com/auth/gmail.send",
 		],
+		defaultEnabled: true,
+	},
+	{
+		id: "calendar",
+		name: "Calendar",
+		description: "View and manage calendar events",
+		scopes: [
+			"https://www.googleapis.com/auth/calendar",
+			"https://www.googleapis.com/auth/calendar.events",
+		],
+		defaultEnabled: false,
+	},
+	{
+		id: "drive",
+		name: "Drive",
+		description: "Browse and search files",
+		scopes: [
+			"https://www.googleapis.com/auth/drive.readonly",
+			"https://www.googleapis.com/auth/drive.file",
+		],
+		defaultEnabled: false,
+	},
+	{
+		id: "sheets",
+		name: "Sheets",
+		description: "Read and write spreadsheet data",
+		scopes: [
+			"https://www.googleapis.com/auth/spreadsheets.readonly",
+			"https://www.googleapis.com/auth/spreadsheets",
+		],
+		defaultEnabled: false,
+	},
+	{
+		id: "docs",
+		name: "Docs",
+		description: "Read Google Docs documents",
+		scopes: ["https://www.googleapis.com/auth/documents.readonly"],
+		defaultEnabled: false,
+	},
+	{
+		id: "contacts",
+		name: "Contacts",
+		description: "Search and list contacts",
+		scopes: ["https://www.googleapis.com/auth/contacts.readonly"],
+		defaultEnabled: false,
+	},
+];
+
+const OAUTH_PROVIDERS = [
+	{
+		id: "google" as const,
+		name: "Google",
+		description:
+			"Gmail, Calendar, Drive, Docs, Sheets, and Contacts through AI agents.",
+		icon: <GoogleIcon className="h-5 w-5" />,
+		hasServicePicker: true,
+	},
+];
+
+const PRECONFIGURED_MCP = [
+	{
+		id: "github",
+		name: "GitHub",
+		description:
+			"Browse repos, manage issues & PRs, analyze code via GitHub's remote MCP server.",
+		icon: <GitHubIcon className="h-5 w-5" />,
+		mcpEndpoint: "https://api.githubcopilot.com/mcp/",
+		builtinId: "github",
+		type: "oauth" as const,
 	},
 ];
 
@@ -210,32 +272,102 @@ function ToolsPanel({ tools }: { tools: ToolDef[] }) {
 // ConnectionCard
 // ---------------------------------------------------------------------------
 
+function getEnabledServiceIds(oauthScopes: string | null): Set<string> {
+	if (!oauthScopes) return new Set();
+	const granted = oauthScopes.split(/[\s,]+/).filter(Boolean);
+	const grantedSet = new Set(granted);
+	const enabled = new Set<string>();
+	for (const svc of GOOGLE_SERVICES) {
+		if (svc.scopes.some((s) => grantedSet.has(s))) {
+			enabled.add(svc.id);
+		}
+	}
+	return enabled;
+}
+
 function ConnectionCard({
 	conn,
 	onMutate,
+	canManage,
 }: {
 	conn: UnifiedConnection;
 	onMutate: () => void;
+	canManage: boolean;
 }) {
 	const [showTools, setShowTools] = useState(false);
 	const [actionLoading, setActionLoading] = useState(false);
 	const [confirmDelete, setConfirmDelete] = useState(false);
+	const [showServicePicker, setShowServicePicker] = useState(false);
+	const [selectedServices, setSelectedServices] = useState<Set<string>>(() => {
+		const enabled = getEnabledServiceIds(conn.oauthScopes);
+		return enabled.size > 0
+			? enabled
+			: new Set(
+					GOOGLE_SERVICES.filter((s) => s.defaultEnabled).map((s) => s.id),
+				);
+	});
 
 	const isOAuth = conn.type === "oauth";
 	const toolCount = conn.tools.length;
 
 	const handleConnect = async () => {
-		const provider = OAUTH_PROVIDERS.find((p) => p.id === conn.builtinId);
-		if (!provider) return;
+		if (!conn.builtinId) return;
 		try {
+			const scopes = conn.oauthScopes
+				? conn.oauthScopes.split(/[\s,]+/).filter(Boolean)
+				: undefined;
 			await authClient.linkSocial({
-				provider: provider.id as "github" | "google",
+				provider: conn.builtinId as "github" | "google",
 				callbackURL: window.location.pathname,
-				scopes: (provider as any).scopes,
+				scopes,
 			});
 		} catch {
 			/* empty */
 		}
+	};
+
+	const [showTokenDialog, setShowTokenDialog] = useState(false);
+	const [tokenInput, setTokenInput] = useState("");
+
+	const handleMemberConnect = async (token?: string) => {
+		setActionLoading(true);
+		try {
+			await fetch(`/api/connections/${conn.id}/connect`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(token ? { token } : {}),
+			});
+			onMutate();
+		} catch {
+			/* empty */
+		}
+		setActionLoading(false);
+		setShowTokenDialog(false);
+		setTokenInput("");
+	};
+
+	const handleUpgradeScopes = async () => {
+		const selected = GOOGLE_SERVICES.filter((s) => selectedServices.has(s.id));
+		const scopes = selected.flatMap((s) => s.scopes);
+		const serviceNames = selected.map((s) => s.name).join(", ");
+		try {
+			await fetch(`/api/connections/${conn.id}`, {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					oauthScopes: scopes.join(" "),
+					displayName: `Google (${serviceNames})`,
+				}),
+			});
+			await authClient.linkSocial({
+				provider: "google",
+				callbackURL: window.location.pathname,
+				scopes,
+			});
+		} catch {
+			/* empty */
+		}
+		setShowServicePicker(false);
 	};
 
 	const handleDisconnect = async () => {
@@ -317,53 +449,118 @@ function ConnectionCard({
 								</button>
 							)}
 							{isOAuth ? (
+								<>
+									{conn.builtinId === "google" && conn.connected && (
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-7 text-xs text-muted-foreground"
+											onClick={() => setShowServicePicker(true)}
+										>
+											Manage Services
+										</Button>
+									)}
+									{conn.connected && (
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-7 text-xs text-muted-foreground hover:text-destructive shrink-0"
+											onClick={handleDisconnect}
+											disabled={actionLoading}
+											title="Disconnect your account"
+										>
+											{actionLoading ? (
+												<Loader2 className="h-3 w-3 animate-spin" />
+											) : (
+												<Unplug className="h-3 w-3" />
+											)}
+										</Button>
+									)}
+									{canManage && (
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-7 px-2 text-muted-foreground hover:text-destructive shrink-0"
+											onClick={() => {
+												void (async () => {
+													setActionLoading(true);
+													try {
+														await fetch(
+															`/api/connections/${conn.id}?action=delete`,
+															{ method: "DELETE" },
+														);
+														onMutate();
+													} catch {
+														/* empty */
+													}
+													setActionLoading(false);
+												})();
+											}}
+											disabled={actionLoading}
+											title="Remove connection from org"
+										>
+											<Trash2 className="h-3 w-3" />
+										</Button>
+									)}
+								</>
+							) : !conn.connected &&
+								(conn.credentialType === "bearer" ||
+									conn.credentialType === "token") ? (
 								<Button
-									variant="ghost"
 									size="sm"
-									className="h-7 text-xs text-muted-foreground hover:text-destructive shrink-0"
-									onClick={handleDisconnect}
+									className="h-8 text-xs"
+									onClick={() => setShowTokenDialog(true)}
+								>
+									Connect
+								</Button>
+							) : !conn.connected && conn.credentialType === "none" ? (
+								<Button
+									size="sm"
+									className="h-8 text-xs"
 									disabled={actionLoading}
+									onClick={() => void handleMemberConnect()}
 								>
 									{actionLoading ? (
-										<Loader2 className="h-3 w-3 animate-spin" />
-									) : (
-										<Unplug className="h-3 w-3" />
-									)}
+										<Loader2 className="h-3 w-3 animate-spin mr-1" />
+									) : null}
+									Connect
 								</Button>
-							) : confirmDelete ? (
-								<div className="flex gap-1">
-									<Button
-										variant="destructive"
-										size="sm"
-										className="h-7 text-xs"
-										onClick={handleDelete}
-										disabled={actionLoading}
-									>
-										{actionLoading ? (
-											<Loader2 className="h-3 w-3 animate-spin" />
-										) : (
-											"Confirm"
-										)}
-									</Button>
+							) : canManage ? (
+								confirmDelete ? (
+									<div className="flex gap-1">
+										<Button
+											variant="destructive"
+											size="sm"
+											className="h-7 text-xs"
+											onClick={handleDelete}
+											disabled={actionLoading}
+										>
+											{actionLoading ? (
+												<Loader2 className="h-3 w-3 animate-spin" />
+											) : (
+												"Confirm"
+											)}
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-7 text-xs"
+											onClick={() => setConfirmDelete(false)}
+										>
+											Cancel
+										</Button>
+									</div>
+								) : (
 									<Button
 										variant="ghost"
 										size="sm"
-										className="h-7 text-xs"
-										onClick={() => setConfirmDelete(false)}
+										onClick={() => setConfirmDelete(true)}
+										className="h-7 px-2 text-muted-foreground hover:text-destructive"
 									>
-										Cancel
+										<Trash2 className="h-3 w-3" />
 									</Button>
-								</div>
-							) : (
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={() => setConfirmDelete(true)}
-									className="h-7 px-2 text-muted-foreground hover:text-destructive"
-								>
-									<Trash2 className="h-3 w-3" />
-								</Button>
-							)}
+								)
+							) : null}
 						</>
 					)}
 				</div>
@@ -373,6 +570,131 @@ function ConnectionCard({
 				<div className="border-t border-border/40">
 					<ToolsPanel tools={conn.tools} />
 				</div>
+			)}
+
+			<Dialog open={showTokenDialog} onOpenChange={setShowTokenDialog}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Connect to {conn.displayName}</DialogTitle>
+						<DialogDescription>
+							Provide a bearer token to authenticate with this connection.
+						</DialogDescription>
+					</DialogHeader>
+					<div className="p-6 pt-4 space-y-4">
+						<div>
+							<Label htmlFor="bearer-token">Bearer Token</Label>
+							<Input
+								id="bearer-token"
+								type="password"
+								placeholder="Enter your token..."
+								value={tokenInput}
+								onChange={(e) => setTokenInput(e.target.value)}
+								className="mt-1.5"
+							/>
+						</div>
+						<div className="flex gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								className="flex-1"
+								onClick={() => setShowTokenDialog(false)}
+							>
+								Cancel
+							</Button>
+							<Button
+								size="sm"
+								className="flex-1"
+								disabled={!tokenInput || actionLoading}
+								onClick={() => void handleMemberConnect(tokenInput)}
+							>
+								{actionLoading ? (
+									<Loader2 className="h-3 w-3 animate-spin mr-1" />
+								) : null}
+								Connect
+							</Button>
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
+
+			{conn.builtinId === "google" && (
+				<Dialog open={showServicePicker} onOpenChange={setShowServicePicker}>
+					<DialogContent className="max-w-md">
+						<DialogHeader>
+							<DialogTitle>Manage Google Services</DialogTitle>
+							<DialogDescription>
+								Select which services your agents can access. Adding new
+								services will re-authorize with Google.
+							</DialogDescription>
+						</DialogHeader>
+						<div className="p-6 pt-4 space-y-3">
+							{GOOGLE_SERVICES.map((svc) => {
+								const currentlyEnabled = getEnabledServiceIds(conn.oauthScopes);
+								const isNew =
+									selectedServices.has(svc.id) && !currentlyEnabled.has(svc.id);
+								return (
+									<label
+										key={svc.id}
+										className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
+									>
+										<input
+											type="checkbox"
+											checked={selectedServices.has(svc.id)}
+											onChange={() => {
+												setSelectedServices((prev) => {
+													const next = new Set(prev);
+													if (next.has(svc.id)) {
+														next.delete(svc.id);
+													} else {
+														next.add(svc.id);
+													}
+													return next;
+												});
+											}}
+											className="mt-0.5 h-4 w-4 rounded border-border"
+										/>
+										<div className="min-w-0 flex-1">
+											<div className="flex items-center gap-2">
+												<p className="text-sm font-medium">{svc.name}</p>
+												{currentlyEnabled.has(svc.id) && (
+													<span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+														Active
+													</span>
+												)}
+												{isNew && (
+													<span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+														New
+													</span>
+												)}
+											</div>
+											<p className="text-xs text-muted-foreground">
+												{svc.description}
+											</p>
+										</div>
+									</label>
+								);
+							})}
+							<div className="flex gap-2 pt-2">
+								<Button
+									variant="outline"
+									size="sm"
+									className="flex-1"
+									onClick={() => setShowServicePicker(false)}
+								>
+									Cancel
+								</Button>
+								<Button
+									size="sm"
+									className="flex-1"
+									disabled={selectedServices.size === 0}
+									onClick={() => void handleUpgradeScopes()}
+								>
+									Re-authorize
+								</Button>
+							</div>
+						</div>
+					</DialogContent>
+				</Dialog>
 			)}
 		</div>
 	);
@@ -906,53 +1228,216 @@ function AgentAuthDialog({
 function OAuthDialog({
 	open,
 	onOpenChange,
+	orgId,
+	onAdded,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	orgId: string;
+	onAdded: () => void;
 }) {
-	const handleConnect = async (provider: (typeof OAUTH_PROVIDERS)[0]) => {
+	const [showGooglePicker, setShowGooglePicker] = useState(false);
+	const [isLoading, setIsLoading] = useState(false);
+	const [googleServices, setGoogleServices] = useState<Set<string>>(
+		() =>
+			new Set(GOOGLE_SERVICES.filter((s) => s.defaultEnabled).map((s) => s.id)),
+	);
+
+	const handleAddProvider = async (
+		provider: (typeof OAUTH_PROVIDERS)[0],
+		oauthScopes?: string,
+		displayName?: string,
+	) => {
+		setIsLoading(true);
 		try {
-			await authClient.linkSocial({
-				provider: provider.id as "github" | "google",
-				callbackURL: window.location.pathname,
-				scopes: (provider as any).scopes,
+			const res = await fetch("/api/connections", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					orgId,
+					type: "oauth",
+					builtinId: provider.id,
+					name: provider.id,
+					displayName: displayName ?? provider.name,
+					oauthScopes,
+				}),
 			});
+			if (res.ok) {
+				onAdded();
+				setShowGooglePicker(false);
+				onOpenChange(false);
+			}
 		} catch {
 			/* empty */
 		}
-		onOpenChange(false);
+		setIsLoading(false);
+	};
+
+	const handleProviderClick = (provider: (typeof OAUTH_PROVIDERS)[0]) => {
+		if ("hasServicePicker" in provider && provider.hasServicePicker) {
+			setShowGooglePicker(true);
+			return;
+		}
+		void handleAddProvider(provider);
+	};
+
+	const handleGoogleAdd = () => {
+		const google = OAUTH_PROVIDERS.find((p) => p.id === "google");
+		if (!google) return;
+		const selected = GOOGLE_SERVICES.filter((s) => googleServices.has(s.id));
+		const scopes = selected.flatMap((s) => s.scopes).join(" ");
+		const serviceNames = selected.map((s) => s.name).join(", ");
+		void handleAddProvider(google, scopes, `Google (${serviceNames})`);
+	};
+
+	const toggleGoogleService = (id: string) => {
+		setGoogleServices((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) {
+				next.delete(id);
+			} else {
+				next.add(id);
+			}
+			return next;
+		});
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog
+			open={open}
+			onOpenChange={(o) => {
+				if (!o) setShowGooglePicker(false);
+				onOpenChange(o);
+			}}
+		>
 			<DialogContent className="max-w-md">
 				<DialogHeader>
-					<DialogTitle>Connect OAuth Provider</DialogTitle>
+					<DialogTitle>
+						{showGooglePicker ? "Select Google Services" : "Add OAuth Provider"}
+					</DialogTitle>
 					<DialogDescription>
-						Choose a provider to connect. Your agents will be able to use its
-						tools on your behalf.
+						{showGooglePicker
+							? "Choose which Google services to enable for this organization."
+							: "Add an OAuth provider. Members will connect their own accounts."}
 					</DialogDescription>
 				</DialogHeader>
-				<div className="p-6 pt-4 space-y-2">
-					{OAUTH_PROVIDERS.map((provider) => (
-						<button
-							key={provider.id}
-							type="button"
-							onClick={() => handleConnect(provider)}
-							className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/60 hover:bg-muted/50 transition-colors text-left"
-						>
-							<div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted/50 shrink-0">
-								{provider.icon}
-							</div>
-							<div className="min-w-0">
-								<p className="text-sm font-medium">{provider.name}</p>
-								<p className="text-xs text-muted-foreground truncate">
-									{provider.description}
-								</p>
-							</div>
-						</button>
-					))}
-				</div>
+				{showGooglePicker ? (
+					<div className="p-6 pt-4 space-y-3">
+						{GOOGLE_SERVICES.map((svc) => (
+							<label
+								key={svc.id}
+								className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-muted/30 transition-colors cursor-pointer"
+							>
+								<input
+									type="checkbox"
+									checked={googleServices.has(svc.id)}
+									onChange={() => toggleGoogleService(svc.id)}
+									className="mt-0.5 h-4 w-4 rounded border-border"
+								/>
+								<div className="min-w-0">
+									<p className="text-sm font-medium">{svc.name}</p>
+									<p className="text-xs text-muted-foreground">
+										{svc.description}
+									</p>
+								</div>
+							</label>
+						))}
+						<div className="flex gap-2 pt-2">
+							<Button
+								variant="outline"
+								size="sm"
+								className="flex-1"
+								onClick={() => setShowGooglePicker(false)}
+							>
+								Back
+							</Button>
+							<Button
+								size="sm"
+								className="flex-1"
+								disabled={googleServices.size === 0 || isLoading}
+								onClick={handleGoogleAdd}
+							>
+								{isLoading ? (
+									<Loader2 className="h-3 w-3 animate-spin mr-1" />
+								) : null}
+								Add Google
+							</Button>
+						</div>
+					</div>
+				) : (
+					<div className="p-6 pt-4 space-y-2">
+						{OAUTH_PROVIDERS.map((provider) => (
+							<button
+								key={provider.id}
+								type="button"
+								disabled={isLoading}
+								onClick={() => handleProviderClick(provider)}
+								className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/60 hover:bg-muted/50 transition-colors text-left"
+							>
+								<div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted/50 shrink-0">
+									{provider.icon}
+								</div>
+								<div className="min-w-0">
+									<p className="text-sm font-medium">{provider.name}</p>
+									<p className="text-xs text-muted-foreground truncate">
+										{provider.description}
+									</p>
+								</div>
+							</button>
+						))}
+						{PRECONFIGURED_MCP.map((preset) => (
+							<button
+								key={preset.id}
+								type="button"
+								disabled={isLoading}
+								onClick={() =>
+									void (async () => {
+										setIsLoading(true);
+										try {
+											const res = await fetch("/api/connections", {
+												method: "POST",
+												headers: {
+													"Content-Type": "application/json",
+												},
+												body: JSON.stringify({
+													orgId,
+													type: preset.type,
+													builtinId: preset.builtinId,
+													name: preset.id,
+													displayName: preset.name,
+													mcpEndpoint: preset.mcpEndpoint,
+												}),
+											});
+											if (res.ok) {
+												onAdded();
+												onOpenChange(false);
+											}
+										} catch {
+											/* empty */
+										}
+										setIsLoading(false);
+									})()
+								}
+								className="w-full flex items-center gap-3 p-3 rounded-lg border border-border/60 hover:bg-muted/50 transition-colors text-left"
+							>
+								<div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted/50 shrink-0">
+									{preset.icon}
+								</div>
+								<div className="min-w-0">
+									<p className="text-sm font-medium">
+										{preset.name}
+										<span className="ml-1.5 text-[10px] font-mono text-muted-foreground">
+											MCP
+										</span>
+									</p>
+									<p className="text-xs text-muted-foreground truncate">
+										{preset.description}
+									</p>
+								</div>
+							</button>
+						))}
+					</div>
+				)}
 			</DialogContent>
 		</Dialog>
 	);
@@ -965,9 +1450,11 @@ function OAuthDialog({
 export function ConnectionsClient({
 	initialConnections,
 	orgId,
+	canManage,
 }: {
 	initialConnections: UnifiedConnection[];
 	orgId: string;
+	canManage: boolean;
 }) {
 	const router = useRouter();
 	const [dialogMode, setDialogMode] = useState<
@@ -998,7 +1485,7 @@ export function ConnectionsClient({
 			>
 				<DropdownMenuItem onClick={() => setDialogMode("oauth")}>
 					<Globe className="h-4 w-4" />
-					OAuth Provider
+					Built-in Provider
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={() => setDialogMode("mcp")}>
 					<Server className="h-4 w-4" />
@@ -1026,7 +1513,7 @@ export function ConnectionsClient({
 						tools.
 					</p>
 				</div>
-				{orgId && addConnectionDropdown("end")}
+				{orgId && canManage && addConnectionDropdown("end")}
 			</div>
 
 			{connections.length === 0 ? (
@@ -1035,12 +1522,17 @@ export function ConnectionsClient({
 					<p className="text-sm text-muted-foreground mb-3">
 						No connections yet. Add a provider or MCP server to get started.
 					</p>
-					{orgId && addConnectionDropdown("center", "outline")}
+					{orgId && canManage && addConnectionDropdown("center", "outline")}
 				</div>
 			) : (
 				<div className="space-y-2">
 					{connections.map((conn) => (
-						<ConnectionCard key={conn.id} conn={conn} onMutate={handleMutate} />
+						<ConnectionCard
+							key={conn.id}
+							conn={conn}
+							onMutate={handleMutate}
+							canManage={canManage}
+						/>
 					))}
 				</div>
 			)}
@@ -1063,6 +1555,8 @@ export function ConnectionsClient({
 						onOpenChange={(open) => {
 							if (!open) setDialogMode(null);
 						}}
+						orgId={orgId}
+						onAdded={handleMutate}
 					/>
 					<MCPDialog
 						open={dialogMode === "mcp"}

@@ -1,19 +1,17 @@
 import { Loader2 } from "lucide-react";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { AuthForm } from "@/components/auth/auth-form";
 import { BetterAuthLogo } from "@/components/icons/logo";
 import { HalftoneBackground } from "@/components/ui/halftone-background";
-import { auth } from "@/lib/auth/auth";
+import { getSession, getUserOrg } from "@/lib/db/queries";
 
 export default async function SignInPage() {
-	const session = await auth.api.getSession({ headers: await headers() });
+	const session = await getSession();
 	if (session?.user) {
-		const orgs = await auth.api.listOrganizations({ headers: await headers() });
-		if (orgs && orgs.length > 0)
-			throw redirect(`/dashboard/${(orgs[0] as any).slug}`);
+		const org = await getUserOrg(session.user.id);
+		if (org) throw redirect(`/dashboard/${org.slug}`);
 		throw redirect("/onboarding");
 	}
 	return (

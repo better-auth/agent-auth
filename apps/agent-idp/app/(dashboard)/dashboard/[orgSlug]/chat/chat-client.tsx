@@ -4,24 +4,46 @@ import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
 import {
 	ArrowUp,
-	Bot,
 	CheckCircle2,
 	ChevronDown,
 	ChevronRight,
 	CircleAlert,
+	RotateCcw,
 	ShieldCheck,
+	Square,
 	Terminal,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { highlight } from "sugar-high";
+import { AgentBotIcon } from "@/components/icons/agent-bot";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export function ChatClient({ orgSlug }: { orgSlug: string }) {
-	const { messages, sendMessage, status, error } = useChat({
+export function ChatClient({
+	orgSlug,
+	className,
+	visible = true,
+}: {
+	orgSlug: string;
+	className?: string;
+	visible?: boolean;
+}) {
+	const sessionIdRef = useRef(crypto.randomUUID());
+	const {
+		messages,
+		setMessages,
+		sendMessage,
+		status,
+		error,
+		stop,
+		clearError,
+	} = useChat({
 		id: "agent-chat",
+		onError: (err) => {
+			console.error("[ChatClient] Stream error:", err.message);
+		},
 	});
 	const [input, setInput] = useState("");
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -31,18 +53,28 @@ export function ChatClient({ orgSlug }: { orgSlug: string }) {
 
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages]);
+	}, [messages, status]);
 
 	useEffect(() => {
-		inputRef.current?.focus();
-	}, []);
+		if (visible) {
+			inputRef.current?.focus();
+		}
+	}, [visible]);
 
 	const handleSend = useCallback(() => {
 		if (!input.trim() || isLoading) return;
+		if (error) clearError();
 		const text = input;
 		setInput("");
-		sendMessage({ text });
-	}, [input, isLoading, sendMessage]);
+		sendMessage({ text }, { body: { sessionId: sessionIdRef.current } });
+	}, [input, isLoading, sendMessage, error, clearError]);
+
+	const handleClear = useCallback(() => {
+		setMessages([]);
+		sessionIdRef.current = crypto.randomUUID();
+		if (error) clearError();
+		inputRef.current?.focus();
+	}, [setMessages, error, clearError]);
 
 	const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.key === "Enter" && !e.shiftKey) {
@@ -52,22 +84,32 @@ export function ChatClient({ orgSlug }: { orgSlug: string }) {
 	};
 
 	return (
-		<div className="flex flex-col h-[calc(100dvh-2rem)] py-4">
-			<div className="flex-1 overflow-y-auto pr-2 -mr-2">
+		<div className={cn("flex flex-col h-[calc(100dvh-2rem)] py-4", className)}>
+			<div className="flex-1 overflow-y-auto no-scrollbar">
 				{messages.length === 0 && <EmptyState />}
 
-				<div className="space-y-5">
+				<div className="space-y-4">
 					{messages.map((message) => (
 						<MessageBubble key={message.id} message={message} />
 					))}
 				</div>
 
-				{status === "submitted" && <ThinkingIndicator />}
+				{(status === "submitted" || status === "streaming") &&
+					messages[messages.length - 1]?.role !== "assistant" && (
+						<ThinkingIndicator />
+					)}
 
-				{error && (
-					<div className="mt-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+				{status === "error" && error && (
+					<div className="mt-4 flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 px-3.5 py-3 text-sm text-destructive">
 						<CircleAlert className="h-4 w-4 mt-0.5 shrink-0" />
-						<span>{error.message}</span>
+						<div className="min-w-0">
+							<p className="font-medium text-[13px]">
+								{error.message || "Something went wrong"}
+							</p>
+							<p className="text-xs text-destructive/60 mt-1">
+								Try again or check that the AI provider API key is configured.
+							</p>
+						</div>
 					</div>
 				)}
 
@@ -77,36 +119,78 @@ export function ChatClient({ orgSlug }: { orgSlug: string }) {
 			<form
 				onSubmit={(e) => {
 					e.preventDefault();
-					handleSend();
+					if (isLoading) {
+						stop();
+					} else {
+						handleSend();
+					}
 				}}
-				className="mt-2 flex items-end gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 shadow-xs focus-within:border-foreground/15 focus-within:shadow-sm transition-all"
+				className="mt-3 shrink-0 rounded-xl border border-border/50 bg-muted/30 focus-within:bg-muted/50 focus-within:border-foreground/10 transition-all"
 			>
-				<textarea
-					ref={inputRef}
-					value={input}
-					onChange={(e) => setInput(e.target.value)}
-					onKeyDown={onKeyDown}
-					placeholder="Message the agent..."
-					rows={1}
-					className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground/40 max-h-32 min-h-6 leading-relaxed"
-					style={{
-						height: "auto",
-						overflow: input.split("\n").length > 3 ? "auto" : "hidden",
-					}}
-					onInput={(e) => {
-						const target = e.target as HTMLTextAreaElement;
-						target.style.height = "auto";
-						target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
-					}}
-				/>
-				<Button
-					type="submit"
-					size="icon"
-					disabled={!input.trim() || isLoading}
-					className="h-7 w-7 shrink-0 rounded-md"
-				>
-					<ArrowUp className="h-3.5 w-3.5" />
-				</Button>
+				<div className="px-4 pt-3 pb-2">
+					<textarea
+						ref={inputRef}
+						value={input}
+						onChange={(e) => setInput(e.target.value)}
+						onKeyDown={onKeyDown}
+						placeholder="Message the agent..."
+						rows={1}
+						className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground/40 max-h-32 min-h-6 leading-relaxed"
+						style={{
+							height: "auto",
+							overflow: input.split("\n").length > 3 ? "auto" : "hidden",
+						}}
+						onInput={(e) => {
+							const target = e.target as HTMLTextAreaElement;
+							target.style.height = "auto";
+							target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
+						}}
+					/>
+				</div>
+				<div className="flex items-center justify-between px-3 pb-2.5">
+					<div className="flex items-center gap-2">
+						{messages.length > 0 && !isLoading && (
+							<button
+								type="button"
+								onClick={handleClear}
+								className="flex items-center gap-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors pl-1"
+							>
+								<RotateCcw className="h-3 w-3" />
+								New chat
+							</button>
+						)}
+						{messages.length === 0 && (
+							<p className="text-[10px] text-muted-foreground/40 pl-1">
+								Enter to send
+							</p>
+						)}
+						{isLoading && (
+							<p className="text-[10px] text-muted-foreground/40 pl-1">
+								Generating...
+							</p>
+						)}
+					</div>
+					{isLoading ? (
+						<Button
+							type="button"
+							size="icon"
+							variant="outline"
+							onClick={stop}
+							className="h-7 w-7 shrink-0 rounded-lg"
+						>
+							<Square className="h-3 w-3 fill-current" />
+						</Button>
+					) : (
+						<Button
+							type="submit"
+							size="icon"
+							disabled={!input.trim()}
+							className="h-7 w-7 shrink-0 rounded-lg"
+						>
+							<ArrowUp className="h-3.5 w-3.5" />
+						</Button>
+					)}
+				</div>
 			</form>
 		</div>
 	);
@@ -114,18 +198,25 @@ export function ChatClient({ orgSlug }: { orgSlug: string }) {
 
 function EmptyState() {
 	return (
-		<div className="flex flex-col items-center justify-center h-full text-center gap-3 pb-12">
-			<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground/3 border border-border/50">
-				<Bot className="h-5 w-5 text-muted-foreground/50" />
+		<div className="flex flex-col items-center justify-center h-full text-center gap-4 pb-16">
+			<div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-b from-foreground/[0.06] to-foreground/[0.02] border border-border/40 shadow-sm">
+				<AgentBotIcon className="h-6 w-6 text-muted-foreground/40" />
 			</div>
-			<p className="text-xs text-muted-foreground/50">Ask the agent anything</p>
+			<div className="space-y-1">
+				<p className="text-sm font-medium text-muted-foreground/60">
+					Ask the agent anything
+				</p>
+				<p className="text-xs text-muted-foreground/35 max-w-[220px] mx-auto leading-relaxed">
+					Connected tools require scope approval before use
+				</p>
+			</div>
 		</div>
 	);
 }
 
 function ThinkingIndicator() {
 	return (
-		<div className="flex items-start gap-2.5 mt-5 animate-fade-in">
+		<div className="flex items-start gap-3 mt-4 animate-fade-in">
 			<AgentAvatar pulse />
 			<div className="flex items-center gap-1.5 pt-2">
 				<span className="chat-dot" />
@@ -140,11 +231,11 @@ function AgentAvatar({ pulse }: { pulse?: boolean }) {
 	return (
 		<div
 			className={cn(
-				"flex h-6 w-6 items-center justify-center rounded-md bg-foreground/6 border border-border/50 shrink-0",
+				"flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-b from-foreground/[0.06] to-foreground/[0.03] border border-border/40 shrink-0",
 				pulse && "animate-pulse",
 			)}
 		>
-			<Bot className="h-3 w-3 text-muted-foreground/70" />
+			<AgentBotIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
 		</div>
 	);
 }
@@ -158,7 +249,7 @@ function MessageBubble({ message }: { message: UIMessage }) {
 			| undefined;
 		return (
 			<div className="flex justify-end animate-fade-in">
-				<div className="max-w-[80%] rounded-lg bg-foreground text-background px-3.5 py-2 text-sm leading-relaxed">
+				<div className="max-w-[80%] rounded-2xl rounded-br-md bg-foreground text-background px-4 py-2.5 text-[13px] leading-relaxed">
 					{text?.text}
 				</div>
 			</div>
@@ -166,9 +257,9 @@ function MessageBubble({ message }: { message: UIMessage }) {
 	}
 
 	return (
-		<div className="flex items-start gap-2.5 animate-fade-in">
+		<div className="flex items-start gap-3 animate-fade-in">
 			<AgentAvatar />
-			<div className="flex-1 min-w-0 space-y-2 pt-0.5">
+			<div className="flex-1 min-w-0 space-y-2.5 pt-0.5">
 				{message.parts.map((part, i) => {
 					if (part.type === "text" && part.text) {
 						return (
@@ -210,32 +301,42 @@ function MessageBubble({ message }: { message: UIMessage }) {
 
 function MarkdownContent({ content }: { content: string }) {
 	return (
-		<div className="prose-chat text-sm leading-relaxed">
+		<div className="prose-chat text-[13px] leading-relaxed text-foreground/90">
 			<Markdown
 				remarkPlugins={[remarkGfm]}
 				components={{
-					p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+					p: ({ children }) => (
+						<p className="mb-2.5 last:mb-0">{children}</p>
+					),
 					strong: ({ children }) => (
-						<strong className="font-semibold">{children}</strong>
+						<strong className="font-semibold text-foreground">
+							{children}
+						</strong>
 					),
 					em: ({ children }) => <em className="italic">{children}</em>,
 					h1: ({ children }) => (
-						<h3 className="text-base font-semibold mt-4 mb-2">{children}</h3>
+						<h3 className="text-base font-semibold mt-4 mb-2 text-foreground">
+							{children}
+						</h3>
 					),
 					h2: ({ children }) => (
-						<h4 className="text-sm font-semibold mt-3 mb-1.5">{children}</h4>
+						<h4 className="text-sm font-semibold mt-3 mb-1.5 text-foreground">
+							{children}
+						</h4>
 					),
 					h3: ({ children }) => (
-						<h5 className="text-sm font-medium mt-2.5 mb-1">{children}</h5>
+						<h5 className="text-sm font-medium mt-2.5 mb-1 text-foreground">
+							{children}
+						</h5>
 					),
 					ul: ({ children }) => (
-						<ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>
+						<ul className="list-disc pl-4 mb-2.5 space-y-1">{children}</ul>
 					),
 					ol: ({ children }) => (
-						<ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>
+						<ol className="list-decimal pl-4 mb-2.5 space-y-1">{children}</ol>
 					),
 					li: ({ children }) => (
-						<li className="text-sm leading-relaxed">{children}</li>
+						<li className="text-[13px] leading-relaxed">{children}</li>
 					),
 					a: ({ href, children }) => (
 						<a
@@ -248,7 +349,7 @@ function MarkdownContent({ content }: { content: string }) {
 						</a>
 					),
 					blockquote: ({ children }) => (
-						<blockquote className="border-l-2 border-border pl-3 my-2 text-muted-foreground italic">
+						<blockquote className="border-l-2 border-border pl-3 my-2.5 text-muted-foreground italic">
 							{children}
 						</blockquote>
 					),
@@ -263,14 +364,14 @@ function MarkdownContent({ content }: { content: string }) {
 							);
 						}
 						return (
-							<code className="rounded-sm bg-foreground/6 px-1.5 py-0.5 text-[13px] font-mono">
+							<code className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[12px] font-mono text-foreground/80">
 								{children}
 							</code>
 						);
 					},
 					pre: ({ children }) => <>{children}</>,
 					table: ({ children }) => (
-						<div className="my-2 overflow-x-auto rounded-md border border-border/50">
+						<div className="my-2.5 overflow-x-auto rounded-lg border border-border/50">
 							<table className="w-full text-xs">{children}</table>
 						</div>
 					),
@@ -280,16 +381,16 @@ function MarkdownContent({ content }: { content: string }) {
 						</thead>
 					),
 					th: ({ children }) => (
-						<th className="px-3 py-1.5 text-left font-medium text-muted-foreground">
+						<th className="px-3 py-2 text-left font-medium text-muted-foreground text-[11px] uppercase tracking-wider">
 							{children}
 						</th>
 					),
 					td: ({ children }) => (
-						<td className="px-3 py-1.5 border-t border-border/30">
+						<td className="px-3 py-2 border-t border-border/30 text-[12px]">
 							{children}
 						</td>
 					),
-					hr: () => <hr className="my-3 border-border/40" />,
+					hr: () => <hr className="my-4 border-border/30" />,
 				}}
 			>
 				{content}
@@ -307,14 +408,14 @@ function CodeBlock({
 }) {
 	const html = useMemo(() => highlight(children), [children]);
 	return (
-		<div className="my-2 rounded-md border border-border/40 bg-card overflow-hidden">
+		<div className="my-2.5 rounded-lg border border-border/40 bg-card/80 overflow-hidden">
 			{language && (
-				<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 text-[10px] text-muted-foreground/60 font-mono uppercase tracking-wider">
+				<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 text-[10px] text-muted-foreground/50 font-mono uppercase tracking-wider">
 					<Terminal className="h-3 w-3" />
 					{language}
 				</div>
 			)}
-			<pre className="p-3 overflow-x-auto text-[13px] leading-relaxed">
+			<pre className="p-3.5 overflow-x-auto text-[12px] leading-relaxed">
 				<code dangerouslySetInnerHTML={{ __html: html }} />
 			</pre>
 		</div>
@@ -349,48 +450,48 @@ function ToolCard({
 	return (
 		<div
 			className={cn(
-				"rounded-md border text-xs overflow-hidden transition-all",
+				"rounded-lg border text-xs overflow-hidden transition-all",
 				isRunning
-					? "border-foreground/10 bg-foreground/2 tool-running"
+					? "border-foreground/8 bg-foreground/[0.02] tool-running"
 					: isError
-						? "border-destructive/20 bg-destructive/2"
-						: "border-border/40 bg-card",
+						? "border-destructive/15 bg-destructive/[0.02]"
+						: "border-border/40 bg-card/50",
 			)}
 		>
 			<button
 				type="button"
 				onClick={() => setExpanded(!expanded)}
-				className="flex items-center gap-2 w-full px-2.5 py-1.5 hover:bg-foreground/2 transition-colors text-left"
+				className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-foreground/[0.02] transition-colors text-left"
 			>
 				<div
 					className={cn(
-						"flex h-4.5 w-4.5 items-center justify-center rounded shrink-0",
+						"flex h-5 w-5 items-center justify-center rounded-md shrink-0",
 						isRunning
-							? "bg-foreground/10"
+							? "bg-foreground/8"
 							: isError
-								? "bg-destructive/10"
+								? "bg-destructive/8"
 								: isScopeTool
-									? "bg-amber-500/10"
-									: "bg-emerald-500/10",
+									? "bg-amber-500/8"
+									: "bg-emerald-500/8",
 					)}
 				>
 					{isRunning ? (
 						<div className="h-1.5 w-1.5 rounded-full bg-foreground/40 animate-pulse" />
 					) : isError ? (
-						<CircleAlert className="h-2.5 w-2.5 text-destructive" />
+						<CircleAlert className="h-3 w-3 text-destructive/70" />
 					) : isScopeTool ? (
-						<ShieldCheck className="h-2.5 w-2.5 text-amber-600 dark:text-amber-400" />
+						<ShieldCheck className="h-3 w-3 text-amber-600 dark:text-amber-400" />
 					) : (
-						<CheckCircle2 className="h-2.5 w-2.5 text-emerald-600 dark:text-emerald-400" />
+						<CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
 					)}
 				</div>
 
 				<div className="flex-1 min-w-0">
-					<span className="font-mono text-[11px] text-foreground/60">
+					<span className="font-mono text-[11px] text-foreground/70 font-medium">
 						{displayName}
 					</span>
 					{isRunning && (
-						<span className="ml-2 text-[10px] text-muted-foreground/40">
+						<span className="ml-2 text-[10px] text-muted-foreground/40 animate-pulse">
 							running
 						</span>
 					)}
@@ -409,21 +510,21 @@ function ToolCard({
 					{input != null &&
 						typeof input === "object" &&
 						Object.keys(input as object).length > 0 && (
-							<div className="px-2.5 py-2">
-								<p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1">
+							<div className="px-3 py-2.5">
+								<p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1.5">
 									Input
 								</p>
-								<pre className="text-[11px] font-mono text-muted-foreground leading-relaxed overflow-x-auto whitespace-pre-wrap break-all">
+								<pre className="text-[11px] font-mono text-muted-foreground/70 leading-relaxed overflow-x-auto whitespace-pre-wrap break-all">
 									{JSON.stringify(input, null, 2)}
 								</pre>
 							</div>
 						)}
 					{output != null && (
-						<div className="px-2.5 py-2">
-							<p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1">
+						<div className="px-3 py-2.5">
+							<p className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wider mb-1.5">
 								Output
 							</p>
-							<pre className="text-[11px] font-mono text-muted-foreground leading-relaxed overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto">
+							<pre className="text-[11px] font-mono text-muted-foreground/70 leading-relaxed overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto">
 								{formatOutput(output)}
 							</pre>
 						</div>

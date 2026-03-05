@@ -10,10 +10,17 @@ export {
 } from "./crypto";
 
 /**
- * Open a URL in the user's default browser.
- * Works cross-platform (macOS, Linux, Windows).
+ * Open a URL in the user's browser.
+ *
+ * - **Browser**: uses `window.open` (popup) with `window.location` fallback
+ * - **Node.js**: shells out to `open` / `xdg-open` / `start`
  */
-async function openInBrowser(url: string): Promise<void> {
+export async function openInBrowser(url: string): Promise<void> {
+	if (typeof globalThis.window !== "undefined") {
+		const w = globalThis.window.open(url, "_blank", "noopener,noreferrer");
+		if (!w) globalThis.window.location.href = url;
+		return;
+	}
 	const { exec } = await import("node:child_process");
 	const { platform } = await import("node:os");
 	const cmd =
@@ -68,7 +75,7 @@ export interface ConnectAgentOptions {
 	/**
 	 * Automatically open the verification URL in the user's default browser.
 	 * Uses the `verification_uri_complete` (with user code pre-filled).
-	 * Default: false
+	 * Default: true
 	 */
 	openBrowser?: boolean;
 	/**
@@ -112,7 +119,7 @@ export async function connectAgent(
 		timeout = 300_000,
 		onUserCode,
 		onPoll,
-		openBrowser = false,
+		openBrowser = true,
 	} = options;
 
 	const resolvedHostName =

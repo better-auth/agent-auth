@@ -60,6 +60,8 @@ export interface AgentAuthOptions {
 		agentName: string;
 		hostId: string | null;
 		scopes: string[];
+		/** Method preferred by the agent/client. Server may honor or ignore it. */
+		preferredMethod?: string;
 	}) => string | Promise<string>;
 	/**
 	 * Server JWKS URI for clients to verify server-signed responses (§2.1).
@@ -184,6 +186,31 @@ export interface AgentAuthOptions {
 		| string[]
 		| ((ctx: GenericEndpointContext) => string[] | Promise<string[]>);
 	/**
+	 * Resolve a TTL (in seconds) for a newly granted permission.
+	 *
+	 * Called whenever a permission row transitions to "active" — during
+	 * agent creation, scope approval, grant-permission, or reactivation.
+	 * Return a positive number to set `expiresAt` on the permission row,
+	 * or `null`/`undefined` to leave it unbounded (expires with the agent).
+	 *
+	 * The explicit `ttl` passed in the request body (grant-permission,
+	 * approve-scope) takes priority over this resolver.
+	 *
+	 * @example
+	 * ```ts
+	 * resolvePermissionTTL: ({ scope }) => {
+	 *   if (scope.startsWith("admin:")) return 600; // 10 min
+	 *   return null; // no expiry
+	 * }
+	 * ```
+	 */
+	resolvePermissionTTL?: (context: {
+		scope: string;
+		agentId: string;
+		hostId: string | null;
+		userId: string | null;
+	}) => number | null | undefined | Promise<number | null | undefined>;
+	/**
 	 * Scopes that are always blocked from being granted or escalated.
 	 * Any scope request containing a blocked scope is rejected.
 	 * @default []
@@ -211,7 +238,79 @@ export interface AgentAuthOptions {
 	 * Custom schema overrides for the agent table.
 	 */
 	schema?: InferOptionSchema<ReturnType<typeof agentSchema>>;
+	/**
+	 * Callback invoked after significant mutations (agent/host lifecycle,
+	 * scope changes, CIBA events, tool execution). Pipe events into an
+	 * external audit log, analytics store, or database.
+	 *
+	 * @example
+	 * ```ts
+	 * onEvent(event) {
+	 *   if (event.type === "tool.executed") {
+	 *     db.insert(toolLog).values(event);
+	 *   } else {
+	 *     db.insert(auditLog).values(event);
+	 *   }
+	 * }
+	 * ```
+	 */
+	onEvent?: (event: AgentAuthEvent) => void | Promise<void>;
 }
+
+/** Base fields shared by all agent auth events. */
+interface AgentAuthEventBase {
+	orgId?: string;
+	actorId?: string;
+	actorType?: "user" | "agent" | "system";
+	agentId?: string;
+	hostId?: string;
+	targetId?: string;
+	targetType?: string;
+	metadata?: Record<string, unknown>;
+}
+
+/** Known lifecycle/audit event types emitted by the plugin. */
+export type AgentAuthAuditEventType =
+	| "agent.created"
+	| "agent.updated"
+	| "agent.revoked"
+	| "agent.reactivated"
+	| "agent.key_rotated"
+	| "agent.cleanup"
+	| "host.created"
+	| "host.enrolled"
+	| "host.updated"
+	| "host.revoked"
+	| "host.reactivated"
+	| "host.key_rotated"
+	| "scope.requested"
+	| "scope.approved"
+	| "scope.denied"
+	| "scope.granted"
+	| "ciba.authorized"
+	| "ciba.approved"
+	| "ciba.denied";
+
+/** A lifecycle/audit event (agent created, scope approved, etc.). */
+export interface AgentAuthAuditEvent extends AgentAuthEventBase {
+	type: AgentAuthAuditEventType;
+}
+
+/** A tool/capability execution event. */
+export interface AgentAuthToolEvent extends AgentAuthEventBase {
+	type: "tool.executed";
+	tool: string;
+	provider?: string;
+	agentName?: string;
+	userId?: string;
+	toolArgs?: Record<string, unknown>;
+	toolOutput?: unknown;
+	status: "success" | "error";
+	durationMs?: number;
+	error?: string;
+}
+
+export type AgentAuthEvent = AgentAuthAuditEvent | AgentAuthToolEvent;
 
 /**
  * An agent host record — persistent, app-level consent.
@@ -305,7 +404,6 @@ export interface CibaAuthRequest {
 	clientNotificationEndpoint: string | null;
 	deliveryMode: "poll" | "ping" | "push";
 	status: "pending" | "approved" | "denied" | "expired";
-	accessToken: string | null;
 	interval: number;
 	lastPolledAt: Date | null;
 	expiresAt: Date;

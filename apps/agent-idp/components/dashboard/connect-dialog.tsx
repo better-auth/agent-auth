@@ -191,9 +191,13 @@ export function ConnectDialog({
 }) {
 	const [tab, setTab] = useState<Tab>("mcp");
 	const [baseUrl, setBaseUrl] = useState("");
+	const [mounted, setMounted] = useState(false);
 	useEffect(() => {
-		if (typeof window !== "undefined") setBaseUrl(window.location.origin);
+		setMounted(true);
+		setBaseUrl(window.location.origin);
 	}, []);
+
+	if (!mounted) return <>{children}</>;
 
 	return (
 		<Dialog>

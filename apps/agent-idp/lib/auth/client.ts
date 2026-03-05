@@ -6,7 +6,7 @@ import {
 	usernameClient,
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import { ac, admin, member, owner } from "@/lib/auth/permissions";
+import { ac, admin, auditor, member, owner } from "@/lib/auth/permissions";
 
 export const authClient = createAuthClient({
 	baseURL:
@@ -17,7 +17,7 @@ export const authClient = createAuthClient({
 		usernameClient(),
 		organizationClient({
 			ac,
-			roles: { owner, admin, member },
+			roles: { owner, admin, member, auditor },
 		}),
 		deviceAuthorizationClient(),
 	],

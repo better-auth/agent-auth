@@ -4,13 +4,11 @@ import {
 	Activity,
 	Bot,
 	Cable,
-	ChevronsUpDown,
 	Fingerprint,
 	KeyRound,
+	Layers,
 	LogOut,
-	MessageSquare,
 	Plug,
-	Plus,
 	Settings,
 	ShieldCheck,
 	Users,
@@ -40,6 +38,7 @@ function OverviewIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 import { ConnectDialog } from "@/components/dashboard/connect-dialog";
+import { AgentBotIcon } from "@/components/icons/agent-bot";
 import { BetterAuthLogo } from "@/components/icons/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -52,7 +51,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { signOut, useSession } from "@/lib/auth/client";
 
-type Org = { id: string; name: string; slug: string };
 type NavItem = {
 	name: string;
 	href: string;
@@ -71,9 +69,9 @@ function isNavItemActive(
 	if (name === "Agents" && pathname.includes("/agents")) return true;
 	if (name === "Hosts" && pathname.includes("/hosts")) return true;
 	if (name === "Activity" && pathname.includes("/activity")) return true;
-	if (name === "Chat" && pathname.includes("/chat")) return true;
 	if (name === "Approvals" && pathname.includes("/approvals")) return true;
 	if (name === "Members" && pathname.includes("/members")) return true;
+	if (name === "Scopes" && pathname.includes("/scopes")) return true;
 	if (name === "Security" && pathname.includes("/security")) return true;
 	if (name === "Settings" && pathname.includes("/settings")) return true;
 	if (pathname.startsWith(href + "/") || pathname.startsWith(href + "?"))
@@ -81,51 +79,21 @@ function isNavItemActive(
 	return false;
 }
 
-function OrgSwitcher({ slug, orgs }: { slug: string; orgs: Org[] }) {
-	const router = useRouter();
-	const currentOrg = orgs.find((o) => o.slug === slug) || orgs[0];
-	if (!currentOrg) return null;
+function OrgBadge({ slug, orgName }: { slug: string; orgName: string }) {
 	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger className="w-full flex items-center gap-2.5 px-2.5 py-2 hover:bg-foreground/[0.04] rounded-lg transition-colors text-left group">
-				<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground/[0.06] text-[11px] font-semibold uppercase">
-					{currentOrg.name[0]}
-				</div>
-				<div className="flex-1 min-w-0">
-					<p className="text-[13px] font-medium truncate leading-tight">
-						{currentOrg.name}
-					</p>
-					<p className="text-[10px] text-muted-foreground/60 font-mono truncate leading-tight">
-						/{currentOrg.slug}
-					</p>
-				</div>
-				<ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity" />
-			</DropdownMenuTrigger>
-			<DropdownMenuContent align="start" className="w-56">
-				{orgs.map((org) => (
-					<DropdownMenuItem
-						key={org.id}
-						className={cn("cursor-pointer", org.slug === slug && "bg-accent")}
-						onClick={() => router.push(`/dashboard/${org.slug}`)}
-					>
-						<div className="flex h-6 w-6 shrink-0 items-center justify-center bg-foreground/[0.06] text-[10px] font-semibold uppercase mr-2">
-							{org.name[0]}
-						</div>
-						<div className="min-w-0">
-							<p className="text-sm truncate">{org.name}</p>
-						</div>
-					</DropdownMenuItem>
-				))}
-				<DropdownMenuSeparator />
-				<DropdownMenuItem
-					className="cursor-pointer text-muted-foreground"
-					onClick={() => router.push("/onboarding")}
-				>
-					<Plus className="h-4 w-4 mr-2" />
-					Create organization
-				</DropdownMenuItem>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<div className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left">
+			<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground/[0.06] text-[11px] font-semibold uppercase">
+				{orgName[0]}
+			</div>
+			<div className="flex-1 min-w-0">
+				<p className="text-[13px] font-medium truncate leading-tight">
+					{orgName}
+				</p>
+				<p className="text-[10px] text-muted-foreground/60 font-mono truncate leading-tight">
+					/{slug}
+				</p>
+			</div>
+		</div>
 	);
 }
 
@@ -153,30 +121,37 @@ function usePendingCibaCount() {
 	return count;
 }
 
-function SidebarNavLinks({ slug }: { slug: string }) {
+import type { OrgType } from "@/lib/db/queries";
+
+const PERSONAL_HIDDEN_NAV = new Set([
+	"Members",
+	"Approvals",
+	"Security",
+]);
+
+function SidebarNavLinks({
+	slug,
+	orgType,
+}: { slug: string; orgType: OrgType }) {
 	const pathname = usePathname();
 	const pendingCount = usePendingCibaCount();
 
 	const navItems: NavItem[] = [
 		{ name: "Overview", href: `/dashboard/${slug}`, icon: OverviewIcon },
-		{ name: "Agents", href: `/dashboard/${slug}/agents`, icon: Bot },
+		{ name: "Agents", href: `/dashboard/${slug}/agents`, icon: AgentBotIcon },
 		{ name: "Hosts", href: `/dashboard/${slug}/hosts`, icon: KeyRound },
 		{
 			name: "Connections",
 			href: `/dashboard/${slug}/connections`,
 			icon: Cable,
 		},
-		{ name: "Activity", href: `/dashboard/${slug}/activity`, icon: Activity },
-		{
-			name: "Chat",
-			href: `/dashboard/${slug}/chat`,
-			icon: MessageSquare,
-		},
+		{ name: "Scopes", href: `/dashboard/${slug}/scopes`, icon: Layers },
 		{
 			name: "Approvals",
 			href: `/dashboard/${slug}/approvals`,
 			icon: Fingerprint,
 		},
+		{ name: "Activity", href: `/dashboard/${slug}/activity`, icon: Activity },
 		{ name: "Members", href: `/dashboard/${slug}/members`, icon: Users },
 		{
 			name: "Security",
@@ -184,7 +159,10 @@ function SidebarNavLinks({ slug }: { slug: string }) {
 			icon: ShieldCheck,
 		},
 		{ name: "Settings", href: `/dashboard/${slug}/settings`, icon: Settings },
-	];
+	].filter(
+		(item) =>
+			orgType !== "personal" || !PERSONAL_HIDDEN_NAV.has(item.name),
+	);
 	return (
 		<nav className="flex flex-col gap-px px-3">
 			{navItems.map((item) => {
@@ -291,11 +269,13 @@ function UserMenu({ orgSlug }: { orgSlug: string }) {
 export default function Sidebar({
 	slug,
 	orgId,
-	orgs,
+	orgName,
+	orgType,
 }: {
 	slug: string;
 	orgId: string;
-	orgs: Org[];
+	orgName: string;
+	orgType: OrgType;
 	session: { user: { name: string; email: string; image?: string | null } };
 }) {
 	return (
@@ -310,7 +290,7 @@ export default function Sidebar({
 				</Link>
 			</div>
 			<div className="px-2 py-2">
-				<OrgSwitcher slug={slug} orgs={orgs} />
+				<OrgBadge slug={slug} orgName={orgName} />
 			</div>
 			<div className="px-3 pb-1">
 				<ConnectDialog orgId={orgId} orgSlug={slug}>
@@ -321,7 +301,7 @@ export default function Sidebar({
 				</ConnectDialog>
 			</div>
 			<div className="flex-1 overflow-y-auto pt-2 pb-2">
-				<SidebarNavLinks slug={slug} />
+				<SidebarNavLinks slug={slug} orgType={orgType} />
 			</div>
 			<div className="border-t border-border/40 pt-2.5 pb-3 space-y-1.5">
 				<div className="flex items-center justify-between px-4">

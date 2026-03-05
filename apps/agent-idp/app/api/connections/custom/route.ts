@@ -37,7 +37,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-	const session = await auth.api.getSession({ headers: await headers() });
+	const reqHeaders = await headers();
+	const session = await auth.api.getSession({ headers: reqHeaders });
 	if (!session?.user) {
 		return Response.json({ error: "Unauthorized" }, { status: 401 });
 	}
@@ -59,6 +60,20 @@ export async function POST(req: Request) {
 		return Response.json(
 			{ error: "name and orgId are required." },
 			{ status: 400 },
+		);
+	}
+
+	const canCreate = await auth.api.hasPermission({
+		headers: reqHeaders,
+		body: {
+			permissions: { connection: ["create"] },
+			organizationId: body.orgId,
+		},
+	});
+	if (!canCreate?.success) {
+		return Response.json(
+			{ error: "Only admins can add connections." },
+			{ status: 403 },
 		);
 	}
 

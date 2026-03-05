@@ -24,15 +24,15 @@ export default async function HostsPage({
 	const [canReadAll, canCreate, canDelete] = await Promise.all([
 		auth.api.hasPermission({
 			headers: reqHeaders,
-			body: { permissions: { host: ["readAll"] } },
+			body: { permissions: { host: ["readAll"] }, organizationId: orgId },
 		}),
 		auth.api.hasPermission({
 			headers: reqHeaders,
-			body: { permissions: { host: ["create"] } },
+			body: { permissions: { host: ["create"] }, organizationId: orgId },
 		}),
 		auth.api.hasPermission({
 			headers: reqHeaders,
-			body: { permissions: { host: ["delete"] } },
+			body: { permissions: { host: ["delete"] }, organizationId: orgId },
 		}),
 	]);
 
