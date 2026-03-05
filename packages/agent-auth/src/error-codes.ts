@@ -34,6 +34,8 @@ export const AGENT_AUTH_ERROR_CODES = defineErrorCodes({
 	HOST_EXPIRED:
 		"Agent host has expired. Reactivate it via proof-of-possession.",
 	HOST_REQUIRED: "An active agent host is required to create agents.",
+	AUTONOMOUS_OWNER_REQUIRED:
+		"Autonomous mode requires backing principal provisioning and session-user resolution.",
 	DYNAMIC_HOST_REGISTRATION_DISABLED:
 		"Dynamic host registration is disabled. Register a host via the dashboard or API first.",
 	HOST_ALREADY_LINKED: "Host already has a user_id — unlink first.",

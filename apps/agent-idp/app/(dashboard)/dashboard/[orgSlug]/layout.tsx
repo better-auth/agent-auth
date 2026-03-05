@@ -3,6 +3,7 @@ import { ChatDialogProvider } from "@/components/chat-dialog";
 import Sidebar from "@/components/dashboard/sidebar";
 import {
 	ensureActiveOrg,
+	getDeviceSessions,
 	getOrgBySlug,
 	getOrgType,
 	getSession,
@@ -16,9 +17,10 @@ export default async function OrgDashboardLayout({
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	const [session, org] = await Promise.all([
+	const [session, org, deviceSessions] = await Promise.all([
 		getSession(),
 		getOrgBySlug(orgSlug),
+		getDeviceSessions(),
 	]);
 	if (!session) throw redirect("/sign-in");
 	if (!org) throw redirect("/onboarding");
@@ -44,6 +46,7 @@ export default async function OrgDashboardLayout({
 							image: session.user.image,
 						},
 					}}
+					deviceSessions={deviceSessions as { session: { token: string }; user: { id: string; name: string; email: string; image?: string | null } }[]}
 				/>
 				<main className="ml-[252px] flex-1 overflow-y-auto px-6 lg:px-8">
 					{children}

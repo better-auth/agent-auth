@@ -486,6 +486,15 @@ export interface EnrollHostOptions {
 	/** One-time enrollment token from the dashboard. */
 	token: string;
 	/**
+	 * Existing host keypair to reuse when claiming a previously autonomous
+	 * host on this device. When omitted, a new host identity is generated.
+	 */
+	keypair?: {
+		publicKey: AgentJWK;
+		privateKey: AgentJWK;
+		kid: string;
+	};
+	/**
 	 * Human-readable host name identifying the environment/device.
 	 * Auto-detected if not provided. Set to `false` to disable.
 	 */
@@ -499,6 +508,7 @@ export interface EnrollHostResult {
 	publicKey: AgentJWK;
 	privateKey: AgentJWK;
 	kid: string;
+	reusedExistingKeypair: boolean;
 }
 
 /**
@@ -521,7 +531,7 @@ export async function enrollHost(
 		options.hostName === false ? null : (options.hostName ?? detectHostName());
 
 	const base = appURL.replace(/\/+$/, "");
-	const keypair = await generateAgentKeypair();
+	const keypair = options.keypair ?? (await generateAgentKeypair());
 
 	const enrollBody: Record<string, unknown> = {
 		token,
@@ -556,6 +566,7 @@ export async function enrollHost(
 		publicKey: keypair.publicKey,
 		privateKey: keypair.privateKey,
 		kid: keypair.kid,
+		reusedExistingKeypair: Boolean(options.keypair),
 	};
 }
 

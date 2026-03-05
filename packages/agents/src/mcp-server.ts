@@ -86,6 +86,7 @@ export async function createMCPServer(
 		resolveAuthorizationDetails,
 		serverName = "better-auth-agent",
 		appUrl: configAppUrl,
+		registryUrl,
 	} = options;
 
 	const inputUrls: string[] = (
@@ -123,6 +124,7 @@ export async function createMCPServer(
 		onVerificationUrl:
 			onVerificationUrl === false ? undefined : onVerificationUrl,
 		defaultUrl: primaryUrl || undefined,
+		registryUrl,
 	});
 
 	// Auto-discover all configured URLs on startup
@@ -160,6 +162,13 @@ export async function createMCPServer(
 		instructions +=
 			`\n\n## Tool Discovery\n\n` +
 			`Call discover before connecting — it is pre-configured. Do NOT ask the user for parameters.`;
+	}
+	if (registryUrl) {
+		instructions +=
+			`\n\n## Registry\n\n` +
+			`A registry is configured at ${registryUrl}. ` +
+			`If you don't know which provider to use, call \`discover(intent="<what you want to do>")\` ` +
+			`to search the registry. This returns matching providers you can connect to.`;
 	}
 
 	const server = new McpServer(

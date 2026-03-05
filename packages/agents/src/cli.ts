@@ -42,6 +42,12 @@ async function main() {
 			? args[encKeyIndex + 1]
 			: process.env.AGENT_ENCRYPTION_KEY;
 
+	const registryIndex = args.indexOf("--registry");
+	const registryUrl =
+		registryIndex !== -1
+			? args[registryIndex + 1]
+			: process.env.AGENT_REGISTRY_URL;
+
 	const storage = createFileStorage({ encryptionKey });
 
 	switch (command) {
@@ -115,9 +121,19 @@ async function main() {
 
 			console.log(`Enrolling device with ${url}...`);
 
+			const existingHost = storage.getHostKeypair
+				? await storage.getHostKeypair(url)
+				: null;
+			if (existingHost) {
+				console.log(
+					"Found an existing local host credential. Reusing it so enrollment can claim that host.",
+				);
+			}
+
 			const enrollResult = await enrollHost({
 				appURL: url,
 				token: enrollToken,
+				keypair: existingHost?.keypair,
 			});
 
 			if (storage.saveHostKeypair) {
@@ -136,6 +152,11 @@ async function main() {
 				console.log(`Name: ${enrollResult.name}`);
 			}
 			console.log(`Scopes: ${enrollResult.scopes.join(", ") || "none"}`);
+			if (enrollResult.reusedExistingKeypair) {
+				console.log(
+					"Claimed the existing device host, so prior autonomous activity from this host now belongs to your account.",
+				);
+			}
 			console.log(
 				"\nThis device is now a trusted host. Agents created from here will be auto-approved.",
 			);
@@ -148,6 +169,7 @@ async function main() {
 				storage,
 				appUrl: urls.length > 1 ? urls : url,
 				serverName: "auth-agents",
+				registryUrl,
 			});
 			break;
 		}
@@ -189,6 +211,7 @@ Options:
   --url <url>              App URL (repeatable for serve; or set BETTER_AUTH_URL)
   --name <name>            Agent name (default: "CLI Agent")
   --token <token>          Enrollment token from dashboard (for enroll command)
+  --registry <url>         Registry URL for intent-based discovery (or set AGENT_REGISTRY_URL)
   --encryption-key <key>   Encrypt stored keypairs (or set AGENT_ENCRYPTION_KEY)
   -h, --help               Show this help
 `);

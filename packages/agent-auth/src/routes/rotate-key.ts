@@ -72,7 +72,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 
 			emit(opts, {
 				type: "agent.key_rotated",
-				actorId: agentSession.user?.id ?? undefined,
+				actorId: agentSession.host?.userId ?? undefined,
 				actorType: "agent",
 				agentId,
 			});

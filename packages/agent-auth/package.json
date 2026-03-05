@@ -49,6 +49,12 @@
         "types": "./dist/mcp-server.d.ts",
         "default": "./dist/mcp-server.js"
       }
+    },
+    "./openapi": {
+      "import": {
+        "types": "./dist/openapi.d.ts",
+        "default": "./dist/openapi.js"
+      }
     }
   },
   "files": [

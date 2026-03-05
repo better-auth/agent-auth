@@ -9,6 +9,7 @@ export default defineConfig({
 		"src/mcp-storage-fs.ts",
 		"src/mcp-storage-memory.ts",
 		"src/mcp-server.ts",
+		"src/openapi.ts",
 	],
 	format: ["esm"],
 	dts: true,

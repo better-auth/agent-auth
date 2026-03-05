@@ -7,9 +7,15 @@ import { BetterAuthLogo } from "@/components/icons/logo";
 import { HalftoneBackground } from "@/components/ui/halftone-background";
 import { getSession, getUserOrg } from "@/lib/db/queries";
 
-export default async function SignInPage() {
+export default async function SignInPage({
+	searchParams,
+}: {
+	searchParams: Promise<{ add?: string }>;
+}) {
+	const { add } = await searchParams;
+	const isAddingAccount = add === "true";
 	const session = await getSession();
-	if (session?.user) {
+	if (session?.user && !isAddingAccount) {
 		const org = await getUserOrg(session.user.id);
 		if (org) throw redirect(`/dashboard/${org.slug}`);
 		throw redirect("/onboarding");

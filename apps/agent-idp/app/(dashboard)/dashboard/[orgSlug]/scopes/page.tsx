@@ -47,6 +47,7 @@ export default async function ScopesPage({
 				initialPolicies={initialSettings?.inputScopePolicies ?? []}
 				initialDisabledScopes={initialSettings?.disabledScopes ?? []}
 				initialScopeTTLs={initialSettings?.scopeTTLs ?? {}}
+				initialScopeMaxUses={initialSettings?.scopeMaxUses ?? {}}
 			/>
 		</div>
 	);

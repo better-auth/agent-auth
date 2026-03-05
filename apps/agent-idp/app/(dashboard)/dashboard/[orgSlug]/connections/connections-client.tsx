@@ -1,7 +1,7 @@
 "use client";
 
 import {
-	Cable,
+	Plug2,
 	ChevronDown,
 	ChevronRight,
 	FileJson,
@@ -1518,7 +1518,7 @@ export function ConnectionsClient({
 
 			{connections.length === 0 ? (
 				<div className="border border-dashed border-border/60 rounded-lg p-12 text-center">
-					<Cable className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+					<Plug2 className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
 					<p className="text-sm text-muted-foreground mb-3">
 						No connections yet. Add a provider or MCP server to get started.
 					</p>
@@ -1539,7 +1539,7 @@ export function ConnectionsClient({
 
 			{connections.length > 0 && (
 				<div className="flex items-start gap-2.5 text-xs text-muted-foreground/70 px-1">
-					<Cable className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+					<Plug2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
 					<p>
 						OAuth providers are connected per-user. MCP, OpenAPI, and Agent Auth
 						connections are shared across the organization. The IDP proxies tool

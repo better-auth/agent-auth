@@ -3,7 +3,7 @@ import {
 	AlertTriangle,
 	ArrowRight,
 	ArrowUpRight,
-	Cable,
+	Plug2,
 	Check,
 	KeyRound,
 	Users,
@@ -104,7 +104,7 @@ export default async function OverviewPage({
 			label: "Connections",
 			value: connections.filter((c) => c.status === "active").length,
 			sub: `${connections.length} configured`,
-			icon: Cable,
+			icon: Plug2,
 			href: `/dashboard/${orgSlug}/connections`,
 		},
 		...(!isPersonal
@@ -387,7 +387,7 @@ export default async function OverviewPage({
 										key={c.id}
 										className="flex items-center gap-3 px-3.5 py-2"
 									>
-										<Cable className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+										<Plug2 className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
 										<p className="text-[13px] font-medium truncate flex-1">
 											{c.displayName}
 										</p>
@@ -408,7 +408,7 @@ export default async function OverviewPage({
 								href={`/dashboard/${orgSlug}/connections`}
 								className="flex items-center justify-center gap-2 border border-dashed border-border/50 rounded-lg p-6 hover:bg-muted/20 transition-colors group"
 							>
-								<Cable className="h-4 w-4 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors" />
+								<Plug2 className="h-4 w-4 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors" />
 								<p className="text-[11px] text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
 									Add a connection
 								</p>

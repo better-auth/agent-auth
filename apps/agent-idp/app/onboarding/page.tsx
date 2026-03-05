@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Check, Loader2, Mail, User, X } from "lucide-react";
+import { Check, Loader2, Mail, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BetterAuthLogo } from "@/components/icons/logo";
@@ -23,6 +23,24 @@ type Invitation = {
 	expiresAt: string;
 };
 
+function PersonalIcon({ className }: { className?: string }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" className={className} strokeWidth="1.4" stroke="currentColor">
+			<circle cx="12" cy="8" r="4" />
+			<path d="M5.5 21a6.5 6.5 0 0 1 13 0" strokeLinecap="round" />
+		</svg>
+	);
+}
+
+function OrgIcon({ className }: { className?: string }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" className={className} strokeWidth="1.4" stroke="currentColor">
+			<rect x="3" y="3" width="18" height="18" rx="2" />
+			<path d="M9 3v18M3 9h18" />
+		</svg>
+	);
+}
+
 function InvitationCard({
 	invite,
 	onAccept,
@@ -39,14 +57,14 @@ function InvitationCard({
 	const isDisabled = loading !== null;
 
 	return (
-		<div className="border border-border rounded-lg p-4 flex flex-col gap-3">
+		<div className="border border-foreground/10 p-4 flex flex-col gap-3">
 			<div className="flex items-start justify-between gap-3">
 				<div className="min-w-0">
 					<p className="font-medium text-sm truncate">
 						{invite.organizationName}
 					</p>
-					<p className="text-xs text-muted-foreground mt-0.5">
-						Invited by {invite.inviterEmail} &middot;{" "}
+					<p className="text-[11px] text-muted-foreground/60 mt-0.5 font-mono">
+						{invite.inviterEmail} &middot;{" "}
 						<span className="capitalize">{invite.role}</span>
 					</p>
 				</div>
@@ -91,58 +109,71 @@ function OrgTypeSelector({
 	value: OrgType;
 	onChange: (v: OrgType) => void;
 }) {
+	const options: { key: OrgType; label: string; desc: string; icon: typeof PersonalIcon }[] = [
+		{ key: "personal", label: "Personal", desc: "Just for you and your agents", icon: PersonalIcon },
+		{ key: "organization", label: "Organization", desc: "Collaborate with your team", icon: OrgIcon },
+	];
+
 	return (
 		<div className="grid grid-cols-2 gap-3">
-			<button
-				type="button"
-				onClick={() => onChange("personal")}
-				className={cn(
-					"flex flex-col items-center gap-2 rounded-lg border p-4 transition-all text-left",
-					value === "personal"
-						? "border-foreground bg-foreground/[0.04] ring-1 ring-foreground/10"
-						: "border-border/60 hover:border-border hover:bg-foreground/[0.02]",
-				)}
-			>
-				<User
-					className={cn(
-						"h-5 w-5",
-						value === "personal"
-							? "text-foreground"
-							: "text-muted-foreground/50",
-					)}
-				/>
-				<div className="text-center">
-					<p className="text-[13px] font-medium">Personal</p>
-					<p className="text-[11px] text-muted-foreground mt-0.5">
-						Just for you and your agents
-					</p>
-				</div>
-			</button>
-			<button
-				type="button"
-				onClick={() => onChange("organization")}
-				className={cn(
-					"flex flex-col items-center gap-2 rounded-lg border p-4 transition-all text-left",
-					value === "organization"
-						? "border-foreground bg-foreground/[0.04] ring-1 ring-foreground/10"
-						: "border-border/60 hover:border-border hover:bg-foreground/[0.02]",
-				)}
-			>
-				<Building2
-					className={cn(
-						"h-5 w-5",
-						value === "organization"
-							? "text-foreground"
-							: "text-muted-foreground/50",
-					)}
-				/>
-				<div className="text-center">
-					<p className="text-[13px] font-medium">Organization</p>
-					<p className="text-[11px] text-muted-foreground mt-0.5">
-						Collaborate with your team
-					</p>
-				</div>
-			</button>
+			{options.map((opt) => {
+				const active = value === opt.key;
+				return (
+					<button
+						key={opt.key}
+						type="button"
+						onClick={() => onChange(opt.key)}
+						className={cn(
+							"group relative flex flex-col items-center gap-3 border p-5 transition-all text-center",
+							active
+								? "border-foreground bg-foreground/[0.03]"
+								: "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.02]",
+						)}
+					>
+						{/* Selection indicator */}
+						<div
+							className={cn(
+								"absolute top-2.5 right-2.5 h-4 w-4 border flex items-center justify-center transition-all",
+								active
+									? "border-foreground bg-foreground"
+									: "border-foreground/15",
+							)}
+						>
+							{active && (
+								<Check className="h-2.5 w-2.5 text-background" strokeWidth={2.5} />
+							)}
+						</div>
+
+						<div
+							className={cn(
+								"h-10 w-10 flex items-center justify-center border transition-all",
+								active
+									? "border-foreground/20 bg-foreground/[0.06]"
+									: "border-foreground/8 bg-foreground/[0.02]",
+							)}
+						>
+							<opt.icon
+								className={cn(
+									"h-5 w-5 transition-colors",
+									active ? "text-foreground" : "text-foreground/30",
+								)}
+							/>
+						</div>
+
+						<div>
+							<p className={cn(
+								"text-[13px] font-medium transition-colors",
+								active ? "text-foreground" : "text-foreground/70",
+							)}>
+								{opt.label}
+							</p>
+							<p className="text-[10px] text-muted-foreground/50 mt-0.5 font-mono">
+								{opt.desc}
+							</p>
+						</div>
+					</button>
+				);
+			})}
 		</div>
 	);
 }
@@ -313,25 +344,37 @@ export default function OnboardingPage() {
 
 	return (
 		<div className="min-h-dvh flex items-center justify-center bg-background px-4">
-			<div className="w-full max-w-md">
+			{/* Subtle dot grid */}
+			<div
+				className="fixed inset-0 pointer-events-none"
+				style={{
+					backgroundImage: "radial-gradient(circle, var(--foreground) 0.5px, transparent 0.5px)",
+					backgroundSize: "24px 24px",
+					opacity: 0.03,
+					maskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black, transparent)",
+					WebkitMaskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, black, transparent)",
+				}}
+			/>
+
+			<div className="relative w-full max-w-md">
 				<div className="flex flex-col items-center mb-8">
-					<BetterAuthLogo className="h-6 w-auto mb-4" />
+					<BetterAuthLogo className="h-6 w-auto mb-5" />
 					{hasInvitations && !showCreateOrg ? (
 						<>
-							<h1 className="text-xl font-medium tracking-tight">
+							<h1 className="text-lg font-medium tracking-tight">
 								You&apos;ve been invited
 							</h1>
-							<p className="mt-1.5 text-sm text-muted-foreground text-center max-w-xs">
+							<p className="mt-1.5 text-[13px] text-muted-foreground/60 text-center max-w-xs">
 								Accept an invitation to join an existing organization, or create
 								your own.
 							</p>
 						</>
 					) : (
 						<>
-							<h1 className="text-xl font-medium tracking-tight">
+							<h1 className="text-lg font-medium tracking-tight">
 								Get started
 							</h1>
-							<p className="mt-1.5 text-sm text-muted-foreground text-center max-w-xs">
+							<p className="mt-1.5 text-[13px] text-muted-foreground/60 text-center max-w-xs">
 								Set up your workspace to manage connections and agents.
 							</p>
 						</>
@@ -339,7 +382,7 @@ export default function OnboardingPage() {
 				</div>
 
 				{error && (
-					<div className="mb-4 p-3 border border-destructive/30 bg-destructive/5 rounded-lg">
+					<div className="mb-4 p-3 border border-destructive/20 bg-destructive/5">
 						<p className="text-sm text-destructive">{error}</p>
 					</div>
 				)}
@@ -356,13 +399,13 @@ export default function OnboardingPage() {
 							/>
 						))}
 
-						<div className="pt-4 border-t border-border mt-6">
+						<div className="pt-4 border-t border-foreground/8 mt-6">
 							<button
 								type="button"
 								onClick={() => setShowCreateOrg(true)}
-								className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+								className="w-full text-center text-[12px] text-muted-foreground/50 hover:text-foreground/70 transition-colors py-2 font-mono"
 							>
-								Skip &mdash; create my own workspace instead
+								Skip — create my own workspace
 							</button>
 						</div>
 					</div>
@@ -372,9 +415,9 @@ export default function OnboardingPage() {
 							<OrgTypeSelector value={orgType} onChange={setOrgType} />
 
 							{orgType === "organization" && (
-								<>
+								<div className="space-y-4 animate-fade-in">
 									<div>
-										<Label htmlFor="org-name" className="text-xs">
+										<Label htmlFor="org-name" className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground/60">
 											Organization name
 										</Label>
 										<Input
@@ -385,15 +428,15 @@ export default function OnboardingPage() {
 											required
 											placeholder="Acme Inc"
 											disabled={isLoading}
-											className="mt-1"
+											className="mt-1.5"
 										/>
 									</div>
 									<div>
-										<Label htmlFor="org-slug" className="text-xs">
+										<Label htmlFor="org-slug" className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground/60">
 											URL slug
 										</Label>
-										<div className="flex items-center mt-1">
-											<span className="text-xs text-muted-foreground mr-1.5 font-mono">
+										<div className="flex items-center mt-1.5">
+											<span className="text-[11px] text-muted-foreground/40 mr-1.5 font-mono shrink-0">
 												/dashboard/
 											</span>
 											<Input
@@ -415,7 +458,7 @@ export default function OnboardingPage() {
 											/>
 										</div>
 									</div>
-								</>
+								</div>
 							)}
 
 							<Button
@@ -440,14 +483,14 @@ export default function OnboardingPage() {
 						</form>
 
 						{hasInvitations && (
-							<div className="pt-4 border-t border-border mt-6">
+							<div className="pt-4 border-t border-foreground/8 mt-6">
 								<button
 									type="button"
 									onClick={() => setShowCreateOrg(false)}
-									className="w-full flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+									className="w-full flex items-center justify-center gap-1.5 text-[12px] text-muted-foreground/50 hover:text-foreground/70 transition-colors py-2 font-mono"
 								>
 									<Mail className="h-3.5 w-3.5" />
-									Back to pending invitations ({invitations.length})
+									Back to invitations ({invitations.length})
 								</button>
 							</div>
 						)}

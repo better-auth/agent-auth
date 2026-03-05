@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import {
 	callAgentAuthTool,
 	parseAgentAuthCredential,
@@ -8,10 +8,18 @@ import {
 	policyMatchesInput,
 	resolveInputScopePolicies,
 } from "@/lib/auth/input-scope-policy";
-import { member, organization } from "@/lib/db/better-auth-schema";
+import {
+	agentPermission,
+	member,
+	organization,
+} from "@/lib/db/better-auth-schema";
 import { db } from "@/lib/db/drizzle";
 import { getOrgSecuritySettings, isPersonalOrg } from "@/lib/db/queries";
-import { connection, connectionCredential } from "@/lib/db/schema";
+import {
+	agentActivity,
+	connection,
+	connectionCredential,
+} from "@/lib/db/schema";
 import {
 	executeIdpTool,
 	IDP_PROVIDER_NAME,
@@ -22,9 +30,7 @@ import { getOAuthAdapter } from "@/lib/oauth-adapters";
 import { buildUrl, listOpenAPITools } from "@/lib/openapi-tools";
 import { resolveAuth } from "@/lib/resolve-auth";
 
-function extractContentText(
-	content: unknown,
-): string | undefined {
+function extractContentText(content: unknown): string | undefined {
 	if (!Array.isArray(content)) return undefined;
 	const texts = content
 		.filter(
@@ -33,6 +39,78 @@ function extractContentText(
 		)
 		.map((c) => c.text);
 	return texts.length > 0 ? texts.join("\n") : undefined;
+}
+
+/**
+ * After a successful tool call, record the activity in Postgres and
+ * check if any use-limited scope has been exhausted. If so, revoke
+ * the permission so the agent can't use it again.
+ */
+async function recordActivityAndEnforceUseLimits(ctx: {
+	orgId: string;
+	agentId: string;
+	agentName: string;
+	userId: string | null;
+	scope: string;
+	provider: string;
+	toolName: string;
+	toolArgs: Record<string, unknown>;
+	status: "success" | "error";
+	durationMs: number;
+	error?: string;
+}) {
+	const activityId = crypto.randomUUID();
+	try {
+		await db.insert(agentActivity).values({
+			id: activityId,
+			orgId: ctx.orgId,
+			agentId: ctx.agentId,
+			agentName: ctx.agentName,
+			userId: ctx.userId,
+			tool: ctx.scope,
+			provider: ctx.provider,
+			toolArgs: ctx.toolArgs ? JSON.stringify(ctx.toolArgs) : null,
+			status: ctx.status,
+			durationMs: ctx.durationMs,
+			error: ctx.error ?? null,
+		});
+	} catch {
+		// best-effort; don't fail the response
+	}
+
+	if (ctx.status !== "success") return;
+
+	try {
+		const security = await getOrgSecuritySettings(ctx.orgId);
+		const maxUses = security.scopeMaxUses[ctx.scope];
+		if (!maxUses) return;
+
+		const [result] = await db
+			.select({ count: count() })
+			.from(agentActivity)
+			.where(
+				and(
+					eq(agentActivity.agentId, ctx.agentId),
+					eq(agentActivity.tool, ctx.scope),
+					eq(agentActivity.status, "success"),
+				),
+			);
+
+		if ((result?.count ?? 0) >= maxUses) {
+			await db
+				.update(agentPermission)
+				.set({ status: "denied", updatedAt: new Date() })
+				.where(
+					and(
+						eq(agentPermission.agentId, ctx.agentId),
+						eq(agentPermission.scope, ctx.scope),
+						eq(agentPermission.status, "active"),
+					),
+				);
+		}
+	} catch {
+		// best-effort
+	}
 }
 
 /**
@@ -119,6 +197,18 @@ export async function POST(request: Request) {
 			userId,
 			agentSession,
 		});
+		recordActivityAndEnforceUseLimits({
+			orgId,
+			agentId: agentSession.agent.id,
+			agentName: agentSession.agent.name,
+			userId,
+			scope,
+			provider: IDP_PROVIDER_NAME,
+			toolName,
+			toolArgs: body.args ?? {},
+			status: "success",
+			durationMs: 0,
+		}).catch(() => {});
 		return Response.json(result);
 	}
 
@@ -270,6 +360,21 @@ export async function POST(request: Request) {
 
 	const startTime = Date.now();
 
+	const afterToolCall = (status: "success" | "error", durationMs: number) => {
+		recordActivityAndEnforceUseLimits({
+			orgId,
+			agentId: agentSession.agent.id,
+			agentName: agentSession.agent.name,
+			userId,
+			scope,
+			provider: providerName,
+			toolName,
+			toolArgs,
+			status,
+			durationMs,
+		}).catch(() => {});
+	};
+
 	if (conn.type === "openapi" && conn.specUrl) {
 		try {
 			const tools = await listOpenAPITools(conn.specUrl);
@@ -316,6 +421,7 @@ export async function POST(request: Request) {
 				durationMs,
 				error: response.ok ? undefined : resultText,
 			});
+			afterToolCall(response.ok ? "success" : "error", durationMs);
 
 			return Response.json({
 				content: [{ type: "text", text: resultText }],
@@ -378,6 +484,7 @@ export async function POST(request: Request) {
 
 			const result = await callAgentAuthTool(credential, toolName, toolArgs);
 			const durationMs = Date.now() - startTime;
+			const aaStatus = result.isError ? "error" : "success";
 
 			audit.onEvent({
 				type: "tool.executed",
@@ -389,9 +496,10 @@ export async function POST(request: Request) {
 				provider: providerName,
 				toolArgs,
 				toolOutput: extractContentText(result.content),
-				status: result.isError ? "error" : "success",
+				status: aaStatus,
 				durationMs,
 			});
+			afterToolCall(aaStatus as "success" | "error", durationMs);
 
 			return Response.json(result);
 		} catch (err) {
@@ -461,6 +569,7 @@ export async function POST(request: Request) {
 					authHeaders,
 				);
 				const durationMs = Date.now() - startTime;
+				const oauthMcpStatus = result.isError ? "error" : "success";
 
 				audit.onEvent({
 					type: "tool.executed",
@@ -472,9 +581,10 @@ export async function POST(request: Request) {
 					provider: providerName,
 					toolArgs,
 					toolOutput: extractContentText(result.content),
-					status: result.isError ? "error" : "success",
+					status: oauthMcpStatus,
 					durationMs,
 				});
+				afterToolCall(oauthMcpStatus as "success" | "error", durationMs);
 
 				return Response.json(result);
 			} catch (err) {
@@ -522,6 +632,7 @@ export async function POST(request: Request) {
 				cred.accessToken,
 			);
 			const durationMs = Date.now() - startTime;
+			const oauthRestStatus = result.isError ? "error" : "success";
 
 			audit.onEvent({
 				type: "tool.executed",
@@ -533,9 +644,10 @@ export async function POST(request: Request) {
 				provider: providerName,
 				toolArgs,
 				toolOutput: extractContentText(result.content),
-				status: result.isError ? "error" : "success",
+				status: oauthRestStatus,
 				durationMs,
 			});
+			afterToolCall(oauthRestStatus as "success" | "error", durationMs);
 
 			return Response.json(result);
 		} catch (err) {
@@ -588,6 +700,7 @@ export async function POST(request: Request) {
 			: toolArgs;
 		const result = await callMCPTool(conn.mcpEndpoint, toolName, mcpArgs);
 		const durationMs = Date.now() - startTime;
+		const mcpStatus = result.isError ? "error" : "success";
 
 		audit.onEvent({
 			type: "tool.executed",
@@ -599,9 +712,10 @@ export async function POST(request: Request) {
 			provider: providerName,
 			toolArgs,
 			toolOutput: extractContentText(result.content),
-			status: result.isError ? "error" : "success",
+			status: mcpStatus,
 			durationMs,
 		});
+		afterToolCall(mcpStatus as "success" | "error", durationMs);
 
 		return Response.json(result);
 	} catch (err) {

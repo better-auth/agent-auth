@@ -1,4 +1,5 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import type { GenericEndpointContext } from "@better-auth/core";
 import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import { decodeJwt, decodeProtectedHeader } from "jose";
@@ -15,6 +16,7 @@ import type {
 	Agent,
 	AgentHost,
 	CibaAuthRequest,
+	DynamicHostDefaultScopesContext,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
@@ -35,6 +37,73 @@ function generateUserCode(): string {
 		code += chars[Math.floor(Math.random() * chars.length)];
 	}
 	return code;
+}
+
+async function findHostByKey(
+	adapter: {
+		findOne: <T>(args: {
+			model: string;
+			where: { field: string; value: string }[];
+		}) => Promise<T | null>;
+	},
+	publicKey: AgentJWK,
+): Promise<AgentHost | null> {
+	const kid = (publicKey.kid as string) ?? null;
+	if (kid) {
+		const byKid = await adapter.findOne<AgentHost>({
+			model: HOST_TABLE,
+			where: [{ field: "kid", value: kid }],
+		});
+		if (byKid) {
+			return byKid;
+		}
+	}
+
+	return adapter.findOne<AgentHost>({
+		model: HOST_TABLE,
+		where: [{ field: "publicKey", value: JSON.stringify(publicKey) }],
+	});
+}
+
+async function ensureAutonomousReferenceId(
+	opts: ResolvedAgentAuthOptions,
+	ctx: GenericEndpointContext,
+	host: AgentHost,
+): Promise<AgentHost> {
+	if (host.userId || host.referenceId || !opts.createReferenceIdForAutonomousHost) {
+		if (!host.userId && !host.referenceId && !opts.createReferenceIdForAutonomousHost) {
+			throw APIError.from(
+				"BAD_REQUEST",
+				ERROR_CODES.AUTONOMOUS_OWNER_REQUIRED,
+			);
+		}
+		return host;
+	}
+
+	const referenceId = await opts.createReferenceIdForAutonomousHost({
+		ctx,
+		hostId: host.id,
+		hostName: host.name ?? null,
+	});
+
+	if (!referenceId) {
+		return host;
+	}
+
+	await ctx.context.adapter.update({
+		model: HOST_TABLE,
+		where: [{ field: "id", value: host.id }],
+		update: {
+			referenceId,
+			updatedAt: new Date(),
+		},
+	});
+
+	return {
+		...host,
+		referenceId,
+		updatedAt: new Date(),
+	};
 }
 
 const createAgentBodySchema = z.object({
@@ -265,10 +334,10 @@ async function isDynamicHostAllowed(
 
 async function resolveDynamicHostDefaultScopes(
 	opts: ResolvedAgentAuthOptions,
-	ctx: unknown,
+	context: DynamicHostDefaultScopesContext,
 ): Promise<string[]> {
 	const val = opts.dynamicHostDefaultScopes;
-	if (typeof val === "function") return val(ctx as never);
+	if (typeof val === "function") return val(context);
 	return val;
 }
 
@@ -294,17 +363,17 @@ export function createAgent(
 			},
 		},
 		async (ctx) => {
-		const {
-			name,
-			publicKey: bodyPublicKey,
-			scopes,
-			hostJWT: bodyHostJWT,
-			hostPublicKey,
-			hostName,
-			mode: rawMode,
-			metadata,
-			preferredMethod,
-		} = ctx.body;
+			const {
+				name,
+				publicKey: bodyPublicKey,
+				scopes,
+				hostJWT: bodyHostJWT,
+				hostPublicKey,
+				hostName,
+				mode: rawMode,
+				metadata,
+				preferredMethod,
+			} = ctx.body;
 
 			const authHeader = ctx.headers?.get("authorization");
 			const bearerToken = authHeader?.replace(/^Bearer\s+/i, "");
@@ -491,6 +560,7 @@ export function createAgent(
 						jtiCache.add(payload.jti, opts.jwtMaxAge);
 					}
 
+					host = await ensureAutonomousReferenceId(opts, ctx, host);
 					userId = host.userId ?? null;
 					hostId = host.id;
 					hostBaseScopes = parseScopes(host.scopes);
@@ -598,48 +668,71 @@ export function createAgent(
 						jtiCache.add(payload.jti, opts.jwtMaxAge);
 					}
 
-					// Unknown host — bootstrap from JWT payload.
-					// Autonomous agents: host + agent are created active immediately
-					// with no user association (§2, Use Case C). Linking to a user
-					// happens later via connect_account (§2, Use Case F).
-					// delegated agents: both stay pending until user approval (§2, Use Case B).
-					const isAutonomousMode = mode === "autonomous";
-					const hostNow = new Date();
-					const hostKid = resolvedHostPubKey.kid
-						? String(resolvedHostPubKey.kid)
-						: null;
-					const jwtHostName =
-						typeof decoded.host_name === "string" ? decoded.host_name : null;
-					const resolvedHostName = hostName ?? jwtHostName ?? null;
-					const dynamicDefaults = await resolveDynamicHostDefaultScopes(
-						opts,
-						ctx,
+					const existingHost = await findHostByKey(
+						ctx.context.adapter,
+						resolvedHostPubKey,
 					);
-					const newHost = await ctx.context.adapter.create<
-						Record<string, unknown>,
-						AgentHost
-					>({
-						model: HOST_TABLE,
-						data: {
-							name: resolvedHostName,
+					if (existingHost) {
+						const ensuredHost = await ensureAutonomousReferenceId(
+							opts,
+							ctx,
+							existingHost,
+						);
+						hostId = ensuredHost.id;
+						userId = ensuredHost.userId ?? null;
+						hostBaseScopes = parseScopes(ensuredHost.scopes);
+					} else {
+						// Unknown host — bootstrap from JWT payload.
+						// Autonomous agents: host + agent are created active immediately
+						// with no user association (§2, Use Case C). Linking to a user
+						// happens later via connect_account (§2, Use Case F).
+						// delegated agents: both stay pending until user approval (§2, Use Case B).
+						const isAutonomousMode = mode === "autonomous";
+						const hostNow = new Date();
+						const hostKid = resolvedHostPubKey.kid
+							? String(resolvedHostPubKey.kid)
+							: null;
+						const jwtHostName =
+							typeof decoded.host_name === "string" ? decoded.host_name : null;
+						const resolvedHostName = hostName ?? jwtHostName ?? null;
+						const dynScopes = await resolveDynamicHostDefaultScopes(opts, {
+							ctx,
+							mode,
 							userId: null,
-							referenceId: null,
-							publicKey: JSON.stringify(resolvedHostPubKey),
-							kid: hostKid,
-							jwksUrl: hostJwksUrl,
-							scopes: dynamicDefaults,
-							status: isAutonomousMode ? "active" : "pending",
-							activatedAt: isAutonomousMode ? hostNow : null,
-							expiresAt: null,
-							lastUsedAt: null,
-							createdAt: hostNow,
-							updatedAt: hostNow,
-						},
-					});
+							hostId: null,
+							hostName: resolvedHostName,
+						});
+						const newHost = await ctx.context.adapter.create<
+							Record<string, unknown>,
+							AgentHost
+						>({
+							model: HOST_TABLE,
+							data: {
+								name: resolvedHostName,
+								userId: null,
+								referenceId: null,
+								publicKey: JSON.stringify(resolvedHostPubKey),
+								kid: hostKid,
+								jwksUrl: hostJwksUrl,
+								scopes: dynScopes,
+								status: isAutonomousMode ? "active" : "pending",
+								activatedAt: isAutonomousMode ? hostNow : null,
+								expiresAt: null,
+								lastUsedAt: null,
+								createdAt: hostNow,
+								updatedAt: hostNow,
+							},
+						});
 
-					hostId = newHost.id;
-					userId = null;
-					hostBaseScopes = dynamicDefaults;
+						const ensuredHost = await ensureAutonomousReferenceId(
+							opts,
+							ctx,
+							newHost,
+						);
+						hostId = ensuredHost.id;
+						userId = null;
+						hostBaseScopes = dynScopes;
+					}
 				}
 			} else {
 				const cookieSession = await getSessionFromCtx(ctx);
@@ -671,17 +764,45 @@ export function createAgent(
 
 				if (hostPublicKey) {
 					const hostKid = (hostPublicKey.kid as string) ?? null;
-					let existingHost: AgentHost | null = null;
-					if (hostKid) {
-						existingHost = await ctx.context.adapter.findOne<AgentHost>({
-							model: HOST_TABLE,
-							where: [
-								{ field: "kid", value: hostKid },
-								{ field: "userId", value: userId },
-							],
-						});
-					}
+					const existingHost = await findHostByKey(
+						ctx.context.adapter,
+						hostPublicKey as AgentJWK,
+					);
 					if (existingHost) {
+						if (existingHost.userId && existingHost.userId !== userId) {
+							throw APIError.from("CONFLICT", ERROR_CODES.HOST_ALREADY_LINKED);
+						}
+						if (!existingHost.userId) {
+							await opts.onHostClaimed?.({
+								ctx,
+								hostId: existingHost.id,
+								referenceId: existingHost.referenceId,
+								userId,
+								previousUserId: null,
+							});
+							await ctx.context.adapter.update({
+								model: HOST_TABLE,
+								where: [{ field: "id", value: existingHost.id }],
+								update: {
+									userId,
+									updatedAt: new Date(),
+								},
+							});
+							const hostAgents = await ctx.context.adapter.findMany<Agent>({
+								model: AGENT_TABLE,
+								where: [{ field: "hostId", value: existingHost.id }],
+							});
+							for (const hostAgent of hostAgents) {
+								await ctx.context.adapter.update({
+									model: AGENT_TABLE,
+									where: [{ field: "id", value: hostAgent.id }],
+									update: {
+										userId,
+										updatedAt: new Date(),
+									},
+								});
+							}
+						}
 						hostId = existingHost.id;
 						hostBaseScopes = parseScopes(existingHost.scopes);
 						if (hostName && hostName !== existingHost.name) {
@@ -703,10 +824,13 @@ export function createAgent(
 							);
 						}
 
-						const dynamicDefaults = await resolveDynamicHostDefaultScopes(
-							opts,
+						const dynScopes2 = await resolveDynamicHostDefaultScopes(opts, {
 							ctx,
-						);
+							mode,
+							userId,
+							hostId: null,
+							hostName: hostName ?? null,
+						});
 						const hostNow = new Date();
 						const newHost = await ctx.context.adapter.create<
 							Record<string, unknown>,
@@ -720,7 +844,7 @@ export function createAgent(
 								publicKey: JSON.stringify(hostPublicKey),
 								kid: hostKid,
 								jwksUrl: null,
-								scopes: dynamicDefaults,
+								scopes: dynScopes2,
 								status: "active",
 								activatedAt: hostNow,
 								expiresAt: null,
@@ -730,7 +854,7 @@ export function createAgent(
 							},
 						});
 						hostId = newHost.id;
-						hostBaseScopes = dynamicDefaults;
+						hostBaseScopes = dynScopes2;
 					}
 				} else {
 					try {
@@ -758,10 +882,13 @@ export function createAgent(
 							);
 						}
 
-						const dynamicDefaults = await resolveDynamicHostDefaultScopes(
-							opts,
+						const dynScopes3 = await resolveDynamicHostDefaultScopes(opts, {
 							ctx,
-						);
+							mode,
+							userId,
+							hostId: null,
+							hostName: hostName ?? null,
+						});
 						const autoHostNow = new Date();
 						const autoHost = await ctx.context.adapter.create<
 							Record<string, unknown>,
@@ -775,7 +902,7 @@ export function createAgent(
 								publicKey: "",
 								kid: null,
 								jwksUrl: null,
-								scopes: dynamicDefaults,
+								scopes: dynScopes3,
 								status: "active",
 								activatedAt: autoHostNow,
 								expiresAt: null,
@@ -785,7 +912,7 @@ export function createAgent(
 							},
 						});
 						hostId = autoHost.id;
-						hostBaseScopes = dynamicDefaults;
+						hostBaseScopes = dynScopes3;
 					}
 				}
 			}
@@ -972,20 +1099,20 @@ export function createAgent(
 					if (pendingScopes.length > 0) {
 						const origin = new URL(ctx.context.baseURL).origin;
 						response.pending_scopes = pendingScopes;
-					response.approval = await buildApprovalInfo(
-						opts,
-						ctx.context.adapter,
-						ctx.context.internalAdapter,
-						{
-							origin,
-							agentId: existing.id,
-							userId,
-							agentName: name,
-							hostId,
-							scopes: [...resolvedScopes, ...pendingScopes],
-							preferredMethod,
-						},
-					);
+						response.approval = await buildApprovalInfo(
+							opts,
+							ctx.context.adapter,
+							ctx.context.internalAdapter,
+							{
+								origin,
+								agentId: existing.id,
+								userId,
+								agentName: name,
+								hostId,
+								scopes: [...resolvedScopes, ...pendingScopes],
+								preferredMethod,
+							},
+						);
 					}
 					emit(opts, {
 						type: "agent.created",
@@ -1085,20 +1212,20 @@ export function createAgent(
 			if (pendingScopes.length > 0 || isHostPending) {
 				const origin = new URL(ctx.context.baseURL).origin;
 				response.pending_scopes = pendingScopes;
-			response.approval = await buildApprovalInfo(
-				opts,
-				ctx.context.adapter,
-				ctx.context.internalAdapter,
-				{
-					origin,
-					agentId: agent.id,
-					userId,
-					agentName: name,
-					hostId,
-					scopes: [...resolvedScopes, ...pendingScopes],
-					preferredMethod,
-				},
-			);
+				response.approval = await buildApprovalInfo(
+					opts,
+					ctx.context.adapter,
+					ctx.context.internalAdapter,
+					{
+						origin,
+						agentId: agent.id,
+						userId,
+						agentName: name,
+						hostId,
+						scopes: [...resolvedScopes, ...pendingScopes],
+						preferredMethod,
+					},
+				);
 			}
 			emit(opts, {
 				type: "agent.created",

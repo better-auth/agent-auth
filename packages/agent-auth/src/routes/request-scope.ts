@@ -131,24 +131,24 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 		"/agent/request-scope",
 		{
 			method: "POST",
-		body: z.object({
-			scopes: z
-				.array(z.string())
-				.min(1)
-				.describe("Scopes the agent wants to add"),
-			reason: z
-				.string()
-				.optional()
-				.describe(
-					"Human-readable reason for the request (displayed verbatim to user)",
-				),
-			preferredMethod: z
-				.enum(["device_authorization", "ciba"])
-				.optional()
-				.describe(
-					"Preferred approval method. The server may honor or override this based on user/org settings.",
-				),
-		}),
+			body: z.object({
+				scopes: z
+					.array(z.string())
+					.min(1)
+					.describe("Scopes the agent wants to add"),
+				reason: z
+					.string()
+					.optional()
+					.describe(
+						"Human-readable reason for the request (displayed verbatim to user)",
+					),
+				preferredMethod: z
+					.enum(["device_authorization", "ciba"])
+					.optional()
+					.describe(
+						"Preferred approval method. The server may honor or override this based on user/org settings.",
+					),
+			}),
 			requireHeaders: true,
 			metadata: {
 				openapi: {
@@ -189,7 +189,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				},
 			);
 
-			const ownerId = agentSession.user?.id ?? null;
+			const ownerId = agentSession.host?.userId ?? null;
 
 			const activeScopes = existingPerms
 				.filter((p) => p.status === "active")
@@ -227,7 +227,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 					ctx,
 					agentSession.agent.id,
 					agentSession.agent.name,
-					agentSession.user?.id ?? null,
+					agentSession.host?.userId ?? null,
 					agentSession.agent.hostId ?? null,
 					stillPending,
 					preferredMethod,
@@ -243,6 +243,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 
 			let hostBudget: string[] = [];
 			let hostIsActive = false;
+			let hostUserId: string | null = null;
 			if (agentSession.agent.hostId) {
 				const host = await ctx.context.adapter.findOne<AgentHost>({
 					model: HOST_TABLE,
@@ -251,6 +252,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				if (host) {
 					hostBudget = parseScopes(host.scopes);
 					hostIsActive = host.status === "active";
+					hostUserId = host.userId ?? null;
 				}
 			}
 
@@ -260,9 +262,25 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			if (hostIsActive && hostBudget.length > 0) {
 				autoApprove = newOnly.filter((s: string) => hasScope(hostBudget, s));
 				needsApproval = newOnly.filter((s: string) => !hasScope(hostBudget, s));
+			} else if (hostIsActive && hostBudget.length === 0) {
+				// Active host with empty budget = no restrictions.
+				// Auto-grant all requested scopes. This covers autonomous
+				// agents where there's no user to ask for approval.
+				autoApprove = newOnly;
+				needsApproval = [];
 			} else {
 				autoApprove = [];
 				needsApproval = newOnly;
+			}
+
+			if (needsApproval.length > 0 && !hostUserId) {
+				throw new APIError("FORBIDDEN", {
+					body: {
+						code: ERROR_CODES.SCOPE_DENIED,
+						message:
+							"Requested scopes are not pre-authorized for this autonomous host.",
+					},
+				});
 			}
 
 			const now = new Date();
@@ -271,7 +289,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				const expiresAt = await resolvePermissionExpiresAt(opts, scope, {
 					agentId: agentSession.agent.id,
 					hostId: agentSession.agent.hostId ?? null,
-					userId: agentSession.user?.id ?? null,
+					userId: agentSession.host?.userId ?? null,
 				});
 				await ctx.context.adapter.create<AgentPermission>({
 					model: PERMISSION_TABLE,
@@ -279,7 +297,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 						agentId: agentSession.agent.id,
 						scope,
 						referenceId: null,
-						grantedBy: agentSession.user?.id ?? null,
+						grantedBy: agentSession.host?.userId ?? null,
 						expiresAt,
 						status: "active",
 						reason: null,
@@ -313,7 +331,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 						agentId: agentSession.agent.id,
 						scope,
 						referenceId: null,
-						grantedBy: agentSession.user?.id ?? null,
+						grantedBy: agentSession.host?.userId ?? null,
 						expiresAt: null,
 						status: "pending",
 						reason: reason || null,
@@ -328,7 +346,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 				ctx,
 				agentSession.agent.id,
 				agentSession.agent.name,
-				agentSession.user?.id ?? null,
+				agentSession.host?.userId ?? null,
 				agentSession.agent.hostId ?? null,
 				needsApproval,
 				preferredMethod,
@@ -337,7 +355,7 @@ export function requestScope(opts: ResolvedAgentAuthOptions) {
 			emit(opts, {
 				type: "scope.requested",
 				actorType: "agent",
-				actorId: agentSession.user?.id ?? undefined,
+				actorId: agentSession.host?.userId ?? undefined,
 				agentId: agentSession.agent.id,
 				hostId: agentSession.agent.hostId ?? undefined,
 				metadata: {

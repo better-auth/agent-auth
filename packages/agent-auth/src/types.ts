@@ -2,18 +2,53 @@ import type { GenericEndpointContext } from "@better-auth/core";
 import type { InferOptionSchema } from "better-auth/types";
 import type { agentSchema } from "./schema";
 
+/** OpenAPI-aligned parameter definition (subset of OpenAPI Parameter Object). */
+export interface HttpCapabilityParameter {
+	name: string;
+	in: "path" | "query" | "header";
+	required?: boolean;
+	schema?: Record<string, unknown>;
+	description?: string;
+}
+
+/** OpenAPI-aligned request body definition (subset of OpenAPI Request Body Object). */
+export interface HttpCapabilityRequestBody {
+	required?: boolean;
+	content?: Record<
+		string,
+		{
+			schema?: Record<string, unknown>;
+		}
+	>;
+}
+
+/**
+ * HTTP capability block, aligned with the OpenAPI Operation Object.
+ *
+ * When `parameters` is provided, `call_tool` uses it to place args
+ * into path, query, or header. When omitted, falls back to REST
+ * convention (path from `{templates}`, query for GET, body for POST).
+ */
+export interface HttpCapabilityBlock {
+	method: string;
+	url?: string;
+	operationId?: string;
+	parameters?: HttpCapabilityParameter[];
+	requestBody?: HttpCapabilityRequestBody;
+	/** @deprecated Use `operationId` instead. */
+	operation_id?: string;
+	/** @deprecated Use `url` with the full spec URL instead. */
+	openapi_url?: string;
+}
+
 /** Capability definition for the capabilities endpoint (§2.3). */
 export interface AgentCapability {
 	name: string;
 	description: string;
 	type: "mcp" | "http" | (string & {});
 	mcp?: { endpoint: string; tool_name: string };
-	http?: {
-		openapi_url?: string;
-		operation_id?: string;
-		method?: string;
-		url?: string;
-	};
+	http?: HttpCapabilityBlock;
+	input_schema?: Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -177,14 +212,56 @@ export interface AgentAuthOptions {
 	 * so agents connecting through it get them auto-approved.
 	 *
 	 * Can be a static array or an async callback that receives the
-	 * endpoint context for per-request decisions (e.g. resolving
-	 * org-level settings from session data).
+	 * registration context, allowing different defaults for autonomous
+	 * vs delegated hosts and per-user/per-org decisions.
 	 *
 	 * @default []
 	 */
 	dynamicHostDefaultScopes?:
 		| string[]
-		| ((ctx: GenericEndpointContext) => string[] | Promise<string[]>);
+		| ((
+				context: DynamicHostDefaultScopesContext,
+		  ) => string[] | Promise<string[]>);
+	/**
+	 * Create an internal owner/reference ID for a newly bootstrapped
+	 * autonomous host. The returned value is stored on
+	 * `agentHost.referenceId` while `agentHost.userId` remains `null`.
+	 *
+	 * Use this when autonomous hosts need to own first-party data before
+	 * a real user claims them later.
+	 */
+	createReferenceIdForAutonomousHost?: (context: {
+		ctx: GenericEndpointContext;
+		hostId: string;
+		hostName: string | null;
+	}) => string | null | Promise<string | null>;
+	/**
+	 * Resolve `AgentSession.user` from an autonomous host `referenceId`.
+	 *
+	 * By default, the plugin treats `referenceId` as a Better Auth user ID
+	 * and looks it up via the internal adapter. Provide this callback when
+	 * `referenceId` points to some other backing principal.
+	 */
+	resolveSessionUserByReferenceId?: (context: {
+		ctx: GenericEndpointContext;
+		referenceId: string;
+		hostId: string | null;
+		agentId: string;
+		type: "autonomous" | "delegated";
+	}) => AgentSessionUser | null | Promise<AgentSessionUser | null>;
+	/**
+	 * Called when an unclaimed host is linked to a real user account.
+	 *
+	 * Use this to migrate host-owned resources from `referenceId` to the
+	 * newly linked user.
+	 */
+	onHostClaimed?: (context: {
+		ctx: GenericEndpointContext;
+		hostId: string;
+		referenceId: string | null;
+		userId: string;
+		previousUserId: string | null;
+	}) => void | Promise<void>;
 	/**
 	 * Resolve a TTL (in seconds) for a newly granted permission.
 	 *
@@ -345,6 +422,22 @@ export interface AgentHost {
 	updatedAt: Date;
 }
 
+/** User shape returned in `AgentSession.user`. */
+export interface AgentSessionUser {
+	id: string;
+	name: string;
+	email: string;
+	[key: string]: unknown;
+}
+
+export interface DynamicHostDefaultScopesContext {
+	ctx: GenericEndpointContext;
+	mode: "autonomous" | "delegated";
+	userId: string | null;
+	hostId: string | null;
+	hostName: string | null;
+}
+
 /**
  * An agent record as stored in the database.
  * Pure identity — authorization lives in `agentPermission`.
@@ -419,6 +512,7 @@ export type AgentMetadata = Record<string, string | number | boolean | null>;
  * Available via `ctx.context.agentSession` in route handlers.
  */
 export interface AgentSession {
+	type: "delegated" | "autonomous";
 	agent: {
 		id: string;
 		name: string;
@@ -434,12 +528,13 @@ export interface AgentSession {
 		activatedAt: Date | null;
 		metadata: AgentMetadata | null;
 	};
-	user: {
+	host: {
 		id: string;
-		name: string;
-		email: string;
-		[key: string]: string | number | boolean | null | undefined;
+		userId: string | null;
+		referenceId: string | null;
+		status: string;
 	} | null;
+	user: AgentSessionUser;
 }
 
 /**
@@ -450,6 +545,7 @@ export interface HostSession {
 	host: {
 		id: string;
 		userId: string | null;
+		referenceId: string | null;
 		scopes: string[];
 		status: string;
 	};

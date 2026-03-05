@@ -1,9 +1,8 @@
 import { agentAuth } from "@better-auth/agent-auth";
-import type { GenericEndpointContext } from "@better-auth/core";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { getSessionFromCtx } from "better-auth/api";
-import { bearer, deviceAuthorization, organization } from "better-auth/plugins";
+import { bearer, deviceAuthorization, multiSession, organization } from "better-auth/plugins";
 import { audit, initAuditTables } from "@/lib/audit";
 import { ac, admin, auditor, member, owner } from "@/lib/auth/permissions";
 import * as betterAuthSchema from "@/lib/db/better-auth-schema";
@@ -13,8 +12,10 @@ import { env } from "@/lib/env";
 
 initAuditTables().catch(() => {});
 
+type AuthEndpointContext = Parameters<typeof getSessionFromCtx>[0];
+
 async function getOrgMetadataFromCtx(
-	ctx: GenericEndpointContext,
+	ctx: AuthEndpointContext,
 ): Promise<Record<string, unknown> | null> {
 	try {
 		const session = await getSessionFromCtx(ctx);
@@ -48,7 +49,7 @@ async function getOrgMetadataFromCtx(
 }
 
 async function isOrgDynamicHostAllowed(
-	ctx: GenericEndpointContext,
+	ctx: AuthEndpointContext,
 ): Promise<boolean> {
 	const meta = await getOrgMetadataFromCtx(ctx);
 	if (!meta) return true;
@@ -56,7 +57,7 @@ async function isOrgDynamicHostAllowed(
 }
 
 async function getOrgDynamicHostDefaultScopes(
-	ctx: GenericEndpointContext,
+	ctx: AuthEndpointContext,
 ): Promise<string[]> {
 	const meta = await getOrgMetadataFromCtx(ctx);
 	if (!meta || !Array.isArray(meta.dynamicHostDefaultScopes)) return [];
@@ -64,7 +65,7 @@ async function getOrgDynamicHostDefaultScopes(
 }
 
 async function getOrgFreshSessionWindow(
-	ctx: GenericEndpointContext,
+	ctx: AuthEndpointContext,
 ): Promise<number> {
 	const meta = await getOrgMetadataFromCtx(ctx);
 	if (!meta) return 0;
@@ -181,6 +182,37 @@ async function resolveApproval({
 	return "ciba";
 }
 
+async function createReferenceIdForAutonomousHost({
+	hostId,
+	hostName,
+}: {
+	hostId: string;
+	hostName: string | null;
+}): Promise<string> {
+	const referenceId = `autonomous-host-${hostId}`;
+	const existing = await db.query.user.findFirst({
+		where: (user, { eq }) => eq(user.id, referenceId),
+		columns: { id: true },
+	});
+	if (existing) {
+		return existing.id;
+	}
+
+	// Provision a synthetic Better Auth user so autonomous hosts always have
+	// a resolvable backing principal without depending on a specific plugin.
+	await db.insert(betterAuthSchema.user).values({
+		id: referenceId,
+		name: hostName?.trim() || "Autonomous Host",
+		email: `${referenceId}@autonomous.agent-auth.local`,
+		emailVerified: false,
+		image: null,
+		username: null,
+		displayUsername: null,
+	});
+
+	return referenceId;
+}
+
 export const auth = betterAuth({
 	database: drizzleAdapter(db, {
 		provider: "pg",
@@ -241,18 +273,29 @@ export const auth = betterAuth({
 			},
 		}),
 		agentAuth({
-			rateLimit: false,
-			freshSessionWindow: (ctx) => getOrgFreshSessionWindow(ctx),
+			freshSessionWindow: (ctx: AuthEndpointContext) =>
+				getOrgFreshSessionWindow(ctx),
 			approvalMethods: ["device_authorization", "ciba"],
 			resolveApprovalMethod: resolveApproval,
 			resolvePermissionTTL: resolveOrgScopeTTL,
 			providerName: "agent-idp",
 			providerDescription: "Agent Auth Identity Provider",
-			allowDynamicHostRegistration: (ctx) => isOrgDynamicHostAllowed(ctx),
-			dynamicHostDefaultScopes: (ctx) => getOrgDynamicHostDefaultScopes(ctx),
+			allowDynamicHostRegistration: (ctx: AuthEndpointContext) =>
+				isOrgDynamicHostAllowed(ctx),
+			dynamicHostDefaultScopes: (ctx: AuthEndpointContext) =>
+				getOrgDynamicHostDefaultScopes(ctx),
+			createReferenceIdForAutonomousHost: ({
+				hostId,
+				hostName,
+			}: {
+				hostId: string;
+				hostName: string | null;
+			}) =>
+				createReferenceIdForAutonomousHost({ hostId, hostName }),
 			onEvent: audit.onEvent,
 		}),
 		deviceAuthorization(),
+		multiSession(),
 	],
 	trustedOrigins: [
 		"http://localhost:3000",

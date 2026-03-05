@@ -18,6 +18,97 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  apps/agent-deploy:
+    dependencies:
+      '@better-auth/agent-auth':
+        specifier: workspace:*
+        version: link:../../packages/agent-auth
+      '@radix-ui/react-avatar':
+        specifier: ^1.1.10
+        version: 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/react-dialog':
+        specifier: ^1.1.14
+        version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/react-dropdown-menu':
+        specifier: ^2.1.15
+        version: 2.1.16(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/react-label':
+        specifier: ^2.1.7
+        version: 2.1.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/react-slot':
+        specifier: ^1.2.4
+        version: 1.2.4(@types/react@19.2.14)(react@19.2.4)
+      '@radix-ui/react-tabs':
+        specifier: ^1.1.12
+        version: 1.1.13(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      better-auth:
+        specifier: 1.5.0-beta.18
+        version: 1.5.0-beta.18(4ebafead8b1e3729f95ec918f84db4b0)
+      better-sqlite3:
+        specifier: ^12.0.0
+        version: 12.6.2
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      drizzle-orm:
+        specifier: ^0.44.2
+        version: 0.44.7(@electric-sql/pglite@0.3.15)(@opentelemetry/api@1.9.0)(@prisma/client@7.4.1(prisma@7.4.1(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(kysely@0.28.11)(mysql2@3.15.3)(postgres@3.4.7)(prisma@7.4.1(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))
+      geist:
+        specifier: ^1.7.0
+        version: 1.7.0(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))
+      lucide-react:
+        specifier: ^0.511.0
+        version: 0.511.0(react@19.2.4)
+      next:
+        specifier: ^15.3.3
+        version: 15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      next-themes:
+        specifier: ^0.4.6
+        version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react:
+        specifier: ^19.1.0
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.4(react@19.2.4)
+      sonner:
+        specifier: ^2.0.0
+        version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      tailwind-merge:
+        specifier: ^3.3.0
+        version: 3.5.0
+      tw-animate-css:
+        specifier: ^1.3.0
+        version: 1.4.0
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4.0.0
+        version: 4.2.1
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.3.0
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.3(@types/react@19.2.14)
+      drizzle-kit:
+        specifier: ^0.31.1
+        version: 0.31.9
+      tailwindcss:
+        specifier: ^4.0.0
+        version: 4.2.1
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
   apps/agent-idp:
     dependencies:
       '@ai-sdk/anthropic':
@@ -86,6 +177,9 @@ importers:
       mcp-handler:
         specifier: ^1.0.7
         version: 1.0.7(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))
+      motion:
+        specifier: ^12.35.0
+        version: 12.35.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       next:
         specifier: ^15.3.3
         version: 15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -254,6 +348,79 @@ importers:
       vite:
         specifier: ^6.3.5
         version: 6.4.1(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)
+
+  apps/arm-registry:
+    dependencies:
+      '@huggingface/transformers':
+        specifier: ^3.8.1
+        version: 3.8.1
+      better-sqlite3:
+        specifier: ^12.0.0
+        version: 12.6.2
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      drizzle-orm:
+        specifier: ^0.44.2
+        version: 0.44.7(@electric-sql/pglite@0.3.15)(@opentelemetry/api@1.9.0)(@prisma/client@7.4.1(prisma@7.4.1(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))(typescript@5.9.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(kysely@0.28.11)(mysql2@3.15.3)(postgres@3.4.7)(prisma@7.4.1(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3))
+      geist:
+        specifier: ^1.7.0
+        version: 1.7.0(next@15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))
+      lucide-react:
+        specifier: ^0.511.0
+        version: 0.511.0(react@19.2.4)
+      motion:
+        specifier: ^12.35.0
+        version: 12.35.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      next:
+        specifier: ^15.3.3
+        version: 15.5.12(@opentelemetry/api@1.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      next-themes:
+        specifier: ^0.4.6
+        version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react:
+        specifier: ^19.1.0
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.4(react@19.2.4)
+      sonner:
+        specifier: ^2.0.0
+        version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      tailwind-merge:
+        specifier: ^3.3.0
+        version: 3.5.0
+      tw-animate-css:
+        specifier: ^1.3.0
+        version: 1.4.0
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4.0.0
+        version: 4.2.1
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.3.0
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.3(@types/react@19.2.14)
+      drizzle-kit:
+        specifier: ^0.31.1
+        version: 0.31.9
+      tailwindcss:
+        specifier: ^4.0.0
+        version: 4.2.1
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
 
   packages/agent-auth:
     dependencies:
@@ -1819,6 +1986,19 @@ packages:
       '@types/react':
         optional: true
 
+  '@radix-ui/react-tabs@1.1.13':
+    resolution: {integrity: sha512-7xdcatg7/U+7+Udyoj2zodtI9H/IIopqo+YOIcZOq1nJwXWBZ9p8xiu5llXlekDbZkca79a/fozEYQXIA4sW6A==}
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+      react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
+
   '@radix-ui/react-use-callback-ref@1.1.1':
     resolution: {integrity: sha512-FkBMwD+qbGQeMu1cOHnuGB6x4yzPjho8ap5WtbEJ26umhgqVXbhekKUQO+hZEL1vU92a3wHwdp0HAcqAUF5iDg==}
     peerDependencies:
@@ -3324,6 +3504,20 @@ packages:
     resolution: {integrity: sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==}
     engines: {node: '>= 0.6'}
 
+  framer-motion@12.35.0:
+    resolution: {integrity: sha512-w8hghCMQ4oq10j6aZh3U2yeEQv5K69O/seDI/41PK4HtgkLrcBovUNc0ayBC3UyyU7V1mrY2yLzvYdWJX9pGZQ==}
+    peerDependencies:
+      '@emotion/is-prop-valid': '*'
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@emotion/is-prop-valid':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+
   fresh@2.0.0:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
     engines: {node: '>= 0.8'}
@@ -4085,6 +4279,26 @@ packages:
       snappy:
         optional: true
       socks:
+        optional: true
+
+  motion-dom@12.35.0:
+    resolution: {integrity: sha512-FFMLEnIejK/zDABn+vqGVAUN4T0+3fw+cVAY8MMT65yR+j5uMuvWdd4npACWhh94OVWQs79CrBBuwOwGRZAQiA==}
+
+  motion-utils@12.29.2:
+    resolution: {integrity: sha512-G3kc34H2cX2gI63RqU+cZq+zWRRPSsNIOjpdl9TN4AQwC4sgwYPl/Q/Obf/d53nOm569T0fYK+tcoSV50BWx8A==}
+
+  motion@12.35.0:
+    resolution: {integrity: sha512-BQUhNUIGvUcwXCzwmnT1JpjUqab34lIwxHnXUyWRht1WC1vAyp7/4qgMiUXxN3K6hgUhyoR+HNnLeQMwUZjVjw==}
+    peerDependencies:
+      '@emotion/is-prop-valid': '*'
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@emotion/is-prop-valid':
+        optional: true
+      react:
+        optional: true
+      react-dom:
         optional: true
 
   ms@2.1.3:
@@ -6483,6 +6697,22 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.14
 
+  '@radix-ui/react-tabs@1.1.13(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      '@radix-ui/primitive': 1.1.3
+      '@radix-ui/react-context': 1.1.2(@types/react@19.2.14)(react@19.2.4)
+      '@radix-ui/react-direction': 1.1.1(@types/react@19.2.14)(react@19.2.4)
+      '@radix-ui/react-id': 1.1.1(@types/react@19.2.14)(react@19.2.4)
+      '@radix-ui/react-presence': 1.1.5(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/react-primitive': 2.1.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/react-roving-focus': 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/react-use-controllable-state': 1.2.2(@types/react@19.2.14)(react@19.2.4)
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+    optionalDependencies:
+      '@types/react': 19.2.14
+      '@types/react-dom': 19.2.3(@types/react@19.2.14)
+
   '@radix-ui/react-use-callback-ref@1.1.1(@types/react@19.2.14)(react@19.2.4)':
     dependencies:
       react: 19.2.4
@@ -6761,7 +6991,6 @@ snapshots:
   '@types/better-sqlite3@7.6.13':
     dependencies:
       '@types/node': 25.3.0
-    optional: true
 
   '@types/cacheable-request@6.0.3':
     dependencies:
@@ -7130,12 +7359,10 @@ snapshots:
     dependencies:
       bindings: 1.5.0
       prebuild-install: 7.1.3
-    optional: true
 
   bindings@1.5.0:
     dependencies:
       file-uri-to-path: 1.0.0
-    optional: true
 
   bl@4.1.0:
     dependencies:
@@ -7314,8 +7541,7 @@ snapshots:
     dependencies:
       readdirp: 4.1.2
 
-  chownr@1.1.4:
-    optional: true
+  chownr@1.1.4: {}
 
   chownr@3.0.0: {}
 
@@ -7442,8 +7668,7 @@ snapshots:
     dependencies:
       mimic-response: 3.1.0
 
-  deep-extend@0.6.0:
-    optional: true
+  deep-extend@0.6.0: {}
 
   deepmerge-ts@7.1.5: {}
 
@@ -7792,8 +8017,7 @@ snapshots:
     dependencies:
       eventsource-parser: 3.0.6
 
-  expand-template@2.0.3:
-    optional: true
+  expand-template@2.0.3: {}
 
   expect-type@1.3.0: {}
 
@@ -7872,8 +8096,7 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.3
 
-  file-uri-to-path@1.0.0:
-    optional: true
+  file-uri-to-path@1.0.0: {}
 
   filelist@1.0.6:
     dependencies:
@@ -7913,10 +8136,18 @@ snapshots:
 
   forwarded@0.2.0: {}
 
+  framer-motion@12.35.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+    dependencies:
+      motion-dom: 12.35.0
+      motion-utils: 12.29.2
+      tslib: 2.8.1
+    optionalDependencies:
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+
   fresh@2.0.0: {}
 
-  fs-constants@1.0.0:
-    optional: true
+  fs-constants@1.0.0: {}
 
   fs-extra@10.1.0:
     dependencies:
@@ -8013,8 +8244,7 @@ snapshots:
       nypm: 0.6.5
       pathe: 2.0.3
 
-  github-from-package@0.0.0:
-    optional: true
+  github-from-package@0.0.0: {}
 
   glob@10.5.0:
     dependencies:
@@ -8176,8 +8406,7 @@ snapshots:
 
   inherits@2.0.4: {}
 
-  ini@1.3.8:
-    optional: true
+  ini@1.3.8: {}
 
   inline-style-parser@0.2.7: {}
 
@@ -8819,8 +9048,7 @@ snapshots:
     dependencies:
       minipass: 7.1.3
 
-  mkdirp-classic@0.5.3:
-    optional: true
+  mkdirp-classic@0.5.3: {}
 
   mkdirp@0.5.6:
     dependencies:
@@ -8845,6 +9073,20 @@ snapshots:
       mongodb-connection-string-url: 7.0.1
     optionalDependencies:
       socks: 2.8.7
+
+  motion-dom@12.35.0:
+    dependencies:
+      motion-utils: 12.29.2
+
+  motion-utils@12.29.2: {}
+
+  motion@12.35.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+    dependencies:
+      framer-motion: 12.35.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      tslib: 2.8.1
+    optionalDependencies:
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
 
   ms@2.1.3: {}
 
@@ -8874,8 +9116,7 @@ snapshots:
 
   nanostores@1.1.1: {}
 
-  napi-build-utils@2.0.0:
-    optional: true
+  napi-build-utils@2.0.0: {}
 
   negotiator@1.0.0: {}
 
@@ -8911,7 +9152,6 @@ snapshots:
   node-abi@3.87.0:
     dependencies:
       semver: 7.7.4
-    optional: true
 
   node-abi@4.26.0:
     dependencies:
@@ -9118,7 +9358,6 @@ snapshots:
       simple-get: 4.0.1
       tar-fs: 2.1.4
       tunnel-agent: 0.6.0
-    optional: true
 
   prisma@7.4.1(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3):
     dependencies:
@@ -9209,7 +9448,6 @@ snapshots:
       ini: 1.3.8
       minimist: 1.2.8
       strip-json-comments: 2.0.1
-    optional: true
 
   react-dom@19.2.4(react@19.2.4):
     dependencies:
@@ -9533,15 +9771,13 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  simple-concat@1.0.1:
-    optional: true
+  simple-concat@1.0.1: {}
 
   simple-get@4.0.1:
     dependencies:
       decompress-response: 6.0.0
       once: 1.4.0
       simple-concat: 1.0.1
-    optional: true
 
   simple-update-notifier@2.0.0:
     dependencies:
@@ -9636,8 +9872,7 @@ snapshots:
     dependencies:
       ansi-regex: 6.2.2
 
-  strip-json-comments@2.0.1:
-    optional: true
+  strip-json-comments@2.0.1: {}
 
   style-to-js@1.1.21:
     dependencies:
@@ -9692,7 +9927,6 @@ snapshots:
       mkdirp-classic: 0.5.3
       pump: 3.0.4
       tar-stream: 2.2.0
-    optional: true
 
   tar-stream@2.2.0:
     dependencies:
@@ -9701,7 +9935,6 @@ snapshots:
       fs-constants: 1.0.0
       inherits: 2.0.4
       readable-stream: 3.6.2
-    optional: true
 
   tar@7.5.9:
     dependencies:
@@ -9812,7 +10045,6 @@ snapshots:
   tunnel-agent@0.6.0:
     dependencies:
       safe-buffer: 5.2.1
-    optional: true
 
   turbo-darwin-64@2.8.11:
     optional: true

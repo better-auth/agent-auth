@@ -52,6 +52,7 @@ const SETTING_KEYS: (keyof OrgSecuritySettings)[] = [
 	"freshSessionWindow",
 	"allowedReAuthMethods",
 	"scopeTTLs",
+	"scopeMaxUses",
 ];
 
 export async function PATCH(req: Request) {

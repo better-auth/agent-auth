@@ -1,5 +1,6 @@
 import type { JtiReplayCache } from "../jti-cache";
 import type { ResolvedAgentAuthOptions } from "../types";
+import { approveConnectAccount } from "./approve-connect-account";
 import { approveScope } from "./approve-scope";
 import { capabilities } from "./capabilities";
 import { cibaAuthorize } from "./ciba-authorize";
@@ -55,6 +56,7 @@ export function createAgentRoutes(
 		agentStatus: agentStatus(),
 		introspect: introspect(opts, jtiCache),
 		connectAccount: connectAccount(),
+		approveConnectAccount: approveConnectAccount(opts),
 		createHost: createHost(opts),
 		enrollHost: enrollHost(opts),
 		listHosts: listHosts(),

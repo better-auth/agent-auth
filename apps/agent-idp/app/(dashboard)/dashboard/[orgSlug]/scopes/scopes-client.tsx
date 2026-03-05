@@ -1,7 +1,7 @@
 "use client";
 
 import {
-	Cable,
+	Plug2,
 	Check,
 	ChevronDown,
 	ChevronRight,
@@ -9,6 +9,8 @@ import {
 	Eye,
 	EyeOff,
 	FileJson,
+	Hash,
+	Info,
 	Loader2,
 	Plus,
 	Search,
@@ -70,7 +72,7 @@ function connectionIcon(type: string) {
 		return <FileJson className="h-4 w-4 text-muted-foreground" />;
 	if (type === "agent-auth")
 		return <Shield className="h-4 w-4 text-muted-foreground" />;
-	return <Cable className="h-4 w-4 text-muted-foreground" />;
+	return <Plug2 className="h-4 w-4 text-muted-foreground" />;
 }
 
 function extractSchemaFields(
@@ -85,6 +87,334 @@ function extractSchemaFields(
 		name,
 		type: typeof def?.type === "string" ? def.type : "unknown",
 	}));
+}
+
+const TTL_PRESETS = [
+	{ label: "30s", value: 30 },
+	{ label: "1m", value: 60 },
+	{ label: "5m", value: 300 },
+	{ label: "15m", value: 900 },
+	{ label: "1h", value: 3600 },
+	{ label: "8h", value: 28800 },
+	{ label: "24h", value: 86400 },
+] as const;
+
+function ScopeTTLEditor({
+	scopeName,
+	scopeTTLs,
+	onChangeTTL,
+	compact,
+}: {
+	scopeName: string;
+	scopeTTLs: Record<string, number>;
+	onChangeTTL: (scope: string, ttl: number | null) => void;
+	compact?: boolean;
+}) {
+	const currentTTL = scopeTTLs[scopeName] ?? null;
+	const [customInput, setCustomInput] = useState("");
+	const [showCustom, setShowCustom] = useState(false);
+
+	const handlePreset = useCallback(
+		(value: number) => {
+			onChangeTTL(scopeName, value);
+			setShowCustom(false);
+		},
+		[scopeName, onChangeTTL],
+	);
+
+	const handleClear = useCallback(() => {
+		onChangeTTL(scopeName, null);
+		setShowCustom(false);
+		setCustomInput("");
+	}, [scopeName, onChangeTTL]);
+
+	const handleCustomSubmit = useCallback(() => {
+		const parsed = Number.parseInt(customInput, 10);
+		if (Number.isFinite(parsed) && parsed > 0) {
+			onChangeTTL(scopeName, parsed);
+			setShowCustom(false);
+			setCustomInput("");
+		}
+	}, [scopeName, customInput, onChangeTTL]);
+
+	if (compact) {
+		return (
+			<button
+				type="button"
+				onClick={(e) => {
+					e.stopPropagation();
+					if (currentTTL) {
+						handleClear();
+					} else {
+						handlePreset(3600);
+					}
+				}}
+				className={cn(
+					"text-muted-foreground hover:text-foreground transition-colors",
+					currentTTL && "text-blue-500 hover:text-blue-600",
+				)}
+				title={
+					currentTTL
+						? `TTL: ${formatTTL(currentTTL)} — click to remove`
+						: "Set TTL"
+				}
+			>
+				<Clock className="h-3.5 w-3.5" />
+			</button>
+		);
+	}
+
+	return (
+		<div>
+			<div className="flex items-center gap-1.5 mb-1.5">
+				<p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+					Permission TTL
+				</p>
+				<span
+					title="How long the permission stays active after being granted. Once expired, the agent must request the scope again."
+					className="cursor-help"
+				>
+					<Info className="h-3 w-3 text-muted-foreground/50" />
+				</span>
+			</div>
+			<div className="flex flex-wrap items-center gap-1.5">
+				<button
+					type="button"
+					onClick={handleClear}
+					className={cn(
+						"text-[10px] px-2 py-1 rounded border transition-colors",
+						currentTTL === null
+							? "border-foreground/30 bg-foreground/5 text-foreground font-medium"
+							: "border-border/50 text-muted-foreground hover:border-border hover:text-foreground",
+					)}
+				>
+					Expires with agent
+				</button>
+				{TTL_PRESETS.map((preset) => (
+					<button
+						key={preset.value}
+						type="button"
+						onClick={() => handlePreset(preset.value)}
+						className={cn(
+							"text-[10px] px-2 py-1 rounded border transition-colors",
+							currentTTL === preset.value
+								? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium"
+								: "border-border/50 text-muted-foreground hover:border-border hover:text-foreground",
+						)}
+					>
+						{preset.label}
+					</button>
+				))}
+				{!showCustom ? (
+					<button
+						type="button"
+						onClick={() => setShowCustom(true)}
+						className={cn(
+							"text-[10px] px-2 py-1 rounded border transition-colors",
+							currentTTL !== null &&
+								!TTL_PRESETS.some((p) => p.value === currentTTL)
+								? "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium"
+								: "border-border/50 text-muted-foreground hover:border-border hover:text-foreground",
+						)}
+					>
+						{currentTTL !== null &&
+						!TTL_PRESETS.some((p) => p.value === currentTTL)
+							? formatTTL(currentTTL)
+							: "Custom"}
+					</button>
+				) : (
+					<div className="flex items-center gap-1">
+						<Input
+							value={customInput}
+							onChange={(e) => setCustomInput(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") handleCustomSubmit();
+								if (e.key === "Escape") setShowCustom(false);
+							}}
+							placeholder="seconds"
+							className="h-6 w-20 text-[10px] px-1.5"
+							autoFocus
+						/>
+						<button
+							type="button"
+							onClick={handleCustomSubmit}
+							className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/5 border border-border/50 text-foreground hover:bg-foreground/10"
+						>
+							Set
+						</button>
+					</div>
+				)}
+			</div>
+			{currentTTL !== null && (
+				<p className="text-[10px] text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
+					<Clock className="h-2.5 w-2.5" />
+					Permissions for this scope expire after {formatTTL(currentTTL)}
+				</p>
+			)}
+		</div>
+	);
+}
+
+const MAX_USES_PRESETS = [
+	{ label: "1×", value: 1 },
+	{ label: "3×", value: 3 },
+	{ label: "5×", value: 5 },
+	{ label: "10×", value: 10 },
+	{ label: "25×", value: 25 },
+] as const;
+
+function ScopeMaxUsesEditor({
+	scopeName,
+	scopeMaxUses,
+	onChangeMaxUses,
+	compact,
+}: {
+	scopeName: string;
+	scopeMaxUses: Record<string, number>;
+	onChangeMaxUses: (scope: string, maxUses: number | null) => void;
+	compact?: boolean;
+}) {
+	const current = scopeMaxUses[scopeName] ?? null;
+	const [customInput, setCustomInput] = useState("");
+	const [showCustom, setShowCustom] = useState(false);
+
+	const handlePreset = useCallback(
+		(value: number) => {
+			onChangeMaxUses(scopeName, value);
+			setShowCustom(false);
+		},
+		[scopeName, onChangeMaxUses],
+	);
+
+	const handleClear = useCallback(() => {
+		onChangeMaxUses(scopeName, null);
+		setShowCustom(false);
+		setCustomInput("");
+	}, [scopeName, onChangeMaxUses]);
+
+	const handleCustomSubmit = useCallback(() => {
+		const parsed = Number.parseInt(customInput, 10);
+		if (Number.isFinite(parsed) && parsed > 0) {
+			onChangeMaxUses(scopeName, parsed);
+			setShowCustom(false);
+			setCustomInput("");
+		}
+	}, [scopeName, customInput, onChangeMaxUses]);
+
+	if (compact) {
+		return (
+			<button
+				type="button"
+				onClick={(e) => {
+					e.stopPropagation();
+					if (current) {
+						handleClear();
+					} else {
+						handlePreset(1);
+					}
+				}}
+				className={cn(
+					"text-muted-foreground hover:text-foreground transition-colors",
+					current && "text-orange-500 hover:text-orange-600",
+				)}
+				title={
+					current ? `Max uses: ${current}× — click to remove` : "Set max uses"
+				}
+			>
+				<Hash className="h-3.5 w-3.5" />
+			</button>
+		);
+	}
+
+	return (
+		<div>
+			<div className="flex items-center gap-1.5 mb-1.5">
+				<p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+					Max uses
+				</p>
+				<span
+					title="How many times the agent can invoke this scope before the permission is automatically revoked. Use 1× for one-shot actions like sensitive transfers."
+					className="cursor-help"
+				>
+					<Info className="h-3 w-3 text-muted-foreground/50" />
+				</span>
+			</div>
+			<div className="flex flex-wrap items-center gap-1.5">
+				<button
+					type="button"
+					onClick={handleClear}
+					className={cn(
+						"text-[10px] px-2 py-1 rounded border transition-colors",
+						current === null
+							? "border-foreground/30 bg-foreground/5 text-foreground font-medium"
+							: "border-border/50 text-muted-foreground hover:border-border hover:text-foreground",
+					)}
+				>
+					Unlimited
+				</button>
+				{MAX_USES_PRESETS.map((preset) => (
+					<button
+						key={preset.value}
+						type="button"
+						onClick={() => handlePreset(preset.value)}
+						className={cn(
+							"text-[10px] px-2 py-1 rounded border transition-colors",
+							current === preset.value
+								? "border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium"
+								: "border-border/50 text-muted-foreground hover:border-border hover:text-foreground",
+						)}
+					>
+						{preset.label}
+					</button>
+				))}
+				{!showCustom ? (
+					<button
+						type="button"
+						onClick={() => setShowCustom(true)}
+						className={cn(
+							"text-[10px] px-2 py-1 rounded border transition-colors",
+							current !== null &&
+								!MAX_USES_PRESETS.some((p) => p.value === current)
+								? "border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium"
+								: "border-border/50 text-muted-foreground hover:border-border hover:text-foreground",
+						)}
+					>
+						{current !== null &&
+						!MAX_USES_PRESETS.some((p) => p.value === current)
+							? `${current}×`
+							: "Custom"}
+					</button>
+				) : (
+					<div className="flex items-center gap-1">
+						<Input
+							value={customInput}
+							onChange={(e) => setCustomInput(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") handleCustomSubmit();
+								if (e.key === "Escape") setShowCustom(false);
+							}}
+							placeholder="count"
+							className="h-6 w-16 text-[10px] px-1.5"
+							autoFocus
+						/>
+						<button
+							type="button"
+							onClick={handleCustomSubmit}
+							className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/5 border border-border/50 text-foreground hover:bg-foreground/10"
+						>
+							Set
+						</button>
+					</div>
+				)}
+			</div>
+			{current !== null && (
+				<p className="text-[10px] text-orange-600 dark:text-orange-400 mt-1 flex items-center gap-1">
+					<Hash className="h-2.5 w-2.5" />
+					Permission revoked after {current} use{current !== 1 ? "s" : ""}
+				</p>
+			)}
+		</div>
+	);
 }
 
 function formatTTL(seconds: number): string {
@@ -106,6 +436,7 @@ function ProviderScopeList({
 	hiddenBaseScopes,
 	disabledScopes,
 	scopeTTLs,
+	scopeMaxUses,
 	canUpdate,
 	onScopeClick,
 	onToggleDisabled,
@@ -116,6 +447,7 @@ function ProviderScopeList({
 	hiddenBaseScopes: Set<string>;
 	disabledScopes: Set<string>;
 	scopeTTLs: Record<string, number>;
+	scopeMaxUses: Record<string, number>;
 	canUpdate: boolean;
 	onScopeClick: (scope: ScopeWithSchema) => void;
 	onToggleDisabled: (scopeName: string) => void;
@@ -238,6 +570,12 @@ function ProviderScopeList({
 													{formatTTL(scopeTTLs[scope.name])}
 												</span>
 											)}
+											{scopeMaxUses[scope.name] && (
+												<span className="text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium flex items-center gap-0.5">
+													<Hash className="h-2.5 w-2.5" />
+													{scopeMaxUses[scope.name]}×
+												</span>
+											)}
 											{isDisabled && (
 												<span className="text-[9px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium flex items-center gap-1">
 													<EyeOff className="h-2.5 w-2.5" />
@@ -307,6 +645,7 @@ export function ScopesClient({
 	initialPolicies,
 	initialDisabledScopes,
 	initialScopeTTLs,
+	initialScopeMaxUses,
 }: {
 	orgId: string;
 	canUpdate: boolean;
@@ -314,6 +653,7 @@ export function ScopesClient({
 	initialPolicies: InputScopePolicy[];
 	initialDisabledScopes: string[];
 	initialScopeTTLs: Record<string, number>;
+	initialScopeMaxUses: Record<string, number>;
 }) {
 	const [policies, setPolicies] = useState<InputScopePolicy[]>(initialPolicies);
 	const [disabledScopes, setDisabledScopes] = useState<Set<string>>(
@@ -321,11 +661,14 @@ export function ScopesClient({
 	);
 	const [scopeTTLs, setScopeTTLs] =
 		useState<Record<string, number>>(initialScopeTTLs);
+	const [scopeMaxUses, setScopeMaxUses] =
+		useState<Record<string, number>>(initialScopeMaxUses);
 	const savedPoliciesRef = useRef(JSON.stringify(initialPolicies));
 	const savedDisabledRef = useRef(
 		JSON.stringify([...initialDisabledScopes].sort()),
 	);
 	const savedTTLsRef = useRef(JSON.stringify(initialScopeTTLs));
+	const savedMaxUsesRef = useRef(JSON.stringify(initialScopeMaxUses));
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 
@@ -333,12 +676,14 @@ export function ScopesClient({
 		const policiesJson = JSON.stringify(policies);
 		const disabledJson = JSON.stringify([...disabledScopes].sort());
 		const ttlsJson = JSON.stringify(scopeTTLs);
+		const maxUsesJson = JSON.stringify(scopeMaxUses);
 		return (
 			policiesJson !== savedPoliciesRef.current ||
 			disabledJson !== savedDisabledRef.current ||
-			ttlsJson !== savedTTLsRef.current
+			ttlsJson !== savedTTLsRef.current ||
+			maxUsesJson !== savedMaxUsesRef.current
 		);
-	}, [policies, disabledScopes, scopeTTLs]);
+	}, [policies, disabledScopes, scopeTTLs, scopeMaxUses]);
 	const [error, setError] = useState<string | null>(null);
 	const [search, setSearch] = useState("");
 	const [selectedScope, setSelectedScope] = useState<ScopeWithSchema | null>(
@@ -405,6 +750,7 @@ export function ScopesClient({
 					inputScopePolicies: policies,
 					disabledScopes: [...disabledScopes],
 					scopeTTLs,
+					scopeMaxUses,
 				}),
 			});
 			if (!res.ok) {
@@ -423,12 +769,18 @@ export function ScopesClient({
 				typeof data.scopeTTLs === "object" && data.scopeTTLs !== null
 					? data.scopeTTLs
 					: {};
+			const newMaxUses: Record<string, number> =
+				typeof data.scopeMaxUses === "object" && data.scopeMaxUses !== null
+					? data.scopeMaxUses
+					: {};
 			setPolicies(newPolicies);
 			setDisabledScopes(new Set(newDisabled));
 			setScopeTTLs(newTTLs);
+			setScopeMaxUses(newMaxUses);
 			savedPoliciesRef.current = JSON.stringify(newPolicies);
 			savedDisabledRef.current = JSON.stringify([...newDisabled].sort());
 			savedTTLsRef.current = JSON.stringify(newTTLs);
+			savedMaxUsesRef.current = JSON.stringify(newMaxUses);
 			setSaved(true);
 			setTimeout(() => setSaved(false), 2000);
 		} catch {
@@ -664,7 +1016,7 @@ export function ScopesClient({
 
 			{filteredConnections.length === 0 ? (
 				<div className="border border-dashed border-border/60 rounded-lg p-12 text-center">
-					<Cable className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+					<Plug2 className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
 					<p className="text-sm text-muted-foreground">
 						{search
 							? "No scopes match your search."
@@ -713,6 +1065,7 @@ export function ScopesClient({
 										hiddenBaseScopes={hiddenBaseScopes}
 										disabledScopes={disabledScopes}
 										scopeTTLs={scopeTTLs}
+										scopeMaxUses={scopeMaxUses}
 										canUpdate={canUpdate}
 										onScopeClick={openSubScopeDialog}
 										onToggleDisabled={toggleScopeDisabled}
@@ -755,6 +1108,41 @@ export function ScopesClient({
 							</div>
 						)}
 
+						{canUpdate && selectedScope && (
+							<>
+								<ScopeTTLEditor
+									scopeName={selectedScope.name}
+									scopeTTLs={scopeTTLs}
+									onChangeTTL={(scope, ttl) => {
+										setScopeTTLs((prev) => {
+											const next = { ...prev };
+											if (ttl === null) {
+												delete next[scope];
+											} else {
+												next[scope] = ttl;
+											}
+											return next;
+										});
+									}}
+								/>
+								<ScopeMaxUsesEditor
+									scopeName={selectedScope.name}
+									scopeMaxUses={scopeMaxUses}
+									onChangeMaxUses={(scope, maxUses) => {
+										setScopeMaxUses((prev) => {
+											const next = { ...prev };
+											if (maxUses === null) {
+												delete next[scope];
+											} else {
+												next[scope] = maxUses;
+											}
+											return next;
+										});
+									}}
+								/>
+							</>
+						)}
+
 						{(policiesByParent.get(selectedScope?.name ?? "") ?? []).length >
 							0 && (
 							<div>
@@ -776,19 +1164,64 @@ export function ScopesClient({
 																? `${c.path} = ${c.value}`
 																: "unknown"
 												: "no constraints";
+											const subTTL = scopeTTLs[sub.scope];
 											return (
 												<div
 													key={sub.scope}
 													className="flex items-center gap-2 rounded border border-border/40 px-2 py-1.5"
 												>
 													<div className="flex-1 min-w-0">
-														<p className="text-[11px] font-mono truncate">
-															{sub.scope}
-														</p>
+														<div className="flex items-center gap-1.5">
+															<p className="text-[11px] font-mono truncate">
+																{sub.scope}
+															</p>
+															{subTTL && (
+																<span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center gap-0.5">
+																	<Clock className="h-2 w-2" />
+																	{formatTTL(subTTL)}
+																</span>
+															)}
+														</div>
 														<p className="text-[10px] text-muted-foreground">
 															{sub.description ?? constraintLabel}
 														</p>
 													</div>
+													{canUpdate && (
+														<>
+															<ScopeMaxUsesEditor
+																scopeName={sub.scope}
+																scopeMaxUses={scopeMaxUses}
+																compact
+																onChangeMaxUses={(scope, val) => {
+																	setScopeMaxUses((prev) => {
+																		const next = { ...prev };
+																		if (val === null) {
+																			delete next[scope];
+																		} else {
+																			next[scope] = val;
+																		}
+																		return next;
+																	});
+																}}
+															/>
+															<ScopeTTLEditor
+																scopeName={sub.scope}
+																scopeTTLs={scopeTTLs}
+																compact
+																onChangeTTL={(scope, ttl) => {
+																	setScopeTTLs((prev) => {
+																		const next = { ...prev };
+																		if (ttl === null) {
+																			delete next[scope];
+																		} else {
+																			next[scope] = ttl;
+																		}
+																		return next;
+																	});
+																}}
+															/>
+														</>
+													)}
 													<button
 														type="button"
 														className="text-muted-foreground hover:text-foreground"
@@ -838,284 +1271,241 @@ export function ScopesClient({
 									</Button>
 								</div>
 							) : (
-							<div className="space-y-3">
-							<p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-								New sub-scope
-							</p>
+								<div className="space-y-3">
+									<p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+										New sub-scope
+									</p>
 
-							<div>
-								<Label className="text-xs">Sub-scope name</Label>
-								<Input
-									value={draft.scope}
-									onChange={(e) =>
-										setDraft((prev) => ({
-											...prev,
-											scope: e.target.value,
-										}))
-									}
-									className="mt-1 h-9 text-sm font-mono"
-									placeholder={`${selectedScope?.name ?? ""}_1_500`}
-								/>
-							</div>
-
-							<div>
-								<Label className="text-xs">Description</Label>
-								<Input
-									value={draft.description}
-									onChange={(e) =>
-										setDraft((prev) => ({
-											...prev,
-											description: e.target.value,
-										}))
-									}
-									className="mt-1 h-9 text-sm"
-									placeholder="Allows transfers up to 500"
-								/>
-							</div>
-
-							{selectedScope?.hasInput && schemaFields.length > 0 && (
-								<>
 									<div>
-										<Label className="text-xs">Constrain input field</Label>
-										<select
-											value={draft.path}
-											onChange={(e) => {
-												const fieldName = e.target.value;
-												const field = schemaFields.find(
-													(f) => f.name === fieldName,
-												);
-												const fieldType = field?.type ?? "string";
-												const autoType: Constraint["type"] =
-													fieldType === "number" || fieldType === "integer"
-														? "number_range"
-														: fieldType === "boolean"
-															? "boolean_value"
-															: "string_enum";
+										<Label className="text-xs">Sub-scope name</Label>
+										<Input
+											value={draft.scope}
+											onChange={(e) =>
 												setDraft((prev) => ({
 													...prev,
-													path: fieldName,
-													constraintType: autoType,
-												}));
-											}}
-											className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-										>
-											<option value="">None (no input constraint)</option>
-											{schemaFields.map((f) => (
-												<option key={f.name} value={f.name}>
-													{f.name} ({f.type})
-												</option>
-											))}
-										</select>
+													scope: e.target.value,
+												}))
+											}
+											className="mt-1 h-9 text-sm font-mono"
+											placeholder={`${selectedScope?.name ?? ""}_1_500`}
+										/>
 									</div>
 
-									{draft.path && (
+									<div>
+										<Label className="text-xs">Description</Label>
+										<Input
+											value={draft.description}
+											onChange={(e) =>
+												setDraft((prev) => ({
+													...prev,
+													description: e.target.value,
+												}))
+											}
+											className="mt-1 h-9 text-sm"
+											placeholder="Allows transfers up to 500"
+										/>
+									</div>
+
+									{selectedScope?.hasInput && schemaFields.length > 0 && (
 										<>
-											{(() => {
-												const field = schemaFields.find(
-													(f) => f.name === draft.path,
-												);
-												const isNumeric =
-													field?.type === "number" || field?.type === "integer";
-												const isBool = field?.type === "boolean";
-												return (
-													<>
-														{!isNumeric && !isBool && (
-															<div>
-																<Label className="text-xs">
-																	Constraint type
-																</Label>
-																<select
-																	value={draft.constraintType}
-																	onChange={(e) =>
-																		setDraft((prev) => ({
-																			...prev,
-																			constraintType: e.target
-																				.value as Constraint["type"],
-																		}))
-																	}
-																	className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-																>
-																	<option value="string_enum">
-																		Allowed values
-																	</option>
-																	<option value="string_pattern">
-																		Regex pattern
-																	</option>
-																</select>
-															</div>
-														)}
+											<div>
+												<Label className="text-xs">Constrain input field</Label>
+												<select
+													value={draft.path}
+													onChange={(e) => {
+														const fieldName = e.target.value;
+														const field = schemaFields.find(
+															(f) => f.name === fieldName,
+														);
+														const fieldType = field?.type ?? "string";
+														const autoType: Constraint["type"] =
+															fieldType === "number" || fieldType === "integer"
+																? "number_range"
+																: fieldType === "boolean"
+																	? "boolean_value"
+																	: "string_enum";
+														setDraft((prev) => ({
+															...prev,
+															path: fieldName,
+															constraintType: autoType,
+														}));
+													}}
+													className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+												>
+													<option value="">None (no input constraint)</option>
+													{schemaFields.map((f) => (
+														<option key={f.name} value={f.name}>
+															{f.name} ({f.type})
+														</option>
+													))}
+												</select>
+											</div>
 
-														{draft.constraintType === "number_range" && (
-															<div className="grid grid-cols-2 gap-2">
-																<div>
-																	<Label className="text-xs">Min</Label>
-																	<Input
-																		value={draft.min}
-																		onChange={(e) =>
-																			setDraft((prev) => ({
-																				...prev,
-																				min: e.target.value,
-																			}))
-																		}
-																		className="mt-1 h-9 text-sm"
-																		placeholder="1"
-																	/>
-																</div>
-																<div>
-																	<Label className="text-xs">Max</Label>
-																	<Input
-																		value={draft.max}
-																		onChange={(e) =>
-																			setDraft((prev) => ({
-																				...prev,
-																				max: e.target.value,
-																			}))
-																		}
-																		className="mt-1 h-9 text-sm"
-																		placeholder="500"
-																	/>
-																</div>
-															</div>
-														)}
+											{draft.path && (
+												<>
+													{(() => {
+														const field = schemaFields.find(
+															(f) => f.name === draft.path,
+														);
+														const isNumeric =
+															field?.type === "number" ||
+															field?.type === "integer";
+														const isBool = field?.type === "boolean";
+														return (
+															<>
+																{!isNumeric && !isBool && (
+																	<div>
+																		<Label className="text-xs">
+																			Constraint type
+																		</Label>
+																		<select
+																			value={draft.constraintType}
+																			onChange={(e) =>
+																				setDraft((prev) => ({
+																					...prev,
+																					constraintType: e.target
+																						.value as Constraint["type"],
+																				}))
+																			}
+																			className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+																		>
+																			<option value="string_enum">
+																				Allowed values
+																			</option>
+																			<option value="string_pattern">
+																				Regex pattern
+																			</option>
+																		</select>
+																	</div>
+																)}
 
-														{draft.constraintType === "string_enum" && (
-															<div>
-																<Label className="text-xs">
-																	Allowed values
-																</Label>
-																<Input
-																	value={draft.enumValues}
-																	onChange={(e) =>
-																		setDraft((prev) => ({
-																			...prev,
-																			enumValues: e.target.value,
-																		}))
-																	}
-																	className="mt-1 h-9 text-sm font-mono"
-																	placeholder="checking, savings, primary"
-																/>
-																<p className="text-[10px] text-muted-foreground mt-1">
-																	Comma-separated list of allowed values
-																</p>
-															</div>
-														)}
+																{draft.constraintType === "number_range" && (
+																	<div className="grid grid-cols-2 gap-2">
+																		<div>
+																			<Label className="text-xs">Min</Label>
+																			<Input
+																				value={draft.min}
+																				onChange={(e) =>
+																					setDraft((prev) => ({
+																						...prev,
+																						min: e.target.value,
+																					}))
+																				}
+																				className="mt-1 h-9 text-sm"
+																				placeholder="1"
+																			/>
+																		</div>
+																		<div>
+																			<Label className="text-xs">Max</Label>
+																			<Input
+																				value={draft.max}
+																				onChange={(e) =>
+																					setDraft((prev) => ({
+																						...prev,
+																						max: e.target.value,
+																					}))
+																				}
+																				className="mt-1 h-9 text-sm"
+																				placeholder="500"
+																			/>
+																		</div>
+																	</div>
+																)}
 
-														{draft.constraintType === "string_pattern" && (
-															<div>
-																<Label className="text-xs">Regex pattern</Label>
-																<Input
-																	value={draft.pattern}
-																	onChange={(e) =>
-																		setDraft((prev) => ({
-																			...prev,
-																			pattern: e.target.value,
-																		}))
-																	}
-																	className="mt-1 h-9 text-sm font-mono"
-																	placeholder="^[a-z]+@example\.com$"
-																/>
-																<p className="text-[10px] text-muted-foreground mt-1">
-																	Value must match this regex
-																</p>
-															</div>
-														)}
+																{draft.constraintType === "string_enum" && (
+																	<div>
+																		<Label className="text-xs">
+																			Allowed values
+																		</Label>
+																		<Input
+																			value={draft.enumValues}
+																			onChange={(e) =>
+																				setDraft((prev) => ({
+																					...prev,
+																					enumValues: e.target.value,
+																				}))
+																			}
+																			className="mt-1 h-9 text-sm font-mono"
+																			placeholder="checking, savings, primary"
+																		/>
+																		<p className="text-[10px] text-muted-foreground mt-1">
+																			Comma-separated list of allowed values
+																		</p>
+																	</div>
+																)}
 
-														{draft.constraintType === "boolean_value" && (
-															<div>
-																<Label className="text-xs">
-																	Required value
-																</Label>
-																<select
-																	value={String(draft.boolValue)}
-																	onChange={(e) =>
-																		setDraft((prev) => ({
-																			...prev,
-																			boolValue: e.target.value === "true",
-																		}))
-																	}
-																	className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-																>
-																	<option value="true">true</option>
-																	<option value="false">false</option>
-																</select>
-															</div>
-														)}
-													</>
-												);
-											})()}
+																{draft.constraintType === "string_pattern" && (
+																	<div>
+																		<Label className="text-xs">
+																			Regex pattern
+																		</Label>
+																		<Input
+																			value={draft.pattern}
+																			onChange={(e) =>
+																				setDraft((prev) => ({
+																					...prev,
+																					pattern: e.target.value,
+																				}))
+																			}
+																			className="mt-1 h-9 text-sm font-mono"
+																			placeholder="^[a-z]+@example\.com$"
+																		/>
+																		<p className="text-[10px] text-muted-foreground mt-1">
+																			Value must match this regex
+																		</p>
+																	</div>
+																)}
+
+																{draft.constraintType === "boolean_value" && (
+																	<div>
+																		<Label className="text-xs">
+																			Required value
+																		</Label>
+																		<select
+																			value={String(draft.boolValue)}
+																			onChange={(e) =>
+																				setDraft((prev) => ({
+																					...prev,
+																					boolValue: e.target.value === "true",
+																				}))
+																			}
+																			className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+																		>
+																			<option value="true">true</option>
+																			<option value="false">false</option>
+																		</select>
+																	</div>
+																)}
+															</>
+														);
+													})()}
+												</>
+											)}
 										</>
 									)}
-								</>
-							)}
 
-							<div className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2.5">
-								<div className="flex items-center gap-2 text-xs">
-									{draft.hidden ? (
-										<>
-											<EyeOff className="h-3.5 w-3.5 text-amber-500" />
-											<span className="text-amber-600 dark:text-amber-400 font-medium">
-												Disabled
-											</span>
-											<span className="text-muted-foreground">
-												— agents won&apos;t see this sub-scope
-											</span>
-										</>
-									) : (
-										<>
-											<Eye className="h-3.5 w-3.5 text-emerald-500" />
-											<span className="text-emerald-600 dark:text-emerald-400 font-medium">
-												Enabled
-											</span>
-											<span className="text-muted-foreground">
-												— visible to agents
-											</span>
-										</>
+									{draftError && (
+										<p className="text-xs text-destructive">{draftError}</p>
 									)}
+
+									<div className="flex gap-2">
+										<Button
+											size="sm"
+											className="h-8 text-xs"
+											onClick={handleAddSubScope}
+										>
+											Save Sub-scope
+										</Button>
+										<Button
+											size="sm"
+											variant="ghost"
+											className="h-8 text-xs text-muted-foreground"
+											onClick={() => setShowAddForm(false)}
+										>
+											Cancel
+										</Button>
+									</div>
 								</div>
-								<button
-									type="button"
-									onClick={() =>
-										setDraft((prev) => ({
-											...prev,
-											hidden: !prev.hidden,
-										}))
-									}
-									className={cn(
-										"relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-										draft.hidden ? "bg-amber-500/60" : "bg-emerald-500/60",
-									)}
-								>
-									<span
-										className={cn(
-											"pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform",
-											draft.hidden ? "translate-x-0" : "translate-x-4",
-										)}
-									/>
-								</button>
-							</div>
-
-							{draftError && (
-								<p className="text-xs text-destructive">{draftError}</p>
-							)}
-
-							<div className="flex gap-2">
-								<Button
-									size="sm"
-									className="h-8 text-xs"
-									onClick={handleAddSubScope}
-								>
-									Save Sub-scope
-								</Button>
-								<Button
-									size="sm"
-									variant="ghost"
-									className="h-8 text-xs text-muted-foreground"
-									onClick={() => setShowAddForm(false)}
-								>
-									Cancel
-								</Button>
-							</div>
-						</div>
 							)}
 						</div>
 					</div>

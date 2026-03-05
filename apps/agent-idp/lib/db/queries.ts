@@ -28,6 +28,14 @@ export const getSession = cache(async () => {
 	return auth.api.getSession({ headers: await headers() });
 });
 
+export const getDeviceSessions = cache(async () => {
+	try {
+		return await auth.api.listDeviceSessions({ headers: await headers() });
+	} catch {
+		return [];
+	}
+});
+
 export async function ensureActiveOrg(sessionToken: string, orgId: string) {
 	await db
 		.update(sessionTable)
@@ -590,6 +598,8 @@ export interface OrgSecuritySettings {
 	crossUserCalls: CrossUserCallsConfig;
 	/** Per-scope permission TTL in seconds. Key = scope name, value = TTL. */
 	scopeTTLs: Record<string, number>;
+	/** Per-scope max uses. Key = scope name, value = max invocations before the permission is revoked. */
+	scopeMaxUses: Record<string, number>;
 }
 
 const SECURITY_DEFAULTS: OrgSecuritySettings = {
@@ -604,6 +614,7 @@ const SECURITY_DEFAULTS: OrgSecuritySettings = {
 	allowedReAuthMethods: ["password", "passkey"],
 	crossUserCalls: { enabled: true, disabledScopes: [] },
 	scopeTTLs: {},
+	scopeMaxUses: {},
 };
 
 function parseOrgMeta(raw: string | null): Record<string, unknown> {
@@ -650,9 +661,7 @@ export function resolveSecuritySettings(
 			? meta.dynamicHostDefaultScopes
 			: SECURITY_DEFAULTS.dynamicHostDefaultScopes,
 		disabledScopes: Array.isArray(meta.disabledScopes)
-			? (meta.disabledScopes as string[]).filter(
-					(s) => typeof s === "string",
-				)
+			? (meta.disabledScopes as string[]).filter((s) => typeof s === "string")
 			: SECURITY_DEFAULTS.disabledScopes,
 		inputScopePolicies: resolveInputScopePolicies(meta),
 		defaultApprovalMethod:
@@ -678,13 +687,11 @@ export function resolveSecuritySettings(
 			: SECURITY_DEFAULTS.allowedReAuthMethods,
 		crossUserCalls: resolveCrossUserCalls(meta),
 		scopeTTLs: resolveScopeTTLs(meta),
+		scopeMaxUses: resolvePositiveIntMap(meta.scopeMaxUses),
 	};
 }
 
-function resolveScopeTTLs(
-	meta: Record<string, unknown>,
-): Record<string, number> {
-	const raw = meta.scopeTTLs;
+function resolvePositiveIntMap(raw: unknown): Record<string, number> {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
 	const result: Record<string, number> = {};
 	for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
@@ -693,6 +700,12 @@ function resolveScopeTTLs(
 		}
 	}
 	return result;
+}
+
+function resolveScopeTTLs(
+	meta: Record<string, unknown>,
+): Record<string, number> {
+	return resolvePositiveIntMap(meta.scopeTTLs);
 }
 
 export async function getOrgSecuritySettings(

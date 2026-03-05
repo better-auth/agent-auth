@@ -182,6 +182,13 @@ export interface CreateAgentMCPToolsOptions {
 	 * Set to `false` to disable sending a host name.
 	 */
 	hostName?: string | false;
+	/**
+	 * Registry URL for intent-based discovery (§6.2).
+	 * When set, the `discover` tool accepts an `intent` parameter
+	 * and queries `{registryUrl}/api/search?intent=...` to find
+	 * matching providers. e.g. `"https://arm.directory"`
+	 */
+	registryUrl?: string;
 }
 
 /**
@@ -380,19 +387,27 @@ export function getAgentAuthInstructions(): string {
 		'  `connect_agent(provider="<provider-name>", name="<task-based name>")`',
 		"If you have a URL instead, pass it — discovery happens automatically:",
 		'  `connect_agent(url="<app-url>", name="<task-based name>")`',
+		"If you don't know a provider name or URL, search by intent:",
+		'  `discover(intent="<what you want to do>")`',
 		"- Pick a short, memorable name based on the user's request (e.g. 'PR Reviewer', 'Email Drafter').",
 		"- Scopes are optional — omit them to let the server decide what to grant.",
 		"- The user may need to approve in their browser. Tell them and wait.",
 		"- **Save the returned Agent ID.** Pass it to every subsequent tool call.",
 		"- If you already have an Agent ID, pass it as `agentId` to reuse your session.",
+		"- `connect_account` is different: it links the stored host identity to a user account and does **not** require an Agent ID.",
 		"",
-		"### Step 2 — List capabilities & call tools",
+		"### Step 2 — List capabilities & execute",
 		"",
-		"After connecting, list capabilities to see what tools are available:",
+		"After connecting, list capabilities to see what's available:",
 		'  `list_capabilities(provider="<provider-name>", agent_id="<agent-id>")`',
-		"Then call the tools you need:",
-		'  `call_tool(agent_id="<agent-id>", scope="<capability-name>", input=\'{ ... }\')`',
+		"",
+		"Each capability has a type (`http`, `mcp`, or custom) and an input schema.",
+		"Use `execute` for `http` and `mcp` capabilities — it handles them natively:",
+		'  `execute(agent_id="<agent-id>", capability="<name>", input=\'{ ... }\')`',
 		"`input` is a JSON string matching the capability's input schema.",
+		"",
+		"For custom capability types (not `http` or `mcp`), use your own tools",
+		"(e.g. shell, browser, code execution) to fulfill them.",
 		"",
 		"### Step 3 — Disconnect when done",
 		"",
@@ -405,11 +420,11 @@ export function getAgentAuthInstructions(): string {
 		"",
 		"## Rules",
 		"",
-		"1. **NEVER call `request_scope` unless a `call_tool` returned a 403 error.** The user already approved scopes during `connect_agent`. Calling `request_scope` preemptively forces the user to approve again for no reason. Always try the tool call first.",
+		"1. **NEVER call `request_scope` unless `execute` returned a 403 error.** The user already approved scopes during `connect_agent`. Calling `request_scope` preemptively forces the user to approve again for no reason. Always try the call first.",
 		"2. **NEVER invent an Agent ID.** Only use one returned by `connect_agent`.",
 		"3. **NEVER guess provider or capability names.** Use exact names from discover or list_capabilities.",
 		"4. **NEVER disconnect and reconnect** just to get more scopes.",
-		"5. If a `call_tool` returns **403**, then and only then call `request_scope` with the specific scope that was denied.",
+		"5. If `execute` returns **403**, then and only then call `request_scope` with the specific scope that was denied.",
 		"6. Name agents after their task (e.g. 'PR Reviewer', 'Deploy my-app'). Pick something the user would recognize.",
 		"7. Call `disconnect_agent` when you are done with a task to clean up.",
 	].join("\n");
@@ -425,6 +440,159 @@ export interface AgentMCPToolsResult {
 	sessionAgentIds: Set<string>;
 }
 
+/**
+ * Build a combined input_schema from an HTTP capability's parameters
+ * and requestBody so the AI agent knows the exact parameter names.
+ */
+function buildInputSchemaFromHttp(
+	capability: Record<string, unknown>,
+): Record<string, unknown> | null {
+	const http = capability.http as
+		| {
+				parameters?: Array<{
+					name: string;
+					in: string;
+					required?: boolean;
+					schema?: Record<string, unknown>;
+					description?: string;
+				}>;
+				requestBody?: {
+					required?: boolean;
+					content?: Record<string, { schema?: Record<string, unknown> }>;
+				};
+		  }
+		| undefined;
+
+	if (!http) return null;
+
+	const properties: Record<string, unknown> = {};
+	const required: string[] = [];
+
+	if (http.parameters) {
+		for (const p of http.parameters) {
+			properties[p.name] = p.schema ?? { type: "string" };
+			if (p.description) {
+				(properties[p.name] as Record<string, unknown>).description =
+					p.description;
+			}
+			if (p.required) required.push(p.name);
+		}
+	}
+
+	if (http.requestBody?.content) {
+		const jsonContent =
+			http.requestBody.content["application/json"] ??
+			Object.values(http.requestBody.content)[0];
+		if (jsonContent?.schema) {
+			const bodySchema = jsonContent.schema as Record<string, unknown>;
+			const bodyProps = (bodySchema.properties ?? {}) as Record<
+				string,
+				unknown
+			>;
+			for (const [k, v] of Object.entries(bodyProps)) {
+				properties[k] = v;
+			}
+			if (Array.isArray(bodySchema.required)) {
+				required.push(...(bodySchema.required as string[]));
+			}
+		}
+	}
+
+	if (Object.keys(properties).length === 0) return null;
+
+	return {
+		type: "object",
+		properties,
+		...(required.length > 0 ? { required } : {}),
+	};
+}
+
+/**
+ * Execute an HTTP capability by resolving parameters into the URL,
+ * query string, headers, and body according to OpenAPI conventions.
+ *
+ * When `parameters` is defined on the capability, it is the source of
+ * truth for where each arg goes. When omitted, falls back to REST
+ * convention: `{name}` in URL = path, GET/DELETE remaining = query,
+ * POST/PUT/PATCH remaining = body.
+ */
+async function executeHttpCapability(
+	http: {
+		method: string;
+		url: string;
+		parameters?: Array<{ name: string; in: "path" | "query" | "header" }>;
+	},
+	toolArgs: Record<string, unknown>,
+	jwt: string,
+): Promise<Response> {
+	const remaining = { ...toolArgs };
+	let resolvedUrl = http.url;
+	const queryParams = new URLSearchParams();
+	const extraHeaders: Record<string, string> = {};
+	const hasExplicitParams = http.parameters && http.parameters.length > 0;
+
+	if (hasExplicitParams) {
+		for (const param of http.parameters!) {
+			const val = remaining[param.name];
+			if (val === undefined) continue;
+			delete remaining[param.name];
+
+			if (param.in === "path") {
+				resolvedUrl = resolvedUrl.replace(
+					`{${param.name}}`,
+					encodeURIComponent(String(val)),
+				);
+			} else if (param.in === "query") {
+				queryParams.set(param.name, String(val));
+			} else if (param.in === "header") {
+				extraHeaders[param.name] = String(val);
+			}
+		}
+	} else {
+		resolvedUrl = resolvedUrl.replace(/\{(\w+)\}/g, (_match, key) => {
+			const val =
+				remaining[key] ?? remaining[`${key}Id`] ?? remaining[`${key}_id`];
+			if (val !== undefined) {
+				delete remaining[key];
+				delete remaining[`${key}Id`];
+				delete remaining[`${key}_id`];
+				return encodeURIComponent(String(val));
+			}
+			return _match;
+		});
+
+		if (!["POST", "PUT", "PATCH"].includes(http.method)) {
+			for (const [k, v] of Object.entries(remaining)) {
+				if (v !== undefined && v !== null) {
+					queryParams.set(k, String(v));
+					delete remaining[k];
+				}
+			}
+		}
+	}
+
+	const qs = queryParams.toString();
+	if (qs) {
+		resolvedUrl += `${resolvedUrl.includes("?") ? "&" : "?"}${qs}`;
+	}
+
+	const hasBody = ["POST", "PUT", "PATCH"].includes(http.method);
+	const bodyContent =
+		hasBody && Object.keys(remaining).length > 0
+			? JSON.stringify(remaining)
+			: undefined;
+
+	return globalThis.fetch(resolvedUrl, {
+		method: http.method,
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${jwt}`,
+			...extraHeaders,
+		},
+		body: bodyContent,
+	});
+}
+
 export function createAgentMCPTools(
 	options: CreateAgentMCPToolsOptions,
 ): AgentMCPToolsResult {
@@ -435,6 +603,7 @@ export function createAgentMCPTools(
 		onVerificationUrl,
 		resolveAuthorizationDetails,
 		defaultUrl,
+		registryUrl,
 	} = options;
 
 	const resolvedHostName =
@@ -449,9 +618,7 @@ export function createAgentMCPTools(
 	}
 
 	const defaultPreferredMethod =
-		typeof globalThis.window !== "undefined"
-			? "ciba"
-			: "device_authorization";
+		typeof globalThis.window !== "undefined" ? "ciba" : "device_authorization";
 
 	// Session-scoped agent tracking: only agents created or explicitly
 	// authorized during this process lifetime can be used by tools.
@@ -540,6 +707,34 @@ export function createAgentMCPTools(
 			}
 		} catch {}
 		return null;
+	}
+
+	/**
+	 * Query a registry for providers matching a natural-language intent (§6.2).
+	 * Returns matching configs and saves them to storage.
+	 */
+	async function queryRegistry(
+		intent: string,
+		limit = 5,
+	): Promise<ProviderConfig[]> {
+		if (!registryUrl) return [];
+		const base = registryUrl.replace(/\/+$/, "");
+		try {
+			const res = await globalThis.fetch(
+				`${base}/api/search?intent=${encodeURIComponent(intent)}&limit=${limit}`,
+			);
+			if (!res.ok) return [];
+			const data = (await res.json()) as { providers: ProviderConfig[] };
+			if (!Array.isArray(data.providers)) return [];
+			for (const config of data.providers) {
+				if (storage.saveProviderConfig) {
+					await storage.saveProviderConfig(config.provider_name, config);
+				}
+			}
+			return data.providers;
+		} catch {
+			return [];
+		}
 	}
 
 	/**
@@ -663,22 +858,109 @@ export function createAgentMCPTools(
 		{
 			name: "discover",
 			description:
-				"Discover an Agent Auth server's configuration. " +
-				"Fetches the well-known agent configuration document and stores it locally. " +
-				"Useful for exploring what a server supports. " +
+				"Discover Agent Auth servers. " +
+				"Pass `intent` to search a registry by natural language (e.g. 'deploy websites'), " +
+				"or `url` to fetch a specific server's configuration directly. " +
+				"At least one of `intent` or `url` is required. " +
 				"NOTE: connect_agent auto-discovers when given a URL, so you only need " +
-				"this if you want to inspect the server config before connecting. " +
+				"this if you want to inspect a server or search by intent before connecting. " +
 				"This does NOT require authentication.",
 			inputSchema: {
 				url: z
 					.string()
+					.optional()
 					.describe("App URL to discover (e.g. https://myapp.com)"),
+				intent: z
+					.string()
+					.optional()
+					.describe(
+						"Natural-language intent to search the registry (e.g. 'deploy websites', 'send emails'). " +
+							"Requires a registry URL to be configured.",
+					),
 			},
 			handler: async (input) => {
-				const rawUrl = (input.url as string).replace(/\/+$/, "");
-				let baseUrl = rawUrl;
+				const rawUrl = input.url as string | undefined;
+				const intent = input.intent as string | undefined;
+
+				if (!rawUrl && !intent) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: "At least one of `url` or `intent` is required.",
+							},
+						],
+					};
+				}
+
+				// Intent-based registry search (§6.2)
+				if (intent) {
+					if (!registryUrl) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text:
+										"Intent-based discovery requires a registry URL to be configured. " +
+										"Pass a `url` instead, or configure `registryUrl` in the MCP tools options.",
+								},
+							],
+						};
+					}
+
+					try {
+						const results = await queryRegistry(intent);
+						if (results.length === 0) {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: `No providers found for intent "${intent}". Try a different search or use discover(url=...) with a direct URL.`,
+									},
+								],
+							};
+						}
+
+						const lines: string[] = [
+							`Found ${results.length} provider(s) for intent "${intent}":`,
+							"",
+						];
+						for (const config of results) {
+							lines.push(
+								`- **${config.provider_name}**${config.description ? `: ${config.description}` : ""}`,
+							);
+							lines.push(
+								`  Issuer: ${config.issuer} | Modes: ${config.modes.join(", ")}`,
+							);
+						}
+						lines.push(
+							"\nAll providers saved. Use their names with list_capabilities and connect_agent.",
+						);
+
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: lines.join("\n"),
+								},
+							],
+						};
+					} catch (err) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Failed to search registry: ${err instanceof Error ? err.message : String(err)}`,
+								},
+							],
+						};
+					}
+				}
+
+				// URL-based direct discovery
+				let baseUrl = rawUrl!.replace(/\/+$/, "");
 				try {
-					const parsed = new URL(rawUrl);
+					const parsed = new URL(baseUrl);
 					parsed.search = "";
 					baseUrl = parsed.toString().replace(/\/+$/, "");
 				} catch {}
@@ -875,9 +1157,11 @@ export function createAgentMCPTools(
 					for (const c of data.capabilities) {
 						const status = c.grant_status ? ` [${c.grant_status}]` : "";
 						lines.push(`- ${c.name}: ${c.description}${status}`);
-						if (c.input_schema) {
+
+						const inputSchema = c.input_schema ?? buildInputSchemaFromHttp(c);
+						if (inputSchema) {
 							lines.push(
-								`  Input: ${JSON.stringify(c.input_schema).slice(0, 200)}`,
+								`  Input: ${JSON.stringify(inputSchema).slice(0, 400)}`,
 							);
 						}
 					}
@@ -954,11 +1238,21 @@ export function createAgentMCPTools(
 							"This reuses your existing identity instead of creating a new one. " +
 							"ONLY omit this on your very first connect_agent call.",
 					),
+				mode: z
+					.enum(["delegated", "autonomous"])
+					.optional()
+					.describe(
+						"Registration mode (§6.4). " +
+							"'delegated' (default): acts on behalf of a user, requires user approval via device auth or CIBA. " +
+							"'autonomous': operates independently without a user. No approval needed. " +
+							"Use 'autonomous' when the user asks you to create your own account, " +
+							"operate independently, or self-register. Use connect_account later to link to a user.",
+					),
 				method: z
 					.enum(["device_authorization", "ciba"])
 					.optional()
 					.describe(
-						"Approval method. 'device_authorization' opens a browser for user approval. " +
+						"Approval method (delegated mode only). 'device_authorization' opens a browser for user approval. " +
 							"'ciba' sends a notification to the user's dashboard (requires login_hint). " +
 							"Default: 'device_authorization'.",
 					),
@@ -1004,6 +1298,7 @@ export function createAgentMCPTools(
 				const name = (input.name as string) ?? "MCP Agent";
 				const scopes = (input.scopes as string[]) ?? [];
 				const existingAgentId = input.agentId as string | undefined;
+				const regMode = (input.mode as string) ?? "delegated";
 				const method = (input.method as string) ?? "device_authorization";
 				const loginHint = input.login_hint as string | undefined;
 				const providerName = config?.provider_name ?? undefined;
@@ -1056,6 +1351,131 @@ export function createAgentMCPTools(
 				// Fresh identity — each conversation gets its own agent
 				const keypair = await generateAgentKeypair();
 
+				// Autonomous mode (§6.4): register under the host identity
+				// without user authentication. The host is the durable
+				// identity — agents are ephemeral workers under it.
+				if (regMode === "autonomous") {
+					try {
+						const storedHost = storage.getHostKeypair
+							? await storage.getHostKeypair(appUrl)
+							: null;
+
+						let hostJwt: string;
+						let isNewHost = false;
+						let hostKeypair: AgentKeypair;
+
+						if (storedHost) {
+							hostKeypair = storedHost.keypair;
+							const claims: Record<string, unknown> = {
+								host_public_key: storedHost.keypair.publicKey,
+								agent_public_key: keypair.publicKey,
+							};
+							if (resolvedHostName) claims.host_name = resolvedHostName;
+
+							hostJwt = await signAgentJWT({
+								agentId: storedHost.hostId,
+								privateKey: storedHost.keypair.privateKey,
+								audience: new URL(appUrl).origin,
+								expiresIn: 60,
+								additionalClaims: claims,
+							});
+						} else {
+							isNewHost = true;
+							hostKeypair = await generateAgentKeypair();
+							const claims: Record<string, unknown> = {
+								host_public_key: hostKeypair.publicKey,
+								agent_public_key: keypair.publicKey,
+							};
+							if (resolvedHostName) claims.host_name = resolvedHostName;
+
+							hostJwt = await signAgentJWT({
+								agentId: hostKeypair.kid,
+								privateKey: hostKeypair.privateKey,
+								audience: new URL(appUrl).origin,
+								expiresIn: 60,
+								additionalClaims: claims,
+							});
+						}
+
+						const autoRegBody: Record<string, unknown> = {
+							name,
+							scopes,
+							mode: "autonomous",
+						};
+						if (resolvedHostName) autoRegBody.hostName = resolvedHostName;
+
+						const res = await globalThis.fetch(registerUrl, {
+							method: "POST",
+							headers: {
+								"Content-Type": "application/json",
+								Authorization: `Bearer ${hostJwt}`,
+							},
+							body: JSON.stringify(autoRegBody),
+						});
+
+						if (!res.ok) {
+							const text = await res.text();
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: `Failed to register autonomous agent: ${res.status} ${text.slice(0, 300)}`,
+									},
+								],
+							};
+						}
+
+						const data = (await res.json()) as {
+							agent_id: string;
+							host_id: string;
+							status: string;
+							scopes: string[];
+						};
+
+						if (isNewHost && storage.saveHostKeypair) {
+							await storage.saveHostKeypair(appUrl, {
+								keypair: hostKeypair,
+								hostId: data.host_id,
+							});
+						}
+
+						await storage.saveConnection(data.agent_id, {
+							appUrl,
+							keypair,
+							name,
+							scopes: data.scopes ?? [],
+							provider: providerName,
+						});
+						sessionAgentIds.add(data.agent_id);
+
+						const statusNote =
+							data.status === "active"
+								? "Agent is active. Use connect_account to link to a user later."
+								: `Agent is ${data.status}. It may need further action.`;
+
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text:
+										`Connected to ${appUrl} (autonomous). Agent ID: ${data.agent_id}. ` +
+										`Host: ${storedHost ? "reused existing" : "created new"}. ` +
+										`Scopes: ${(data.scopes ?? []).join(", ") || "none"}. ${statusNote}`,
+								},
+							],
+						};
+					} catch (e) {
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text: `Error: ${e instanceof Error ? e.message : String(e)}`,
+								},
+							],
+						};
+					}
+				}
+
 				// Trusted host path: if we have a stored host keypair for this
 				// app, try registering with a host JWT first.
 				if (storage.getHostKeypair) {
@@ -1066,7 +1486,12 @@ export function createAgentMCPTools(
 							registerUrl,
 							hostData,
 							keypair.publicKey,
-							{ name, scopes, hostName: resolvedHostName, preferredMethod: defaultPreferredMethod },
+							{
+								name,
+								scopes,
+								hostName: resolvedHostName,
+								preferredMethod: defaultPreferredMethod,
+							},
 						);
 
 						if (result && result.status === "active") {
@@ -1124,15 +1549,15 @@ export function createAgentMCPTools(
 				// Direct auth mode (cookie/token in env)
 				if (getAuthHeaders) {
 					const authHeaders = await resolveAuthHeaders();
-				const directBody: Record<string, unknown> = {
-					name,
-					publicKey: keypair.publicKey,
-					scopes,
-					preferredMethod: defaultPreferredMethod,
-				};
-				if (resolvedHostName) {
-					directBody.hostName = resolvedHostName;
-				}
+					const directBody: Record<string, unknown> = {
+						name,
+						publicKey: keypair.publicKey,
+						scopes,
+						preferredMethod: defaultPreferredMethod,
+					};
+					if (resolvedHostName) {
+						directBody.hostName = resolvedHostName;
+					}
 					const res = await globalThis.fetch(registerUrl, {
 						method: "POST",
 						headers: {
@@ -1362,12 +1787,12 @@ export function createAgentMCPTools(
 						: null;
 
 					try {
-					const cibaRegisterBody: Record<string, unknown> = {
-						name,
-						publicKey: keypair.publicKey,
-						scopes,
-						preferredMethod: defaultPreferredMethod,
-					};
+						const cibaRegisterBody: Record<string, unknown> = {
+							name,
+							publicKey: keypair.publicKey,
+							scopes,
+							preferredMethod: defaultPreferredMethod,
+						};
 						if (cibaHostKeypair) {
 							cibaRegisterBody.hostPublicKey = cibaHostKeypair.publicKey;
 						}
@@ -1605,18 +2030,18 @@ export function createAgentMCPTools(
 
 				// Register the agent
 				try {
-				const registerBody: Record<string, unknown> = {
-					name,
-					publicKey: keypair.publicKey,
-					scopes,
-					preferredMethod: defaultPreferredMethod,
-				};
-				if (hostKeypair) {
-					registerBody.hostPublicKey = hostKeypair.publicKey;
-				}
-				if (resolvedHostName) {
-					registerBody.hostName = resolvedHostName;
-				}
+					const registerBody: Record<string, unknown> = {
+						name,
+						publicKey: keypair.publicKey,
+						scopes,
+						preferredMethod: defaultPreferredMethod,
+					};
+					if (hostKeypair) {
+						registerBody.hostPublicKey = hostKeypair.publicKey;
+					}
+					if (resolvedHostName) {
+						registerBody.hostName = resolvedHostName;
+					}
 
 					const res = await globalThis.fetch(registerUrl, {
 						method: "POST",
@@ -1689,29 +2114,29 @@ export function createAgentMCPTools(
 			},
 		},
 		{
-			name: "call_tool",
+			name: "execute",
 			description:
-				"Execute a capability/tool on a connected provider. " +
-				"Call when the user asks you to: create an issue, list pull requests, " +
-				"send a message, search repos, or any action on a connected service. " +
+				"Execute a capability on a connected provider. " +
+				"Natively handles 'http' and 'mcp' capability types. " +
+				"For other capability types, use your own tools instead. " +
 				"REQUIRES: (1) An Agent ID from connect_agent. " +
-				"(2) The scope must be in your granted permissions. " +
-				"Use list_capabilities to discover available capabilities first.",
+				"(2) The capability name must be in your granted permissions. " +
+				"Use list_capabilities to discover available capabilities and their input schemas.",
 			inputSchema: {
 				agent_id: z.string().describe("Your Agent ID (from connect_agent)"),
-				scope: z
+				capability: z
 					.string()
-					.describe("Capability/tool to call (e.g. 'github.list_issues')"),
+					.describe("Capability name to execute (from list_capabilities)"),
 				input: z
 					.string()
 					.optional()
 					.describe(
-						'JSON arguments for the tool (e.g. \'{"owner":"org","repo":"app"}\')',
+						'JSON arguments matching the capability input schema (e.g. \'{"id":"abc","html":"..."}\')',
 					),
 			},
 			handler: async (input) => {
 				const agentId = input.agent_id as string;
-				const scope = input.scope as string;
+				const scope = (input.capability ?? input.scope) as string;
 				const inputJson = input.input as string | undefined;
 
 				if (!agentId || !sessionAgentIds.has(agentId)) {
@@ -1774,7 +2199,15 @@ export function createAgentMCPTools(
 					let res: Response;
 
 					const httpBlock = capability?.http as
-						| { method?: string; url?: string }
+						| {
+								method?: string;
+								url?: string;
+								parameters?: Array<{
+									name: string;
+									in: "path" | "query" | "header";
+								}>;
+								requestBody?: { content?: Record<string, unknown> };
+						  }
 						| undefined;
 
 					if (
@@ -1782,15 +2215,18 @@ export function createAgentMCPTools(
 						httpBlock?.method &&
 						httpBlock?.url
 					) {
-						const hasBody = ["POST", "PUT", "PATCH"].includes(httpBlock.method);
-						res = await globalThis.fetch(httpBlock.url, {
-							method: httpBlock.method,
-							headers: {
-								"Content-Type": "application/json",
-								Authorization: `Bearer ${jwt}`,
+						res = await executeHttpCapability(
+							httpBlock as {
+								method: string;
+								url: string;
+								parameters?: Array<{
+									name: string;
+									in: "path" | "query" | "header";
+								}>;
 							},
-							body: hasBody ? JSON.stringify(toolArgs) : undefined,
-						});
+							toolArgs,
+							jwt,
+						);
 					} else {
 						// Server-side proxy for MCP, unknown types, or when no cache
 						const callUrl = resolveEndpointUrl(
@@ -1832,16 +2268,40 @@ export function createAgentMCPTools(
 						};
 					}
 
-					const result = (await res.json()) as {
-						content: Array<{ type: string; text: string }>;
-						isError?: boolean;
-					};
+					const text = await res.text();
+					let parsed: unknown;
+					try {
+						parsed = JSON.parse(text);
+					} catch {
+						return {
+							content: [{ type: "text" as const, text }],
+						};
+					}
+
+					const result = parsed as Record<string, unknown>;
+
+					if (
+						Array.isArray(result.content) &&
+						result.content.length > 0 &&
+						typeof result.content[0] === "object"
+					) {
+						return {
+							content: (
+								result.content as Array<{ type?: string; text?: string }>
+							).map((c) => ({
+								type: (c.type ?? "text") as "text",
+								text: c.text ?? JSON.stringify(c),
+							})),
+						};
+					}
 
 					return {
-						content: (result.content ?? []).map((c) => ({
-							type: (c.type ?? "text") as "text",
-							text: c.text ?? JSON.stringify(c),
-						})),
+						content: [
+							{
+								type: "text" as const,
+								text: JSON.stringify(result, null, 2),
+							},
+						],
 					};
 				} catch (e) {
 					return {
@@ -2021,11 +2481,11 @@ export function createAgentMCPTools(
 							"Content-Type": "application/json",
 							Authorization: `Bearer ${jwt}`,
 						},
-					body: JSON.stringify({
-						scopes: newScopes,
-						reason: reason || undefined,
-						preferredMethod: defaultPreferredMethod,
-					}),
+						body: JSON.stringify({
+							scopes: newScopes,
+							reason: reason || undefined,
+							preferredMethod: defaultPreferredMethod,
+						}),
 					});
 
 					if (!res.ok) {
@@ -2346,64 +2806,102 @@ export function createAgentMCPTools(
 		{
 			name: "connect_account",
 			description:
-				"Link an autonomous agent to a user account (§6.8). " +
-				"Use when an agent registered in autonomous mode needs to connect to a specific user. " +
-				"The user must approve the link. After approval, the agent gains access to user-specific capabilities.",
+				"Link a host to a user account (§6.8). " +
+				"Use after autonomous registration to claim the host and all its agents for a user. " +
+				"The user approves via browser. After approval, the host gains user context " +
+				"and future agents auto-approve. Uses the stored host identity for the given provider. " +
+				"Do not ask the user for an agent_id.",
 			inputSchema: {
-				agent_id: z.string().describe("Your Agent ID (from connect_agent)"),
+				provider: z
+					.string()
+					.optional()
+					.describe(
+						"Provider name (from discover) or app URL. Uses default if omitted.",
+					),
+				url: z
+					.string()
+					.optional()
+					.describe(
+						"App URL (e.g. https://myapp.com). Alternative to provider.",
+					),
 				identifier: z
 					.string()
 					.optional()
-					.describe("User identifier (email, phone, etc.) for notification"),
+					.describe(
+						"User identifier (email, phone, etc.) for CIBA notification",
+					),
 			},
 			handler: async (input) => {
-				const agentId = input.agent_id as string;
 				const identifier = input.identifier as string | undefined;
-				const sessionErr = requireSessionAgent(agentId);
-				if (sessionErr) {
-					return {
-						content: [{ type: "text" as const, text: sessionErr }],
-					};
-				}
+				const providerInput =
+					(input.provider as string) ||
+					(input.url as string) ||
+					defaultUrl ||
+					"";
 
-				const connection = await storage.getConnection(agentId);
-				if (!connection) {
+				if (!providerInput) {
 					return {
 						content: [
 							{
 								type: "text" as const,
-								text: `No connection found for agent ${agentId}.`,
+								text: "A provider name or URL is required.",
 							},
 						],
 					};
 				}
 
-				const config = await findProviderConfig(
-					connection.provider ?? connection.appUrl,
-				);
+				const { appUrl, config } = await resolveAppUrl(providerInput);
+				if (!appUrl) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `Could not resolve "${providerInput}" to an app URL.`,
+							},
+						],
+					};
+				}
+
+				const hostData = storage.getHostKeypair
+					? await storage.getHostKeypair(appUrl)
+					: null;
+
+				if (!hostData) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text:
+									`No stored host identity found for ${appUrl}. ` +
+									`Run connect_agent with mode="autonomous" first to create or reuse a host. ` +
+									`Do not ask for an agent_id: connect_account is host-based.`,
+							},
+						],
+					};
+				}
+
+				const hostJwt = await signAgentJWT({
+					agentId: hostData.hostId,
+					privateKey: hostData.keypair.privateKey,
+					audience: new URL(appUrl).origin,
+					expiresIn: 60,
+				});
+
 				const connectUrl = resolveEndpointUrl(
-					connection.appUrl,
+					appUrl,
 					config,
 					"connect_account",
 					"/agent/connect-account",
 				);
-
-				const jwt = await signAgentJWT({
-					agentId,
-					privateKey: connection.keypair.privateKey,
-					audience: new URL(connection.appUrl).origin,
-				});
 
 				try {
 					const res = await globalThis.fetch(connectUrl, {
 						method: "POST",
 						headers: {
 							"Content-Type": "application/json",
-							Authorization: `Bearer ${jwt}`,
+							Authorization: `Bearer ${hostJwt}`,
 						},
-						body: JSON.stringify({
-							identifier,
-						}),
+						body: JSON.stringify({ identifier }),
 					});
 
 					if (!res.ok) {
@@ -2419,7 +2917,6 @@ export function createAgentMCPTools(
 					}
 
 					const data = (await res.json()) as {
-						agent_id: string;
 						host_id: string;
 						status: string;
 						approval?: {
@@ -2443,7 +2940,7 @@ export function createAgentMCPTools(
 										(data.approval.user_code
 											? `Code: ${data.approval.user_code}\n`
 											: "") +
-										`Once approved, the agent will gain access to user-specific capabilities.`,
+										"Once approved, the host and all its agents gain user context.",
 								},
 							],
 						};
@@ -2453,7 +2950,7 @@ export function createAgentMCPTools(
 						content: [
 							{
 								type: "text" as const,
-								text: `Account link status: ${data.status}`,
+								text: `Account linked. Host ${data.host_id} is now connected to the user.`,
 							},
 						],
 					};
@@ -2463,182 +2960,6 @@ export function createAgentMCPTools(
 							{
 								type: "text" as const,
 								text: `Failed to connect account: ${err instanceof Error ? err.message : String(err)}`,
-							},
-						],
-					};
-				}
-			},
-		},
-		{
-			name: "self_register",
-			description:
-				"Register as an autonomous agent WITHOUT user authentication. " +
-				"The agent is created immediately and can start making requests right away. " +
-				"Use when the user asks you to: create your own account, register autonomously, " +
-				"operate independently, or self-register. " +
-				"To link to a user account later, use connect_account.",
-			inputSchema: {
-				provider: z
-					.string()
-					.optional()
-					.describe(
-						"Provider name (from discover) or app URL. Uses default if omitted.",
-					),
-				url: z
-					.string()
-					.optional()
-					.describe(
-						"App URL (e.g. https://myapp.com). Alternative to provider.",
-					),
-				name: z
-					.string()
-					.describe(
-						"A descriptive name for yourself (e.g. 'Autonomous Research Agent')",
-					),
-				scopes: z
-					.array(z.string())
-					.optional()
-					.describe("Scopes to request (e.g. ['reports.read'])"),
-			},
-			handler: async (input) => {
-				const providerInput =
-					(input.provider as string) ||
-					(input.url as string) ||
-					defaultUrl ||
-					"";
-				if (!providerInput) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: "A provider name or URL is required. Call discover(url=...) first, then use the provider name.",
-							},
-						],
-					};
-				}
-
-				const { appUrl, config } = await resolveAppUrl(providerInput);
-				if (!appUrl) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: `Could not resolve "${providerInput}" to an app URL. Call discover(url=...) first.`,
-							},
-						],
-					};
-				}
-				const name = (input.name as string) ?? "Autonomous Agent";
-				const scopes = (input.scopes as string[]) ?? [];
-
-				const registerUrl = resolveEndpointUrl(
-					appUrl,
-					config,
-					"register",
-					"/agent/register",
-				);
-
-				try {
-					const hostKeypair = await generateAgentKeypair();
-					const agentKeypair = await generateAgentKeypair();
-
-					const selfRegClaims: Record<string, unknown> = {
-						host_public_key: hostKeypair.publicKey,
-						agent_public_key: agentKeypair.publicKey,
-					};
-					if (resolvedHostName) {
-						selfRegClaims.host_name = resolvedHostName;
-					}
-					const hostJwt = await signAgentJWT({
-						agentId: hostKeypair.kid,
-						privateKey: hostKeypair.privateKey,
-						audience: new URL(appUrl).origin,
-						expiresIn: 60,
-						additionalClaims: selfRegClaims,
-					});
-
-					const selfRegBody: Record<string, unknown> = {
-						name,
-						scopes,
-						mode: "autonomous",
-					};
-					if (resolvedHostName) {
-						selfRegBody.hostName = resolvedHostName;
-					}
-
-					const res = await globalThis.fetch(registerUrl, {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-							Authorization: `Bearer ${hostJwt}`,
-						},
-						body: JSON.stringify(selfRegBody),
-					});
-
-					if (!res.ok) {
-						const text = await res.text();
-						return {
-							content: [
-								{
-									type: "text" as const,
-									text: `Failed to self-register: ${res.status} ${text.slice(0, 300)}`,
-								},
-							],
-						};
-					}
-
-					const data = (await res.json()) as {
-						agent_id: string;
-						name: string;
-						status: string;
-						host_id: string;
-						scopes: string[];
-					};
-
-					await storage.saveConnection(data.agent_id, {
-						appUrl,
-						keypair: agentKeypair,
-						name,
-						scopes: data.scopes ?? [],
-						provider: config?.provider_name,
-					});
-					sessionAgentIds.add(data.agent_id);
-
-					const lines = [
-						`Self-registered as autonomous agent on ${appUrl}.`,
-						`Agent ID: ${data.agent_id}`,
-						`Host ID: ${data.host_id}`,
-						`Status: ${data.status}`,
-						`Scopes: ${(data.scopes ?? []).join(", ") || "none"}`,
-					];
-
-					if (data.status === "active") {
-						lines.push(
-							"",
-							"Agent is active. Use this Agent ID for agent_request and call_tool.",
-							"To link to a user account later, use connect_account.",
-						);
-					} else {
-						lines.push(
-							"",
-							`Agent is ${data.status}. It may need further action before making requests.`,
-						);
-					}
-
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: lines.join("\n"),
-							},
-						],
-					};
-				} catch (e) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: `Error: ${e instanceof Error ? e.message : String(e)}`,
 							},
 						],
 					};

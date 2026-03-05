@@ -17,6 +17,7 @@ import type {
 	AgentHost,
 	AgentPermission,
 	AgentSession,
+	AgentSessionUser,
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "./types";
@@ -34,6 +35,38 @@ export { AGENT_AUTH_ERROR_CODES } from "./error-codes";
 const AGENT_TABLE = "agent";
 const HOST_TABLE = "agentHost";
 const PERMISSION_TABLE = "agentPermission";
+
+async function resolveSessionUser(args: {
+	opts: ResolvedAgentAuthOptions;
+	ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
+	agent: Agent;
+	host: AgentHost | null;
+}): Promise<AgentSessionUser | null> {
+	const { opts, ctx, agent, host } = args;
+
+	if (agent.userId) {
+		const user = await ctx.context.internalAdapter.findUserById(agent.userId);
+		return (user as unknown as AgentSessionUser | null) ?? null;
+	}
+
+	const referenceId = host?.referenceId ?? null;
+	if (!referenceId) {
+		return null;
+	}
+
+	if (opts.resolveSessionUserByReferenceId) {
+		return opts.resolveSessionUserByReferenceId({
+			ctx,
+			referenceId,
+			hostId: host?.id ?? agent.hostId ?? null,
+			agentId: agent.id,
+			type: agent.mode,
+		});
+	}
+
+	const user = await ctx.context.internalAdapter.findUserById(referenceId);
+	return (user as unknown as AgentSessionUser | null) ?? null;
+}
 
 const jtiCache = new JtiReplayCache();
 
@@ -177,6 +210,15 @@ async function tryTransparentReactivation(
 }
 
 export const agentAuth = (options?: AgentAuthOptions) => {
+	if (
+		(options?.modes ?? ["delegated", "autonomous"]).includes("autonomous") &&
+		!options?.createReferenceIdForAutonomousHost
+	) {
+		throw new Error(
+			"agent-auth: autonomous mode requires createReferenceIdForAutonomousHost so the plugin can provision a backing reference principal for unclaimed hosts.",
+		);
+	}
+
 	const opts: ResolvedAgentAuthOptions = {
 		...options,
 		allowedKeyAlgorithms: options?.allowedKeyAlgorithms ?? ["Ed25519"],
@@ -299,6 +341,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 									host: {
 										id: host.id,
 										userId: host.userId,
+										referenceId: host.referenceId,
 										scopes: hostScopes,
 										status: host.status,
 									},
@@ -436,8 +479,14 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 
 						// DPoP-style request binding verification (§3.3).
 						// htu must be the full URL (scheme + host + path) per RFC 9449 §4.2.
+						// When called via verifyAgentRequest(), x-agent-method and
+						// x-agent-path headers carry the original request context so
+						// binding can be verified against the custom route path instead
+						// of the Better Auth endpoint path.
 						if (payload.htm || payload.htu) {
-							const method = ctx.method?.toUpperCase();
+							const overrideMethod = ctx.headers?.get("x-agent-method");
+							const overridePath = ctx.headers?.get("x-agent-path");
+							const method = (overrideMethod ?? ctx.method)?.toUpperCase();
 
 							if (
 								payload.htm &&
@@ -452,7 +501,10 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 
 							if (payload.htu && typeof payload.htu === "string") {
 								const baseUrl = new URL(ctx.context.baseURL);
-								const expectedHtu = `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, "")}${ctx.path}`;
+								const effectivePath = overridePath ?? ctx.path;
+								const expectedHtu = overridePath
+									? `${baseUrl.origin}${effectivePath}`
+									: `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, "")}${ctx.path}`;
 								if (payload.htu !== expectedHtu) {
 									throw APIError.from(
 										"UNAUTHORIZED",
@@ -492,15 +544,34 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 							agent = reactivated;
 						}
 
+						const host = agent.hostId
+							? await ctx.context.adapter.findOne<AgentHost>({
+									model: HOST_TABLE,
+									where: [{ field: "id", value: agent.hostId }],
+								})
+							: null;
+
 						const [user, permissions] = await Promise.all([
-							agent.userId
-								? ctx.context.internalAdapter.findUserById(agent.userId)
-								: Promise.resolve(null),
+							resolveSessionUser({
+								opts,
+								ctx,
+								agent,
+								host,
+							}),
 							ctx.context.adapter.findMany<AgentPermission>({
 								model: PERMISSION_TABLE,
 								where: [{ field: "agentId", value: agent.id }],
 							}),
 						]);
+						if (!user) {
+							throw new APIError("UNAUTHORIZED", {
+								body: {
+									code: AGENT_AUTH_ERROR_CODES.AUTONOMOUS_OWNER_REQUIRED,
+									message:
+										"Could not resolve a session user for this autonomous host. Ensure createReferenceIdForAutonomousHost provisions a referenceId and provide resolveSessionUserByReferenceId when that reference does not map to a Better Auth user.",
+								},
+							});
+						}
 						const activePermissions = permissions.filter(
 							(p) =>
 								p.status === "active" &&
@@ -519,6 +590,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 						}
 
 						const agentSession: AgentSession = {
+							type: agent.mode,
 							agent: {
 								id: agent.id,
 								name: agent.name,
@@ -537,9 +609,15 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 										? JSON.parse(agent.metadata)
 										: agent.metadata,
 							},
-							user: user
-								? { id: user.id, name: user.name, email: user.email }
+							host: host
+								? {
+										id: host.id,
+										userId: host.userId,
+										referenceId: host.referenceId,
+										status: host.status,
+									}
 								: null,
+							user,
 						};
 
 						(ctx.context as { agentSession?: AgentSession }).agentSession =

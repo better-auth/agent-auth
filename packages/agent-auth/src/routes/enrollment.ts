@@ -105,6 +105,32 @@ async function checkSharedOrg(
 	}
 }
 
+async function findHostByKey(
+	adapter: {
+		findOne: <T>(opts: {
+			model: string;
+			where: Array<{ field: string; value: string }>;
+		}) => Promise<T | null>;
+	},
+	publicKey: AgentJWK,
+): Promise<AgentHost | null> {
+	const kid = (publicKey.kid as string) ?? null;
+	if (kid) {
+		const byKid = await adapter.findOne<AgentHost>({
+			model: HOST_TABLE,
+			where: [{ field: "kid", value: kid }],
+		});
+		if (byKid) {
+			return byKid;
+		}
+	}
+
+	return adapter.findOne<AgentHost>({
+		model: HOST_TABLE,
+		where: [{ field: "publicKey", value: JSON.stringify(publicKey) }],
+	});
+}
+
 export function createHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/host/create",
@@ -194,25 +220,31 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
 					: null;
 
-			// §4.3: Idempotent creation — if same kid+userId exists, reactivate it
-			if (kid) {
-				const existing = await ctx.context.adapter.findOne<AgentHost>({
-					model: HOST_TABLE,
-					where: [
-						{ field: "kid", value: kid },
-						{ field: "userId", value: session.user.id },
-					],
-				});
-
+			// §4.3: Idempotent creation — if same host key already exists, reuse it.
+			if (publicKey) {
+				const existing = await findHostByKey(ctx.context.adapter, publicKey);
 				if (existing && existing.status === "revoked") {
 					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
 				}
 
 				if (existing) {
+					if (existing.userId && existing.userId !== session.user.id) {
+						throw APIError.from("CONFLICT", ERROR_CODES.HOST_ALREADY_LINKED);
+					}
+					if (!existing.userId) {
+						await opts.onHostClaimed?.({
+							ctx,
+							hostId: existing.id,
+							referenceId: existing.referenceId,
+							userId: session.user.id,
+							previousUserId: null,
+						});
+					}
 					const reactivateUpdate: Record<string, unknown> = {
 						scopes: hostScopes,
 						publicKey: publicKey ? JSON.stringify(publicKey) : "",
 						jwksUrl: jwksUrl ?? null,
+						userId: session.user.id,
 						status: "active",
 						activatedAt: now,
 						expiresAt,
@@ -880,6 +912,77 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 				opts.agentSessionTTL > 0
 					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
 					: null;
+
+			const existing = await findHostByKey(ctx.context.adapter, publicKey);
+			if (existing && existing.id !== host.id) {
+				if (existing.status === "revoked") {
+					throw APIError.from("FORBIDDEN", ERROR_CODES.HOST_REVOKED);
+				}
+				if (existing.userId && existing.userId !== host.userId) {
+					throw APIError.from("CONFLICT", ERROR_CODES.HOST_ALREADY_LINKED);
+				}
+				if (!existing.userId && host.userId) {
+					await opts.onHostClaimed?.({
+						ctx,
+						hostId: existing.id,
+						referenceId: existing.referenceId,
+						userId: host.userId,
+						previousUserId: null,
+					});
+				}
+
+				await ctx.context.adapter.update({
+					model: HOST_TABLE,
+					where: [{ field: "id", value: existing.id }],
+					update: {
+						name: name ?? host.name ?? existing.name,
+						userId: existing.userId ?? host.userId,
+						publicKey: JSON.stringify(publicKey),
+						kid,
+						status: "active",
+						activatedAt: now,
+						expiresAt,
+						enrollmentTokenHash: null,
+						enrollmentTokenExpiresAt: null,
+						updatedAt: now,
+					},
+				});
+
+				if (!existing.userId && host.userId) {
+					const hostAgents = await ctx.context.adapter.findMany<Agent>({
+						model: AGENT_TABLE,
+						where: [{ field: "hostId", value: existing.id }],
+					});
+					for (const agent of hostAgents) {
+						await ctx.context.adapter.update({
+							model: AGENT_TABLE,
+							where: [{ field: "id", value: agent.id }],
+							update: {
+								userId: host.userId,
+								updatedAt: now,
+							},
+						});
+					}
+				}
+
+				await ctx.context.adapter.update({
+					model: HOST_TABLE,
+					where: [{ field: "id", value: host.id }],
+					update: {
+						status: "rejected",
+						enrollmentTokenHash: null,
+						enrollmentTokenExpiresAt: null,
+						updatedAt: now,
+					},
+				});
+
+				return ctx.json({
+					hostId: existing.id,
+					name: name ?? host.name ?? existing.name,
+					scopes: parseScopes(existing.scopes),
+					status: "active",
+				});
+			}
 
 			const update: Record<string, unknown> = {
 				publicKey: JSON.stringify(publicKey),

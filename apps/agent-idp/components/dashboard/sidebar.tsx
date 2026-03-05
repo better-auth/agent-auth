@@ -3,7 +3,7 @@
 import {
 	Activity,
 	Bot,
-	Cable,
+	Plug2,
 	Fingerprint,
 	KeyRound,
 	Layers,
@@ -49,7 +49,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { signOut, useSession } from "@/lib/auth/client";
+import { authClient, signOut } from "@/lib/auth/client";
 
 type NavItem = {
 	name: string;
@@ -143,7 +143,7 @@ function SidebarNavLinks({
 		{
 			name: "Connections",
 			href: `/dashboard/${slug}/connections`,
-			icon: Cable,
+			icon: Plug2,
 		},
 		{ name: "Scopes", href: `/dashboard/${slug}/scopes`, icon: Layers },
 		{
@@ -201,11 +201,46 @@ function SidebarNavLinks({
 	);
 }
 
-function UserMenu({ orgSlug }: { orgSlug: string }) {
-	const { data: session } = useSession();
+interface DeviceSession {
+	session: { token: string };
+	user: { id: string; name: string; email: string; image?: string | null };
+}
+
+function initials(name: string) {
+	return name
+		.split(" ")
+		.map((w) => w[0])
+		.join("")
+		.toUpperCase()
+		.slice(0, 2);
+}
+
+function UserMenu({
+	orgSlug,
+	user,
+	deviceSessions,
+}: {
+	orgSlug: string;
+	user: { name: string; email: string; image?: string | null };
+	deviceSessions: DeviceSession[];
+}) {
 	const router = useRouter();
-	if (!session?.user) return null;
-	const user = session.user;
+	const [switching, setSwitching] = useState(false);
+
+	const otherSessions = deviceSessions.filter(
+		(s) => s.user.email !== user.email,
+	);
+
+	async function switchAccount(sessionToken: string) {
+		setSwitching(true);
+		try {
+			await authClient.multiSession.setActive({ sessionToken });
+			window.location.reload();
+		} finally {
+			setSwitching(false);
+		}
+	}
+
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
@@ -219,11 +254,7 @@ function UserMenu({ orgSlug }: { orgSlug: string }) {
 					/>
 					<AvatarFallback className="text-[10px] bg-foreground/[0.06]">
 						{user.name
-							? user.name
-									.split(" ")
-									.map((n) => n[0])
-									.join("")
-									.toUpperCase()
+							? initials(user.name)
 							: user.email[0].toUpperCase()}
 					</AvatarFallback>
 				</Avatar>
@@ -236,7 +267,7 @@ function UserMenu({ orgSlug }: { orgSlug: string }) {
 					</p>
 				</div>
 			</DropdownMenuTrigger>
-			<DropdownMenuContent align="start" className="w-52">
+			<DropdownMenuContent align="start" className="w-56">
 				<DropdownMenuItem
 					className="cursor-pointer"
 					onClick={() => router.push(`/dashboard/${orgSlug}/settings`)}
@@ -244,7 +275,42 @@ function UserMenu({ orgSlug }: { orgSlug: string }) {
 					<Settings className="mr-2 h-3.5 w-3.5" />
 					<span className="text-sm">Settings</span>
 				</DropdownMenuItem>
+
+				{otherSessions.length > 0 && (
+					<>
+						<DropdownMenuSeparator />
+						{otherSessions.map((s) => (
+							<DropdownMenuItem
+								key={s.user.id}
+								className="cursor-pointer gap-2.5"
+								disabled={switching}
+								onClick={() => switchAccount(s.session.token)}
+							>
+								<Avatar className="h-5 w-5">
+									<AvatarImage src={s.user.image ?? undefined} />
+									<AvatarFallback className="text-[9px] bg-foreground/[0.06]">
+										{initials(s.user.name || s.user.email)}
+									</AvatarFallback>
+								</Avatar>
+								<div className="flex-1 min-w-0">
+									<p className="text-[12px] truncate">{s.user.name || s.user.email}</p>
+									<p className="text-[10px] text-muted-foreground/60 truncate">{s.user.email}</p>
+								</div>
+							</DropdownMenuItem>
+						))}
+					</>
+				)}
+
 				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					className="cursor-pointer"
+					onClick={() => {
+						window.location.href = "/sign-in?add=true";
+					}}
+				>
+					<Users className="mr-2 h-3.5 w-3.5" />
+					<span className="text-sm">Add account</span>
+				</DropdownMenuItem>
 				<DropdownMenuItem
 					className="cursor-pointer text-muted-foreground"
 					onClick={async () => {
@@ -271,12 +337,15 @@ export default function Sidebar({
 	orgId,
 	orgName,
 	orgType,
+	session,
+	deviceSessions = [],
 }: {
 	slug: string;
 	orgId: string;
 	orgName: string;
 	orgType: OrgType;
 	session: { user: { name: string; email: string; image?: string | null } };
+	deviceSessions?: DeviceSession[];
 }) {
 	return (
 		<aside className="fixed left-0 top-0 z-40 flex h-dvh w-[252px] flex-col border-r border-border/50 bg-background">
@@ -310,7 +379,7 @@ export default function Sidebar({
 					</span>
 					<ThemeToggle />
 				</div>
-				<UserMenu orgSlug={slug} />
+				<UserMenu orgSlug={slug} user={session.user} deviceSessions={deviceSessions} />
 			</div>
 		</aside>
 	);

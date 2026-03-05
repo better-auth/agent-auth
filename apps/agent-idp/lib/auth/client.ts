@@ -2,6 +2,7 @@
 
 import {
 	deviceAuthorizationClient,
+	multiSessionClient,
 	organizationClient,
 	usernameClient,
 } from "better-auth/client/plugins";
@@ -20,6 +21,7 @@ export const authClient = createAuthClient({
 			roles: { owner, admin, member, auditor },
 		}),
 		deviceAuthorizationClient(),
+		multiSessionClient(),
 	],
 });
 
