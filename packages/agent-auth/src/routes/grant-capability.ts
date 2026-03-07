@@ -1,0 +1,159 @@
+import { createAuthEndpoint } from "@better-auth/core/api";
+import { APIError } from "@better-auth/core/error";
+import { sessionMiddleware } from "better-auth/api";
+import * as z from "zod";
+import { TABLE } from "../constants";
+import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { emit } from "../emit";
+import { resolveGrantExpiresAt } from "../utils/grant-ttl";
+import type {
+	Agent,
+	AgentCapabilityGrant,
+	AgentHost,
+	ResolvedAgentAuthOptions,
+} from "../types";
+import {
+	validateCapabilityIds,
+	validateCapabilitiesExist,
+} from "./_helpers";
+
+export function grantCapability(opts: ResolvedAgentAuthOptions) {
+	return createAuthEndpoint(
+		"/agent/grant-capability",
+		{
+			method: "POST",
+			body: z.object({
+				agentId: z
+					.string()
+					.meta({ description: "Agent to grant capabilities to" }),
+				capabilityIds: z
+					.array(z.string())
+					.min(1)
+					.meta({ description: "Capability IDs to grant" }),
+				ttl: z.number().positive().optional().meta({
+					description:
+						"Grant TTL in seconds. Overrides the plugin-level resolveGrantTTL.",
+				}),
+			}),
+			use: [sessionMiddleware],
+			metadata: {
+				openapi: {
+					description:
+						"Grant additional capabilities to an agent (§4). Requires user session.",
+				},
+			},
+		},
+		async (ctx) => {
+			const session = ctx.context.session;
+
+			const { agentId, capabilityIds, ttl: explicitTTL } = ctx.body;
+
+			const agent = await ctx.context.adapter.findOne<Agent>({
+				model: TABLE.agent,
+				where: [{ field: "id", value: agentId }],
+			});
+
+			if (!agent) {
+				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+			}
+
+			if (agent.status === "revoked") {
+				throw APIError.from("FORBIDDEN", ERR.AGENT_REVOKED);
+			}
+
+			if (agent.userId && agent.userId !== session.user.id) {
+				if (agent.hostId) {
+					const host = await ctx.context.adapter.findOne<AgentHost>({
+						model: TABLE.host,
+						where: [{ field: "id", value: agent.hostId }],
+					});
+					if (!host || host.userId !== session.user.id) {
+						throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+					}
+				} else {
+					throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+				}
+			}
+
+			validateCapabilityIds(capabilityIds, opts);
+			await validateCapabilitiesExist(capabilityIds, opts);
+
+			const existing =
+				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+					model: TABLE.grant,
+					where: [{ field: "agentId", value: agentId }],
+				});
+
+			const now = new Date();
+			const grantIds: string[] = [];
+			const added: string[] = [];
+
+			for (const capabilityId of capabilityIds) {
+				const pendingGrant = existing.find(
+					(g) =>
+						g.capabilityId === capabilityId && g.status === "pending",
+				);
+
+				const expiresAt = await resolveGrantExpiresAt(
+					opts,
+					capabilityId,
+					{
+						agentId,
+						hostId: agent.hostId,
+						userId: agent.userId,
+					},
+					explicitTTL,
+				);
+
+				if (pendingGrant) {
+					await ctx.context.adapter.update({
+						model: TABLE.grant,
+						where: [{ field: "id", value: pendingGrant.id }],
+						update: {
+							status: "active",
+							grantedBy: session.user.id,
+							expiresAt,
+							updatedAt: now,
+						},
+					});
+					grantIds.push(pendingGrant.id);
+				} else {
+					const alreadyActive = existing.find(
+						(g) =>
+							g.capabilityId === capabilityId &&
+							g.status === "active",
+					);
+					if (alreadyActive) continue;
+
+					const grant = await ctx.context.adapter.create<
+						Record<string, unknown>,
+						AgentCapabilityGrant
+					>({
+						model: TABLE.grant,
+						data: {
+							agentId,
+							capabilityId,
+							grantedBy: session.user.id,
+							expiresAt,
+							status: "active",
+							reason: null,
+							createdAt: now,
+							updatedAt: now,
+						},
+					});
+					grantIds.push(grant.id);
+				}
+				added.push(capabilityId);
+			}
+
+			emit(opts, {
+				type: "capability.granted",
+				actorId: session.user.id,
+				agentId,
+				metadata: { capabilityIds: added },
+			}, ctx);
+
+			return ctx.json({ agentId, grantIds, added });
+		},
+	);
+}

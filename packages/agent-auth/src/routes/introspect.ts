@@ -1,0 +1,132 @@
+import { createAuthEndpoint } from "@better-auth/core/api";
+import { decodeJwt } from "jose";
+import * as z from "zod";
+import { TABLE } from "../constants";
+import type {
+	Agent,
+	AgentCapabilityGrant,
+	AgentJWK,
+	ResolvedAgentAuthOptions,
+} from "../types";
+import { verifyAgentJWT } from "../utils/crypto";
+import type { JtiCacheStore } from "../utils/jti-cache";
+import { activeGrants, formatGrantsResponse } from "./_helpers";
+
+/**
+ * POST /agent/introspect
+ *
+ * Token introspection endpoint (§6.10). Validates an agent JWT and
+ * returns the agent's current status and capability grants. Enables
+ * resource servers to verify agent JWTs without direct database access.
+ *
+ * Inspired by RFC 7662 (OAuth 2.0 Token Introspection).
+ */
+export function introspect(
+	opts: ResolvedAgentAuthOptions,
+	jtiCache?: JtiCacheStore,
+) {
+	return createAuthEndpoint(
+		"/agent/introspect",
+		{
+			method: "POST",
+			body: z.object({
+				token: z.string(),
+			}),
+			metadata: {
+				openapi: {
+					description:
+						"Validates an agent JWT and returns the agent's status and capability grants (§6.10).",
+				},
+			},
+		},
+		async (ctx) => {
+			const { token } = ctx.body;
+			const inactive = { active: false };
+
+			let agentId: string;
+			try {
+				const decoded = decodeJwt(token);
+				if (!decoded.sub) return ctx.json(inactive);
+				agentId = decoded.sub;
+			} catch {
+				return ctx.json(inactive);
+			}
+
+			const agent = await ctx.context.adapter.findOne<Agent>({
+				model: TABLE.agent,
+				where: [{ field: "id", value: agentId }],
+			});
+
+			if (!agent) return ctx.json(inactive);
+			if (agent.status !== "active") return ctx.json(inactive);
+			if (!agent.publicKey) return ctx.json(inactive);
+
+			let publicKey: AgentJWK;
+			try {
+				const parsed: unknown = JSON.parse(agent.publicKey);
+				if (
+					!parsed ||
+					typeof parsed !== "object" ||
+					!("kty" in parsed)
+				) {
+					return ctx.json(inactive);
+				}
+				publicKey = parsed as AgentJWK;
+			} catch {
+				return ctx.json(inactive);
+			}
+
+			const payload = await verifyAgentJWT({
+				jwt: token,
+				publicKey,
+				maxAge: opts.jwtMaxAge,
+			});
+
+			if (!payload) return ctx.json(inactive);
+
+			if (jtiCache && typeof payload.jti === "string") {
+				if (await jtiCache.has(payload.jti)) {
+					return ctx.json(inactive);
+				}
+			}
+
+			if (agent.expiresAt && new Date(agent.expiresAt) <= new Date()) {
+				return ctx.json(inactive);
+			}
+
+			const grants =
+				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+					model: TABLE.grant,
+					where: [{ field: "agentId", value: agent.id }],
+				});
+
+			let relevantGrants = activeGrants(grants);
+
+			const capabilityIdsClaim = payload.capability_ids;
+			if (Array.isArray(capabilityIdsClaim)) {
+				const jwtCapIds = new Set<string>();
+				for (const v of capabilityIdsClaim) {
+					if (typeof v === "string") jwtCapIds.add(v);
+				}
+				if (jwtCapIds.size > 0) {
+					relevantGrants = relevantGrants.filter((g) =>
+						jwtCapIds.has(g.capabilityId),
+					);
+				}
+			}
+
+			return ctx.json({
+				active: true,
+				agent_id: agent.id,
+				host_id: agent.hostId,
+				user_id: agent.userId ?? null,
+				agent_capability_grants:
+					formatGrantsResponse(relevantGrants),
+				mode: agent.mode,
+				expires_at: agent.expiresAt
+					? new Date(agent.expiresAt).toISOString()
+					: null,
+			});
+		},
+	);
+}

@@ -1,0 +1,13 @@
+{
+  "name": "agent-auth-ba",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0"
+  },
+  "packageManager": "pnpm@10.6.2"
+}
