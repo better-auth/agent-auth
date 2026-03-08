@@ -2,13 +2,7 @@ import type { GenericEndpointContext } from "@better-auth/core";
 import type { InferOptionSchema } from "better-auth/types";
 import type { agentSchema } from "./schema";
 
-/** Invoke descriptor base — §4.1. Only `type` is required by protocol. */
-export interface InvokeDescriptor {
-	type: string;
-	[key: string]: unknown;
-}
-
-/** OpenAPI-aligned parameter definition for the HTTP invoke profile. */
+/** OpenAPI-aligned parameter definition for the HTTP profile — §4.2. */
 export interface HttpParameter {
 	name: string;
 	in: "path" | "query" | "header";
@@ -17,20 +11,19 @@ export interface HttpParameter {
 	description?: string;
 }
 
-/** OpenAPI-aligned request body definition for the HTTP invoke profile. */
+/** OpenAPI-aligned request body definition for the HTTP profile — §4.2. */
 export interface HttpRequestBody {
 	required?: boolean;
 	description?: string;
 	content?: Record<string, { schema?: Record<string, unknown> }>;
 }
 
-/** Standard HTTP invoke profile — §4.2. */
-export interface HttpInvokeDescriptor extends InvokeDescriptor {
-	type: "http";
+/** Standard HTTP execution profile — §4.2. */
+export interface HttpDescriptor {
 	method: string;
 	url: string;
 	headers?: Record<string, string>;
-	interactionMode?: "sync" | "stream" | "async";
+	interaction_mode?: "sync" | "stream" | "async";
 	input?: {
 		parameters?: HttpParameter[];
 		requestBody?: HttpRequestBody;
@@ -40,15 +33,14 @@ export interface HttpInvokeDescriptor extends InvokeDescriptor {
 /**
  * Capability definition — §4.
  *
- * Each capability has a stable `id`, a human-readable `title`, a
- * `description`, and an `invoke` descriptor that tells the agent
- * how to call it.
+ * Core fields are `id` and `description`. Execution metadata
+ * (e.g. `http`, `graphql`, `docs`) lives as flat top-level keys.
  */
 export interface Capability {
 	id: string;
 	title?: string;
 	description: string;
-	invoke: InvokeDescriptor;
+	http?: HttpDescriptor;
 	[key: string]: unknown;
 }
 

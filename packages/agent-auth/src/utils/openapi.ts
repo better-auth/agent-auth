@@ -1,4 +1,4 @@
-import type { Capability, HttpInvokeDescriptor } from "../types";
+import type { Capability, HttpDescriptor } from "../types";
 
 interface OpenAPIOperation {
 	operationId?: string;
@@ -28,11 +28,11 @@ interface OpenAPISpec {
 }
 
 /**
- * Convert an OpenAPI 3.x spec into `Capability[]` with HTTP invoke
+ * Convert an OpenAPI 3.x spec into `Capability[]` with HTTP execution
  * descriptors (§4.2).
  *
  * Each operation with an `operationId` becomes a capability whose
- * `id` is the `operationId` and whose `invoke` is a standard HTTP
+ * `id` is the `operationId` and whose `http` field is a standard HTTP
  * descriptor.
  */
 export function fromOpenAPI(
@@ -60,14 +60,13 @@ export function fromOpenAPI(
 			const op = operation as OpenAPIOperation;
 			if (!op.operationId) continue;
 
-			const invoke: HttpInvokeDescriptor = {
-				type: "http",
+			const http: HttpDescriptor = {
 				method: method.toUpperCase(),
 				url: `${serverBase}${path}`,
 			};
 
 			if (op.parameters?.length) {
-				invoke.input = {
+				http.input = {
 					parameters: op.parameters.map((p) => ({
 						name: p.name,
 						in: p.in as "path" | "query" | "header",
@@ -79,8 +78,8 @@ export function fromOpenAPI(
 			}
 
 			if (op.requestBody) {
-				invoke.input = {
-					...invoke.input,
+				http.input = {
+					...http.input,
 					requestBody: {
 						required: op.requestBody.required,
 						description: op.requestBody.description,
@@ -94,7 +93,7 @@ export function fromOpenAPI(
 				title: op.summary ?? op.operationId,
 				description:
 					op.description ?? op.summary ?? op.operationId,
-				invoke,
+				http,
 			});
 		}
 	}

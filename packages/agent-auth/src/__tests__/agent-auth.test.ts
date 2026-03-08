@@ -62,19 +62,19 @@ const TEST_CAPABILITIES = [
 		id: "check_balance",
 		title: "Check balance",
 		description: "Check account balance",
-		invoke: { type: "http" as const, method: "GET", url: "https://api.test.com/balance" },
+		http: { method: "GET", url: "https://api.test.com/balance" },
 	},
 	{
 		id: "transfer",
 		title: "Transfer funds",
 		description: "Transfer money",
-		invoke: { type: "http" as const, method: "POST", url: "https://api.test.com/transfer" },
+		http: { method: "POST", url: "https://api.test.com/transfer" },
 	},
 	{
 		id: "admin_panel",
 		title: "Admin panel",
 		description: "Access admin panel",
-		invoke: { type: "http" as const, method: "GET", url: "https://api.test.com/admin" },
+		http: { method: "GET", url: "https://api.test.com/admin" },
 	},
 ];
 
@@ -1133,19 +1133,19 @@ describe("Discovery", () => {
 });
 
 describe("Capabilities Endpoint", () => {
-	it("GET /agent/capabilities returns list with id and invoke descriptor", async () => {
+	it("GET /agent/capabilities returns list with id and http descriptor", async () => {
 		const res = await api("/agent/capabilities", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
-			capabilities: Array<{ id: string; invoke: { type: string } }>;
+			capabilities: Array<{ id: string; http: { method: string; url: string } }>;
 			has_more: boolean;
 		}>(res);
 		expect(body.capabilities).toBeInstanceOf(Array);
 		expect(body.capabilities.length).toBe(3);
 		expect(body.capabilities[0]).toHaveProperty("id");
-		expect(body.capabilities[0]).toHaveProperty("invoke");
-		expect(body.capabilities[0].invoke).toHaveProperty("type");
+		expect(body.capabilities[0]).toHaveProperty("http");
+		expect(body.capabilities[0].http).toHaveProperty("method");
 	});
 
 	it("includes grant_status when called with agent JWT", async () => {
