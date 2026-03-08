@@ -1,4 +1,5 @@
 import { exec } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { AgentAuthClient } from "@better-auth/agent-auth-sdk";
 import { FileStorage } from "./storage.js";
 
@@ -7,6 +8,7 @@ export interface ClientConfig {
 	registryUrl?: string;
 	hostName?: string;
 	noBrowser?: boolean;
+	providers?: Array<Record<string, unknown>>;
 }
 
 function openBrowser(url: string): void {
@@ -25,6 +27,7 @@ export function createClient(config: ClientConfig = {}): AgentAuthClient {
 		storage,
 		registryUrl: config.registryUrl ?? process.env.AGENT_AUTH_REGISTRY_URL,
 		hostName: config.hostName ?? process.env.AGENT_AUTH_HOST_NAME,
+		providers: config.providers as any,
 		onApprovalRequired(info) {
 			const url = info.verification_uri_complete ?? info.verification_uri;
 			if (url) {
@@ -47,11 +50,43 @@ export function createClient(config: ClientConfig = {}): AgentAuthClient {
 	});
 }
 
+function normalizeProviders(
+	raw: unknown,
+): Array<Record<string, unknown>> | undefined {
+	if (Array.isArray(raw)) return raw;
+	if (raw && typeof raw === "object") return [raw as Record<string, unknown>];
+	return undefined;
+}
+
+function loadProviders(): Array<Record<string, unknown>> | undefined {
+	const filePath = process.env.AGENT_AUTH_PROVIDERS_FILE;
+	if (filePath) {
+		try {
+			return normalizeProviders(
+				JSON.parse(readFileSync(filePath, "utf-8")),
+			);
+		} catch (err) {
+			console.error(`Warning: could not load providers from ${filePath}:`, err);
+		}
+	}
+	if (process.env.AGENT_AUTH_PROVIDERS) {
+		try {
+			return normalizeProviders(
+				JSON.parse(process.env.AGENT_AUTH_PROVIDERS),
+			);
+		} catch {
+			console.error("Warning: could not parse AGENT_AUTH_PROVIDERS env var");
+		}
+	}
+	return undefined;
+}
+
 export function getClientConfig(): ClientConfig {
 	return {
 		storageDir: process.env.AGENT_AUTH_STORAGE_DIR,
 		registryUrl: process.env.AGENT_AUTH_REGISTRY_URL,
 		hostName: process.env.AGENT_AUTH_HOST_NAME,
 		noBrowser: process.env.AGENT_AUTH_NO_BROWSER === "1",
+		providers: loadProviders(),
 	};
 }

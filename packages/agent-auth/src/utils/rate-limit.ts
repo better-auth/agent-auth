@@ -32,7 +32,7 @@ export function buildRateLimits(overrides: AgentAuthOptions["rateLimit"]) {
 		},
 		{
 			pathMatcher(path: string) {
-				return path.startsWith("/agent/") || path === "/capabilities";
+				return path.startsWith("/agent/") || path.startsWith("/capability/");
 			},
 			window: DEFAULT_WINDOW,
 			max: DEFAULT_MAX,

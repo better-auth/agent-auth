@@ -58,19 +58,29 @@ const TEST_CAPABILITIES = [
 		id: "check_balance",
 		title: "Check balance",
 		description: "Check account balance",
-		http: { method: "GET", url: "https://api.test.com/balance" },
+		input: {
+			type: "object",
+			required: ["account_id"],
+			properties: { account_id: { type: "string" } },
+		},
 	},
 	{
 		id: "transfer",
 		title: "Transfer funds",
 		description: "Transfer money",
-		http: { method: "POST", url: "https://api.test.com/transfer" },
+		input: {
+			type: "object",
+			required: ["amount", "to"],
+			properties: {
+				amount: { type: "number" },
+				to: { type: "string" },
+			},
+		},
 	},
 	{
 		id: "admin_panel",
 		title: "Admin panel",
 		description: "Access admin panel",
-		http: { method: "GET", url: "https://api.test.com/admin" },
 	},
 ];
 
@@ -1107,26 +1117,26 @@ describe("Discovery", () => {
 		expect(body.algorithms).toEqual(["Ed25519"]);
 		expect(body.endpoints).toBeDefined();
 		expect(body.endpoints.register).toBe("/agent/register");
-		expect(body.endpoints.capabilities).toBe("/capabilities");
+		expect(body.endpoints.capabilities).toBe("/capability/list");
 		expect(body.endpoints.status).toBe("/agent/status");
 		expect(body.endpoints.introspect).toBe("/agent/introspect");
 	});
 });
 
 describe("Capabilities Endpoint", () => {
-	it("GET /capabilities returns list with id and http descriptor", async () => {
-		const res = await api("/capabilities", { method: "GET" });
+	it("GET /capability/list returns list with id and description", async () => {
+		const res = await api("/capability/list", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
-			capabilities: Array<{ id: string; http: { method: string; url: string } }>;
+			capabilities: Array<{ id: string; description: string; input?: Record<string, unknown> }>;
 			has_more: boolean;
 		}>(res);
 		expect(body.capabilities).toBeInstanceOf(Array);
 		expect(body.capabilities.length).toBe(3);
 		expect(body.capabilities[0]).toHaveProperty("id");
-		expect(body.capabilities[0]).toHaveProperty("http");
-		expect(body.capabilities[0].http).toHaveProperty("method");
+		expect(body.capabilities[0]).toHaveProperty("description");
+		expect(body.capabilities[0]).toHaveProperty("input");
 	});
 
 	it("includes grant_status when called with agent JWT", async () => {
@@ -1147,7 +1157,7 @@ describe("Capabilities Endpoint", () => {
 		});
 
 		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId);
-		const res = await api("/capabilities", {
+		const res = await api("/capability/list", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt}` },
 		});

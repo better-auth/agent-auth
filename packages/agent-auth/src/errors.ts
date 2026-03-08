@@ -66,4 +66,6 @@ export const AGENT_AUTH_ERROR_CODES = defineErrors({
 	CONNECT_REQUEST_NOT_FOUND: "connect_request_not_found",
 	CONNECT_REQUEST_EXPIRED: "connect_request_expired",
 	UNKNOWN_CAPABILITIES: "unknown_capabilities",
+	CAPABILITY_NOT_FOUND: "capability_not_found",
+	EXECUTE_NOT_CONFIGURED: "execute_not_configured",
 });

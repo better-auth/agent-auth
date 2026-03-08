@@ -2,45 +2,25 @@ import type { GenericEndpointContext } from "@better-auth/core";
 import type { InferOptionSchema } from "better-auth/types";
 import type { agentSchema } from "./schema";
 
-/** OpenAPI-aligned parameter definition for the HTTP profile — §4.2. */
-export interface HttpParameter {
-	name: string;
-	in: "path" | "query" | "header";
-	required?: boolean;
-	schema?: Record<string, unknown>;
-	description?: string;
-}
-
-/** OpenAPI-aligned request body definition for the HTTP profile — §4.2. */
-export interface HttpRequestBody {
-	required?: boolean;
-	description?: string;
-	content?: Record<string, { schema?: Record<string, unknown> }>;
-}
-
-/** Standard HTTP execution profile — §4.2. */
-export interface HttpDescriptor {
-	method: string;
-	url: string;
-	headers?: Record<string, string>;
-	interaction_mode?: "sync" | "stream" | "async";
-	input?: {
-		parameters?: HttpParameter[];
-		requestBody?: HttpRequestBody;
-	};
-}
-
 /**
  * Capability definition — §4.
  *
- * Core fields are `id` and `description`. Execution metadata
- * (e.g. `http`, `graphql`, `docs`) lives as flat top-level keys.
+ * Core fields are `id`, `description`, and optionally `input`
+ * (a JSON Schema describing arguments for `POST /capability/execute`).
+ *
+ * Capabilities are executed through the server's execute endpoint.
+ * Additional pass-through metadata (e.g. for direct client execution)
+ * can be included via the index signature.
  */
 export interface Capability {
 	id: string;
 	title?: string;
 	description: string;
-	http?: HttpDescriptor;
+	/**
+	 * JSON Schema describing the `arguments` accepted by
+	 * `POST /capability/execute` (§6.11).
+	 */
+	input?: Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -199,7 +179,8 @@ export type AgentAuthPath =
 	| "/agent/request-capability"
 	| "/agent/approve-capability"
 	| "/agent/agent-configuration"
-	| "/capabilities"
+	| "/capability/list"
+	| "/capability/execute"
 	| "/agent/status"
 	| "/agent/introspect"
 	| "/agent/connect-account"
@@ -431,6 +412,22 @@ export interface AgentAuthOptions {
 	 * Callback invoked after significant mutations (§12).
 	 */
 	onEvent?: (event: AgentAuthEvent) => void | Promise<void>;
+	/**
+	 * Execute a capability on behalf of the agent (§6.11).
+	 *
+	 * Called by `POST /capabilities/execute`. The server validates the
+	 * agent JWT and checks grants before invoking this handler.
+	 * Return the result payload to send back to the client.
+	 *
+	 * If not provided, the endpoint returns `501 Not Implemented`.
+	 */
+	onExecute?: (context: {
+		ctx: GenericEndpointContext;
+		capabilityId: string;
+		capability: Capability;
+		arguments?: Record<string, unknown>;
+		agentSession: AgentSession;
+	}) => unknown | Promise<unknown>;
 }
 
 export type ResolvedAgentAuthOptions = Required<

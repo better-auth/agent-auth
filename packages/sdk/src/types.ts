@@ -46,9 +46,29 @@ export interface Capability {
 	id: string;
 	title?: string;
 	description: string;
+	/**
+	 * JSON Schema describing the `arguments` accepted by
+	 * `POST /capabilities/execute` (§6.11).
+	 */
+	input?: Record<string, unknown>;
 	grant_status?: "granted" | "not_granted";
+	/** Direct execution metadata — §4.2. */
 	http?: HttpDescriptor;
 	[key: string]: unknown;
+}
+
+/** Response from POST /capabilities/execute (§6.11). */
+export interface ExecuteCapabilityResponse {
+	/** Sync result payload. */
+	data?: unknown;
+	/** Async status: "pending", "completed", or "failed". */
+	status?: "pending" | "completed" | "failed";
+	/** Polling URL for async results. */
+	status_url?: string;
+	/** Async result payload (when status is "completed"). */
+	result?: unknown;
+	/** Error details (when status is "failed"). */
+	error?: { code?: string; message?: string };
 }
 
 export type AgentMode = "delegated" | "autonomous";

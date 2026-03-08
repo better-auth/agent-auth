@@ -21,24 +21,27 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 			},
 		},
 		async (ctx) => {
-			const issuer = new URL(ctx.context.baseURL).origin;
+			const baseUrl = new URL(ctx.context.baseURL);
+			const issuer = baseUrl.origin;
+			const basePath = baseUrl.pathname.replace(/\/$/, "") || "/api/auth";
 
 			const endpoints: Record<string, string> = {
-				register: "/agent/register",
-				capabilities: "/capabilities",
-				request_capability: "/agent/request-capability",
-				status: "/agent/status",
-				revoke: "/agent/revoke",
-				reactivate: "/agent/reactivate",
-				revoke_host: "/host/revoke",
-				rotate_key: "/agent/rotate-key",
-				rotate_host_key: "/host/rotate-key",
-				introspect: "/agent/introspect",
-				device_authorization: "/device/code",
+				register: `${basePath}/agent/register`,
+				capabilities: `${basePath}/capability/list`,
+				execute: `${basePath}/capability/execute`,
+				request_capability: `${basePath}/agent/request-capability`,
+				status: `${basePath}/agent/status`,
+				revoke: `${basePath}/agent/revoke`,
+				reactivate: `${basePath}/agent/reactivate`,
+				revoke_host: `${basePath}/host/revoke`,
+				rotate_key: `${basePath}/agent/rotate-key`,
+				rotate_host_key: `${basePath}/host/rotate-key`,
+				introspect: `${basePath}/agent/introspect`,
+				device_authorization: `${basePath}/device/code`,
 			};
 
 			if (opts.approvalMethods.includes("ciba")) {
-				endpoints.ciba_authorize = "/agent/ciba/authorize";
+				endpoints.ciba_authorize = `${basePath}/agent/ciba/authorize`;
 			}
 
 			return ctx.json({

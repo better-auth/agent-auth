@@ -11,44 +11,51 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		version: "0.1.0",
 	});
 
-	server.tool(
+	server.registerTool(
 		"discover_provider",
-		"Discover a provider's Agent Auth configuration from a service URL. Returns the full discovery document including endpoints, capabilities, and modes.",
-		{ url: z.string().describe("Service URL to discover (e.g. https://api.example.com)") },
+		{
+			description: "Discover a provider's Agent Auth configuration from a service URL. Returns the full discovery document including endpoints, capabilities, and modes.",
+			inputSchema: { url: z.string().describe("Service URL to discover (e.g. https://api.example.com)") },
+		},
 		async ({ url }) => {
 			const result = await client.discoverProvider(url);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"search_providers",
-		"Search the registry for providers matching an intent. Requires a registry URL to be configured.",
-		{ intent: z.string().describe("What you want to do (e.g. 'deploy web apps', 'send emails')") },
+		{
+			description: "Search the registry for providers matching an intent. Requires a registry URL to be configured.",
+			inputSchema: { intent: z.string().describe("What you want to do (e.g. 'deploy web apps', 'send emails')") },
+		},
 		async ({ intent }) => {
 			const results = await client.searchProviders(intent);
 			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"list_providers",
-		"List all providers that have been discovered or pre-configured.",
-		{},
+		{
+			description: "List all providers that have been discovered or pre-configured.",
+		},
 		async () => {
 			const results = await client.listProviders();
 			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"list_capabilities",
-		"List capabilities offered by a provider. Optionally filter by intent or scope to an agent to see grant status.",
 		{
-			provider: z.string().describe("Provider URL, issuer, or name"),
-			intent: z.string().optional().describe("Filter by intent keyword"),
-			agent_id: z.string().optional().describe("Agent ID to see grant status"),
-			cursor: z.string().optional().describe("Pagination cursor"),
+			description: "List capabilities offered by a provider. Optionally filter by intent or scope to an agent to see grant status.",
+			inputSchema: {
+				provider: z.string().describe("Provider URL, issuer, or name"),
+				intent: z.string().optional().describe("Filter by intent keyword"),
+				agent_id: z.string().optional().describe("Agent ID to see grant status"),
+				cursor: z.string().optional().describe("Pagination cursor"),
+			},
 		},
 		async ({ provider, intent, agent_id, cursor }) => {
 			const result = await client.listCapabilities({
@@ -61,15 +68,17 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"connect_agent",
-		"Connect a new agent to a provider. Creates a keypair, registers the agent, and handles approval flow if needed. Returns agent ID, host ID, status, and granted capabilities.",
 		{
-			provider: z.string().describe("Provider URL, issuer, or name"),
-			capability_ids: z.array(z.string()).optional().describe("Capability IDs to request"),
-			mode: z.enum(["delegated", "autonomous"]).optional().describe("Agent mode"),
-			name: z.string().optional().describe("Agent name"),
-			reason: z.string().optional().describe("Reason for requesting capabilities"),
+			description: "Connect a new agent to a provider. Creates a keypair, registers the agent, and handles approval flow if needed. Returns agent ID, host ID, status, and granted capabilities.",
+			inputSchema: {
+				provider: z.string().describe("Provider URL, issuer, or name"),
+				capability_ids: z.array(z.string()).optional().describe("Capability IDs to request"),
+				mode: z.enum(["delegated", "autonomous"]).optional().describe("Agent mode"),
+				name: z.string().optional().describe("Agent name"),
+				reason: z.string().optional().describe("Reason for requesting capabilities"),
+			},
 		},
 		async ({ provider, capability_ids, mode, name, reason }) => {
 			const result = await client.connectAgent({
@@ -83,22 +92,26 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"agent_status",
-		"Check the current status of an agent (active, pending, expired, revoked, etc.) and its capability grants.",
-		{ agent_id: z.string().describe("Agent ID") },
+		{
+			description: "Check the current status of an agent (active, pending, expired, revoked, etc.) and its capability grants.",
+			inputSchema: { agent_id: z.string().describe("Agent ID") },
+		},
 		async ({ agent_id }) => {
 			const result = await client.agentStatus(agent_id);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"sign_jwt",
-		"Sign an agent JWT for authenticating capability execution. Returns a short-lived token.",
 		{
-			agent_id: z.string().describe("Agent ID"),
-			capability_ids: z.array(z.string()).optional().describe("Scope to specific capability IDs"),
+			description: "Sign an agent JWT for authenticating capability execution. Returns a short-lived token.",
+			inputSchema: {
+				agent_id: z.string().describe("Agent ID"),
+				capability_ids: z.array(z.string()).optional().describe("Scope to specific capability IDs"),
+			},
 		},
 		async ({ agent_id, capability_ids }) => {
 			const result = await client.signJwt({
@@ -109,13 +122,15 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"request_capability",
-		"Request additional capabilities for an existing agent. Returns which capabilities were granted, are pending, or were denied.",
 		{
-			agent_id: z.string().describe("Agent ID"),
-			capability_ids: z.array(z.string()).describe("Capability IDs to request"),
-			reason: z.string().optional().describe("Reason for request"),
+			description: "Request additional capabilities for an existing agent. Returns which capabilities were granted, are pending, or were denied.",
+			inputSchema: {
+				agent_id: z.string().describe("Agent ID"),
+				capability_ids: z.array(z.string()).describe("Capability IDs to request"),
+				reason: z.string().optional().describe("Reason for request"),
+			},
 		},
 		async ({ agent_id, capability_ids, reason }) => {
 			const result = await client.requestCapability({
@@ -127,36 +142,42 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"disconnect_agent",
-		"Disconnect (revoke) an agent. Removes it from the server and deletes the local connection.",
-		{ agent_id: z.string().describe("Agent ID") },
+		{
+			description: "Disconnect (revoke) an agent. Removes it from the server and deletes the local connection.",
+			inputSchema: { agent_id: z.string().describe("Agent ID") },
+		},
 		async ({ agent_id }) => {
 			await client.disconnectAgent(agent_id);
 			return { content: [{ type: "text", text: JSON.stringify({ ok: true, agentId: agent_id }) }] };
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"reactivate_agent",
-		"Reactivate an expired agent.",
-		{ agent_id: z.string().describe("Agent ID") },
+		{
+			description: "Reactivate an expired agent.",
+			inputSchema: { agent_id: z.string().describe("Agent ID") },
+		},
 		async ({ agent_id }) => {
 			const result = await client.reactivateAgent(agent_id);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 
-	server.tool(
-		"execute_http_capability",
-		"Execute an HTTP capability on behalf of an agent. Signs a scoped JWT, constructs the HTTP request per the capability's profile, and returns the response.",
+	server.registerTool(
+		"execute_capability",
 		{
-			agent_id: z.string().describe("Agent ID"),
-			capability_id: z.string().describe("Capability ID to execute"),
-			arguments: z.record(z.unknown()).optional().describe("Arguments for the HTTP request (path params, query, body)"),
+			description: "Execute a capability on behalf of an agent. Signs a scoped JWT and sends the capability ID and arguments to the server's execute endpoint. The server validates the JWT, checks grants, executes the capability, and returns the result.",
+			inputSchema: {
+				agent_id: z.string().describe("Agent ID"),
+				capability_id: z.string().describe("Capability ID to execute"),
+				arguments: z.record(z.string(), z.unknown()).optional().describe("Arguments for the capability, conforming to its input schema"),
+			},
 		},
 		async ({ agent_id, capability_id, arguments: args }) => {
-			const result = await client.httpRequest({
+			const result = await client.executeCapability({
 				agentId: agent_id,
 				capabilityId: capability_id,
 				arguments: args,
@@ -165,10 +186,12 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"list_connections",
-		"List all locally stored agent connections for a provider.",
-		{ issuer: z.string().describe("Provider issuer URL") },
+		{
+			description: "List all locally stored agent connections for a provider.",
+			inputSchema: { issuer: z.string().describe("Provider issuer URL") },
+		},
 		async ({ issuer }) => {
 			const conns = await client.listConnections(issuer);
 			const sanitized = conns.map((c) => ({
@@ -184,10 +207,12 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"get_connection",
-		"Get details of a locally stored agent connection.",
-		{ agent_id: z.string().describe("Agent ID") },
+		{
+			description: "Get details of a locally stored agent connection.",
+			inputSchema: { agent_id: z.string().describe("Agent ID") },
+		},
 		async ({ agent_id }) => {
 			const conn = await client.getConnection(agent_id);
 			if (!conn) {
@@ -210,33 +235,39 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"rotate_agent_key",
-		"Rotate an agent's keypair. Generates a new key and registers it with the server.",
-		{ agent_id: z.string().describe("Agent ID") },
+		{
+			description: "Rotate an agent's keypair. Generates a new key and registers it with the server.",
+			inputSchema: { agent_id: z.string().describe("Agent ID") },
+		},
 		async ({ agent_id }) => {
 			const result = await client.rotateAgentKey(agent_id);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"rotate_host_key",
-		"Rotate the host keypair for a provider.",
-		{ issuer: z.string().describe("Provider issuer URL") },
+		{
+			description: "Rotate the host keypair for a provider.",
+			inputSchema: { issuer: z.string().describe("Provider issuer URL") },
+		},
 		async ({ issuer }) => {
 			const result = await client.rotateHostKey(issuer);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"enroll_host",
-		"Enroll a host using a one-time enrollment token. Used when the host was pre-registered without a public key.",
 		{
-			provider: z.string().describe("Provider URL, issuer, or name"),
-			enrollment_token: z.string().describe("One-time enrollment token"),
-			name: z.string().optional().describe("Host name"),
+			description: "Enroll a host using a one-time enrollment token. Used when the host was pre-registered without a public key.",
+			inputSchema: {
+				provider: z.string().describe("Provider URL, issuer, or name"),
+				enrollment_token: z.string().describe("One-time enrollment token"),
+				name: z.string().optional().describe("Host name"),
+			},
 		},
 		async ({ provider, enrollment_token, name }) => {
 			const result = await client.enrollHost({
@@ -248,10 +279,12 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.tool(
+	server.registerTool(
 		"connect_account",
-		"Initiate account linking for an autonomous agent. Creates a CIBA-style request for user approval.",
-		{ agent_id: z.string().describe("Agent ID") },
+		{
+			description: "Initiate account linking for an autonomous agent. Creates a CIBA-style request for user approval.",
+			inputSchema: { agent_id: z.string().describe("Agent ID") },
+		},
 		async ({ agent_id }) => {
 			const result = await client.connectAccount(agent_id);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };

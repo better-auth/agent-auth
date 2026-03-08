@@ -10,7 +10,8 @@ export const agentAuthClient = () => {
 		$InferServerPlugin: {} as ReturnType<typeof agentAuth>,
 		pathMethods: {
 			"/agent/agent-configuration": "GET",
-			"/capabilities": "GET",
+			"/capability/list": "GET",
+			"/capability/execute": "POST",
 			"/agent/list": "GET",
 			"/agent/get": "GET",
 			"/agent/status": "GET",

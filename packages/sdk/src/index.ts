@@ -21,6 +21,7 @@ export type {
 	StatusResponse,
 	RequestCapabilityResponse,
 	IntrospectResponse,
+	ExecuteCapabilityResponse,
 	CapabilitiesResponse,
 	AgentSessionResponse,
 	EnrollHostResponse,

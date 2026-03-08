@@ -170,12 +170,12 @@ export function buildCli(): Command {
 
 	program
 		.command("execute <agent-id> <capability-id>")
-		.description("Execute an HTTP capability")
+		.description("Execute a capability through the server's execute endpoint")
 		.option("--args <json>", "arguments as JSON string")
 		.action((agentId: string, capabilityId: string, opts) =>
 			run(async () => {
 				const args = opts.args ? JSON.parse(opts.args) : undefined;
-				const result = await client().httpRequest({
+				const result = await client().executeCapability({
 					agentId,
 					capabilityId,
 					arguments: args,

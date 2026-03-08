@@ -12,6 +12,7 @@ import type {
 	Capability,
 	CapabilityGrant,
 	EnrollHostResponse,
+	ExecuteCapabilityResponse,
 	HostIdentity,
 	Keypair,
 	ProviderConfig,
@@ -116,7 +117,7 @@ export class AgentAuthClient {
 		cursor?: string;
 	}): Promise<CapabilitiesResponse> {
 		const config = await this.resolveConfig(opts.provider);
-		const capPath = config.endpoints.capabilities ?? "/capabilities";
+		const capPath = config.endpoints.capabilities ?? "/capability/list";
 		const url = new URL(capPath, config.issuer);
 		if (opts.intent) url.searchParams.set("intent", opts.intent);
 		if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
@@ -503,12 +504,73 @@ export class AgentAuthClient {
 		return status;
 	}
 
-	// ─── HTTP Execution (§7.9) ──────────────────────────────────
+	// ─── Execute Capability (§7.9) ──────────────────────────────
 
 	/**
-	 * Execute an HTTP capability — §7.9.
-	 * Looks up the capability, constructs the request per §4.2,
-	 * signs a scoped JWT, and makes the call.
+	 * Execute a capability through the server's execute endpoint — §7.9.
+	 *
+	 * Signs a scoped agent JWT and sends `capability_id` + `arguments`
+	 * to `POST /capabilities/execute`. The server validates the JWT,
+	 * checks grants, executes the capability, and returns the result.
+	 *
+	 * For async responses, polls the `status_url` until completion.
+	 */
+	async executeCapability(opts: {
+		agentId: string;
+		capabilityId: string;
+		arguments?: Record<string, unknown>;
+	}): Promise<ExecuteCapabilityResponse> {
+		const conn = await this.requireConnection(opts.agentId);
+		const config = await this.requireConfig(conn.issuer);
+
+		const token = await this.signJwt({
+			agentId: opts.agentId,
+			capabilityIds: [opts.capabilityId],
+		});
+
+		const url = this.resolveEndpoint(
+			config,
+			"execute",
+			"/capability/execute",
+		);
+
+		const res = await this.fetchFn(url, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				authorization: `Bearer ${token.token}`,
+			},
+			body: JSON.stringify({
+				capability_id: opts.capabilityId,
+				...(opts.arguments ? { arguments: opts.arguments } : {}),
+			}),
+		});
+
+		if (!res.ok) {
+			throw await this.toError(res);
+		}
+
+		const body = (await res.json()) as ExecuteCapabilityResponse;
+
+		if (body.status === "pending" && body.status_url) {
+			return this.pollAsyncResult(
+				body.status_url,
+				token.token,
+			);
+		}
+
+		return body;
+	}
+
+	// ─── Direct HTTP Execution (§4.2) ───────────────────────────
+
+	/**
+	 * Execute a capability via direct HTTP call — §4.2.
+	 *
+	 * Uses the capability's `http` descriptor to construct and send
+	 * an HTTP request directly to the service endpoint. This bypasses
+	 * the server's execute endpoint. Prefer `executeCapability` unless
+	 * you have a specific reason for direct execution.
 	 */
 	async httpRequest(opts: {
 		agentId: string;
@@ -854,6 +916,46 @@ export class AgentAuthClient {
 		throw new AgentAuthSDKError(
 			"approval_timeout",
 			"Approval timed out.",
+		);
+	}
+
+	private async pollAsyncResult(
+		statusUrl: string,
+		token: string,
+	): Promise<ExecuteCapabilityResponse> {
+		const maxAttempts = 60;
+		let interval = 2000;
+
+		for (let i = 0; i < maxAttempts; i++) {
+			await sleep(interval);
+
+			const res = await this.fetchFn(statusUrl, {
+				method: "GET",
+				headers: {
+					accept: "application/json",
+					authorization: `Bearer ${token}`,
+				},
+			});
+
+			if (!res.ok) {
+				throw await this.toError(res);
+			}
+
+			const body = (await res.json()) as ExecuteCapabilityResponse;
+
+			if (body.status === "completed" || body.status === "failed") {
+				return body;
+			}
+
+			const retryAfter = res.headers.get("retry-after");
+			if (retryAfter) {
+				interval = Number.parseInt(retryAfter, 10) * 1000;
+			}
+		}
+
+		throw new AgentAuthSDKError(
+			"async_timeout",
+			"Async capability execution timed out.",
 		);
 	}
 

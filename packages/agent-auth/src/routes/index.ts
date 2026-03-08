@@ -6,6 +6,7 @@ import { approveConnectAccount } from "./approve-connect-account";
 import { cleanupAgents } from "./cleanup";
 import { connectAccount } from "./connect-account";
 import { agentConfiguration } from "./discover";
+import { executeCapability } from "./execute-capability";
 import { getAgent } from "./get-agent";
 import { getAgentSession } from "./get-session";
 import { grantCapability } from "./grant-capability";
@@ -39,6 +40,7 @@ export function createAgentRoutes(
 	return {
 		getAgentConfiguration: agentConfiguration(opts), // §6.1
 		listCapabilities: listCapabilities(opts), // §6.2
+		executeCapability: executeCapability(opts), // §6.11
 		register: register(opts, jtiCache, jwksCache), // §6.3
 		requestCapability: requestCapability(opts), // §6.4
 		agentStatus: agentStatus(), // §6.5
