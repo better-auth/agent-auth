@@ -19,7 +19,7 @@ export function rotateHostKey(
 ) {
 	const cache = jwksCache ?? new MemoryJwksCache();
 	return createAuthEndpoint(
-		"/agent/host/rotate-key",
+		"/host/rotate-key",
 		{
 			method: "POST",
 			body: z.object({

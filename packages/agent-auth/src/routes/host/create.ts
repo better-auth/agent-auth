@@ -18,7 +18,7 @@ import {
 
 export function createHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
-		"/agent/host/create",
+		"/host/create",
 		{
 			method: "POST",
 			body: z.object({

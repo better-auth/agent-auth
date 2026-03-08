@@ -76,7 +76,7 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 			before: [createAgentAuthBeforeHook(opts, jtiCache, jwksCache)],
 		},
 		endpoints: {
-			agentConfiguration: routes.agentConfiguration,
+			getAgentConfiguration: routes.getAgentConfiguration,
 			register: routes.register,
 			listAgents: routes.listAgents,
 			getAgent: routes.getAgent,
@@ -99,7 +99,6 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 			listHosts: routes.listHosts,
 			getHost: routes.getHost,
 			revokeHost: routes.revokeHost,
-			reactivateHost: routes.reactivateHost,
 			updateHost: routes.updateHost,
 			rotateHostKey: routes.rotateHostKey,
 			cibaAuthorize: routes.cibaAuthorize,

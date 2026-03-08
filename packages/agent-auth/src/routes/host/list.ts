@@ -7,7 +7,7 @@ import { sessionMiddleware } from "better-auth/api";
 
 export function listHosts() {
 	return createAuthEndpoint(
-		"/agent/host/list",
+		"/host/list",
 		{
 			method: "GET",
 			query: z

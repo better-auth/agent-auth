@@ -15,7 +15,7 @@ import type {
 import { checkSharedOrg } from "../_helpers";
 
 /**
- * POST /agent/host/revoke (§6.10).
+ * POST /host/revoke (§6.10).
  *
  * Revokes a host and cascades to all agents under it.
  * Supports two auth modes:
@@ -24,7 +24,7 @@ import { checkSharedOrg } from "../_helpers";
  */
 export function revokeHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
-		"/agent/host/revoke",
+		"/host/revoke",
 		{
 			method: "POST",
 			body: z

@@ -4,8 +4,9 @@ import type { ResolvedAgentAuthOptions } from "../types";
 /**
  * GET /agent/agent-configuration (§6.1).
  *
- * Returns the server's Agent Auth configuration. Mount this on
- * `/.well-known/agent-configuration` to comply with the spec.
+ * Returns the Agent Auth discovery document. Users should expose this
+ * at `/.well-known/agent-configuration` on their server root by calling
+ * `auth.api.getAgentConfiguration()` from their own route handler.
  */
 export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -15,7 +16,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Agent Auth configuration endpoint (§6.1). Mount on /.well-known/agent-configuration.",
+						"Agent Auth discovery document (§6.1). Expose at /.well-known/agent-configuration.",
 				},
 			},
 		},
@@ -29,9 +30,9 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				status: "/agent/status",
 				revoke: "/agent/revoke",
 				reactivate: "/agent/reactivate",
-				revoke_host: "/agent/host/revoke",
+				revoke_host: "/host/revoke",
 				rotate_key: "/agent/rotate-key",
-				rotate_host_key: "/agent/host/rotate-key",
+				rotate_host_key: "/host/rotate-key",
 				introspect: "/agent/introspect",
 				device_authorization: "/device/code",
 			};

@@ -1,11 +1,13 @@
 {
-  "name": "@better-auth/agent-auth-sdk",
+  "name": "@better-auth/agent-auth-cli",
   "version": "0.1.0",
   "type": "module",
-  "description": "Client SDK for the Agent Auth Protocol — agent identity, registration, and capability-based authorization",
+  "description": "CLI and MCP server for the Agent Auth Protocol",
   "license": "MIT",
+  "bin": {
+    "agent-auth": "./dist/index.js"
+  },
   "main": "./dist/index.js",
-  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
@@ -20,10 +22,14 @@
   ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "tsup --watch"
   },
   "dependencies": {
-    "jose": "^6.0.0"
+    "@better-auth/agent-auth-sdk": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "commander": "^13.1.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

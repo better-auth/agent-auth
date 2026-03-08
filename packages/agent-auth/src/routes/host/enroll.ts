@@ -11,7 +11,7 @@ import { findHostByKey, validateKeyAlgorithm } from "../_helpers";
 
 export function enrollHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
-		"/agent/host/enroll",
+		"/host/enroll",
 		{
 			method: "POST",
 			body: z.object({

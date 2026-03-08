@@ -23,7 +23,7 @@ import { createHost } from "./host/create";
 import { enrollHost } from "./host/enroll";
 import { getHost } from "./host/get";
 import { listHosts } from "./host/list";
-import { reactivateHost } from "./host/reactivate";
+
 import { revokeHost } from "./host/revoke";
 import { rotateHostKey } from "./host/rotate-key";
 import { updateHost } from "./host/update";
@@ -37,7 +37,7 @@ export function createAgentRoutes(
 	jwksCache?: JwksCacheStore,
 ) {
 	return {
-		agentConfiguration: agentConfiguration(opts), // §6.1
+		getAgentConfiguration: agentConfiguration(opts), // §6.1
 		listCapabilities: listCapabilities(opts), // §6.2
 		register: register(opts, jtiCache, jwksCache), // §6.3
 		requestCapability: requestCapability(opts), // §6.4
@@ -60,7 +60,6 @@ export function createAgentRoutes(
 		listHosts: listHosts(), // §3
 		getHost: getHost(), // §3
 		revokeHost: revokeHost(opts), // §6.9
-		reactivateHost: reactivateHost(opts, jtiCache), // §3
 		updateHost: updateHost(opts), // §3
 		rotateHostKey: rotateHostKey(opts, jtiCache, jwksCache), // §6.8
 		cibaAuthorize: cibaAuthorize(opts), // §9.2

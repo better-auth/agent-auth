@@ -9,7 +9,7 @@ import { sessionMiddleware } from "better-auth/api";
 
 export function getHost() {
 	return createAuthEndpoint(
-		"/agent/host/get",
+		"/host/get",
 		{
 			method: "GET",
 			query: z.object({
