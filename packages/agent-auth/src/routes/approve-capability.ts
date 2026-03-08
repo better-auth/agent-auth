@@ -29,9 +29,9 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				agentId: z.string(),
+				agent_id: z.string(),
 				action: z.enum(["approve", "deny"]),
-				capabilityIds: z.array(z.string()).optional(),
+				capability_ids: z.array(z.string()).optional(),
 				ttl: z.number().positive().optional(),
 			}),
 			use: [sessionMiddleware],
@@ -65,9 +65,9 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const {
-				agentId,
+				agent_id: agentId,
 				action,
-				capabilityIds: userCapIds,
+				capability_ids: userCapIds,
 				ttl: explicitTTL,
 			} = ctx.body;
 

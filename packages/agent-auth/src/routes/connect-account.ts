@@ -22,7 +22,7 @@ export function connectAccount() {
 		{
 			method: "POST",
 			body: z.object({
-				agentId: z.string(),
+				agent_id: z.string(),
 			}),
 			requireHeaders: true,
 			metadata: {
@@ -41,7 +41,7 @@ export function connectAccount() {
 				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED);
 			}
 
-			const agentId = ctx.body.agentId;
+			const { agent_id: agentId } = ctx.body;
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,

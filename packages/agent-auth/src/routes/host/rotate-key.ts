@@ -23,7 +23,7 @@ export function rotateHostKey(
 		{
 			method: "POST",
 			body: z.object({
-				publicKey: z
+				public_key: z
 					.record(
 						z.string(),
 						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
@@ -38,7 +38,7 @@ export function rotateHostKey(
 			},
 		},
 		async (ctx) => {
-			const { publicKey } = ctx.body;
+			const { public_key: publicKey } = ctx.body;
 
 			const authHeader = ctx.headers?.get("authorization");
 			const bearer = authHeader?.replace(/^Bearer\s+/i, "");

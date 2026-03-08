@@ -23,10 +23,10 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				agentId: z
+				agent_id: z
 					.string()
 					.meta({ description: "Agent to grant capabilities to" }),
-				capabilityIds: z
+				capability_ids: z
 					.array(z.string())
 					.min(1)
 					.meta({ description: "Capability IDs to grant" }),
@@ -46,7 +46,11 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const session = ctx.context.session;
 
-			const { agentId, capabilityIds, ttl: explicitTTL } = ctx.body;
+			const {
+				agent_id: agentId,
+				capability_ids: capabilityIds,
+				ttl: explicitTTL,
+			} = ctx.body;
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,

@@ -20,24 +20,24 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				hostId: z.string().meta({ description: "ID of the host to update" }),
+				host_id: z.string().meta({ description: "ID of the host to update" }),
 				name: z.string().optional().meta({
 					description:
 						"Human-readable name identifying the environment/device.",
 				}),
-				publicKey: z
+				public_key: z
 					.record(
 						z.string(),
 						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
 					)
 					.optional()
 					.meta({ description: "New static public key as JWK" }),
-				jwksUrl: z
+				jwks_url: z
 					.string()
 					.url()
 					.optional()
 					.meta({ description: "New JWKS URL for remote key discovery" }),
-				defaultCapabilityIds: z
+				default_capability_ids: z
 					.array(z.string())
 					.optional()
 					.meta({ description: "Update default capability IDs" }),
@@ -52,10 +52,17 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 		},
 		async (ctx) => {
 			const session = ctx.context.session;
+			const {
+				host_id: hostId,
+				name,
+				public_key: publicKey,
+				jwks_url: jwksUrl,
+				default_capability_ids: defaultCapabilityIds,
+			} = ctx.body;
 
 			const host = await ctx.context.adapter.findOne<AgentHost>({
 				model: TABLE.host,
-				where: [{ field: "id", value: ctx.body.hostId }],
+				where: [{ field: "id", value: hostId }],
 			});
 
 			if (!host) {
@@ -76,8 +83,6 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 			if (host.status === "revoked") {
 				throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
 			}
-
-			const { name, publicKey, jwksUrl, defaultCapabilityIds } = ctx.body;
 
 			const update: Record<string, unknown> = {
 				updatedAt: new Date(),

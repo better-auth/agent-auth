@@ -19,7 +19,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				publicKey: z.record(z.string(), z.unknown()),
+				public_key: z.record(z.string(), z.unknown()),
 			}),
 			metadata: {
 				openapi: {
@@ -38,7 +38,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const agentId = agentSession.agent.id;
-			const publicKey = ctx.body.publicKey;
+			const { public_key: publicKey } = ctx.body;
 
 			validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
 

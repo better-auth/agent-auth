@@ -6,7 +6,7 @@ import { getAgentAuthAdapter } from "./adapter";
 import { TABLE } from "./constants";
 import { AGENT_AUTH_ERROR_CODES } from "./errors";
 import { parseCapabilityIds } from "./utils/capabilities";
-import { hashRequestBody, verifyAgentJWT } from "./utils/crypto";
+import { verifyAgentJWT } from "./utils/crypto";
 import type { JtiCacheStore } from "./utils/jti-cache";
 import type { JwksCacheStore } from "./utils/jwks-cache";
 import type {
@@ -304,56 +304,6 @@ export function createAgentAuthBeforeHook(
 				);
 			}
 			await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
-
-			// DPoP-style request binding (§5.4)
-			if (payload.htm || payload.htu) {
-				const overrideMethod =
-					ctx.headers?.get("x-agent-method");
-				const overridePath = ctx.headers?.get("x-agent-path");
-				const method = (
-					overrideMethod ?? ctx.method
-				)?.toUpperCase();
-
-				if (
-					payload.htm &&
-					typeof payload.htm === "string" &&
-					payload.htm !== method
-				) {
-					throw APIError.from(
-						"UNAUTHORIZED",
-						AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
-					);
-				}
-
-				if (payload.htu && typeof payload.htu === "string") {
-					const baseUrl = new URL(ctx.context.baseURL);
-					const effectivePath = overridePath ?? ctx.path;
-					const expectedHtu = overridePath
-						? `${baseUrl.origin}${effectivePath}`
-						: `${baseUrl.origin}${baseUrl.pathname.replace(/\/$/, "")}${ctx.path}`;
-					if (payload.htu !== expectedHtu) {
-						throw APIError.from(
-							"UNAUTHORIZED",
-							AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
-						);
-					}
-				}
-
-				if (payload.ath && typeof payload.ath === "string") {
-					const body = ctx.body
-						? JSON.stringify(ctx.body)
-						: undefined;
-					if (body) {
-						const actualHash = await hashRequestBody(body);
-						if (payload.ath !== actualHash) {
-							throw APIError.from(
-								"UNAUTHORIZED",
-								AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
-							);
-						}
-					}
-				}
-			}
 
 			if (needsReactivation) {
 				const reactivated =

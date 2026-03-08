@@ -13,7 +13,7 @@ export function getHost() {
 		{
 			method: "GET",
 			query: z.object({
-				hostId: z.string(),
+				host_id: z.string(),
 			}),
 			use: [sessionMiddleware],
 			metadata: {
@@ -24,11 +24,12 @@ export function getHost() {
 		},
 		async (ctx) => {
 			const session = ctx.context.session;
+			const { host_id: hostId } = ctx.query;
 
 			const host = await ctx.context.adapter.findOne<AgentHost>({
 				model: TABLE.host,
 				where: [
-					{ field: "id", value: ctx.query.hostId },
+					{ field: "id", value: hostId },
 					{ field: "userId", value: session.user.id },
 				],
 			});

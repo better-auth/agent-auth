@@ -16,18 +16,18 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				loginHint: z.string().min(1).meta({
+				login_hint: z.string().min(1).meta({
 					description:
 						"User identifier (email) to send the authentication request to.",
 				}),
-				capabilityIds: z.array(z.string()).optional().meta({
+				capability_ids: z.array(z.string()).optional().meta({
 					description: "Capability IDs the client is requesting.",
 				}),
-				bindingMessage: z.string().optional().meta({
+				binding_message: z.string().optional().meta({
 					description:
 						"Human-readable message displayed to the user during approval.",
 				}),
-				agentId: z.string().optional().meta({
+				agent_id: z.string().optional().meta({
 					description: "Agent ID this CIBA request is for.",
 				}),
 			}),
@@ -50,7 +50,12 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED);
 			}
 
-			const { loginHint, capabilityIds, bindingMessage, agentId } = ctx.body;
+			const {
+				login_hint: loginHint,
+				capability_ids: capabilityIds,
+				binding_message: bindingMessage,
+				agent_id: agentId,
+			} = ctx.body;
 
 			const user =
 				await ctx.context.internalAdapter.findUserByEmail(loginHint);

@@ -24,7 +24,7 @@ export function agentStatus() {
 			method: "GET",
 			query: z
 				.object({
-					agentId: z.string().optional(),
+					agent_id: z.string().optional(),
 				})
 				.optional(),
 			metadata: {
@@ -43,15 +43,15 @@ export function agentStatus() {
 			let targetAgentId: string;
 
 			if (agentSession) {
-				targetAgentId = ctx.query?.agentId ?? agentSession.agent.id;
+				targetAgentId = ctx.query?.agent_id ?? agentSession.agent.id;
 			} else if (hostSession) {
-				if (!ctx.query?.agentId) {
+				if (!ctx.query?.agent_id) {
 					throw new APIError("BAD_REQUEST", {
 						message:
 							"agentId query parameter is required when using host JWT.",
 					});
 				}
-				targetAgentId = ctx.query.agentId;
+				targetAgentId = ctx.query.agent_id;
 			} else {
 				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}

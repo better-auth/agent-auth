@@ -37,15 +37,11 @@ async function signTestJWT(opts: {
 	audience: string;
 	expiresInSeconds?: number;
 	capabilityIds?: string[];
-	htm?: string;
-	htu?: string;
 	additionalClaims?: Record<string, unknown>;
 }): Promise<string> {
 	const key = await importJWK(opts.privateKey, "EdDSA");
 	return new SignJWT({
 		...(opts.capabilityIds ? { capability_ids: opts.capabilityIds } : {}),
-		...(opts.htm ? { htm: opts.htm } : {}),
-		...(opts.htu ? { htu: opts.htu } : {}),
 		...opts.additionalClaims,
 	})
 		.setProtectedHeader({ alg: "EdDSA" })
@@ -178,8 +174,6 @@ async function createAgentJWT(
 	agentId: string,
 	opts?: {
 		capabilityIds?: string[];
-		htm?: string;
-		htu?: string;
 		expiresInSeconds?: number;
 		additionalClaims?: Record<string, unknown>;
 	},
@@ -218,7 +212,7 @@ async function registerAgentViaHost(opts: {
 		headers: { authorization: `Bearer ${hostJWT}` },
 		body: JSON.stringify({
 			name: opts.name ?? "Test Agent",
-			capabilityIds: opts.capabilityIds,
+			capability_ids: opts.capabilityIds,
 			mode: opts.mode ?? "delegated",
 		}),
 	});
@@ -234,8 +228,8 @@ describe("Host Management", () => {
 		const keypair = await generateTestKeypair();
 		const res = await authedPost("/agent/host/create", {
 			name: "My Test Host",
-			publicKey: keypair.publicKey,
-			defaultCapabilityIds: ["check_balance", "transfer"],
+			public_key: keypair.publicKey,
+			default_capability_ids: ["check_balance", "transfer"],
 		});
 
 		expect(res.ok).toBe(true);
@@ -259,7 +253,7 @@ describe("Host Management", () => {
 	});
 
 	it("gets host by ID (GET /agent/host/get)", async () => {
-		const res = await authedGet(`/agent/host/get?hostId=${createdHostId}`);
+		const res = await authedGet(`/agent/host/get?host_id=${createdHostId}`);
 
 		expect(res.ok).toBe(true);
 		const body = await json<{ id: string; status: string }>(res);
@@ -269,9 +263,9 @@ describe("Host Management", () => {
 
 	it("updates host (POST /agent/host/update)", async () => {
 		const res = await authedPost("/agent/host/update", {
-			hostId: createdHostId,
+			host_id: createdHostId,
 			name: "Updated Host",
-			defaultCapabilityIds: ["check_balance"],
+			default_capability_ids: ["check_balance"],
 		});
 
 		expect(res.ok).toBe(true);
@@ -283,8 +277,8 @@ describe("Host Management", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Host To Revoke",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -295,7 +289,7 @@ describe("Host Management", () => {
 			hostId,
 		});
 
-		const revokeRes = await authedPost("/agent/host/revoke", { hostId });
+		const revokeRes = await authedPost("/agent/host/revoke", { host_id: hostId });
 
 		expect(revokeRes.ok).toBe(true);
 		const body = await json<{ status: string; agents_revoked: number }>(revokeRes);
@@ -309,8 +303,8 @@ describe("Agent Registration", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Session-Owned Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		expect(createRes.ok).toBe(true);
 		const { hostId } = await json<{ hostId: string }>(createRes);
@@ -334,8 +328,8 @@ describe("Agent Registration", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Known Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance", "transfer"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance", "transfer"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -388,8 +382,8 @@ describe("Agent Registration", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Grants Shape Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -412,8 +406,8 @@ describe("Agent Registration", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Budget Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance", "transfer"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance", "transfer"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -434,8 +428,8 @@ describe("Agent Registration", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Narrow Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -487,8 +481,8 @@ describe("Agent Registration", () => {
 				headers: { "content-type": "application/json", cookie },
 				body: JSON.stringify({
 					name: "Limit Host",
-					publicKey: hostKeypair.publicKey,
-					defaultCapabilityIds: [],
+					public_key: hostKeypair.publicKey,
+					default_capability_ids: [],
 				}),
 			}),
 		);
@@ -533,8 +527,8 @@ describe("Agent Auth (JWT middleware)", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Middleware Test Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -594,8 +588,8 @@ describe("Agent Auth (JWT middleware)", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Revoke Agent Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -614,7 +608,7 @@ describe("Agent Auth (JWT middleware)", () => {
 		const revokeRes = await api("/agent/revoke", {
 			method: "POST",
 			headers: { authorization: `Bearer ${hostJWT}` },
-			body: JSON.stringify({ agentId: revokedId }),
+			body: JSON.stringify({ agent_id: revokedId }),
 		});
 		expect(revokeRes.ok).toBe(true);
 
@@ -627,19 +621,6 @@ describe("Agent Auth (JWT middleware)", () => {
 		expect(statusRes.status).toBe(401);
 	});
 
-	it("validates request binding (htm/htu mismatch)", async () => {
-		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId, {
-			htm: "POST",
-			htu: `${BASE}/api/auth/agent/status`,
-		});
-
-		const res = await api("/agent/status", {
-			method: "GET",
-			headers: { authorization: `Bearer ${jwt}` },
-		});
-		expect(res.ok).toBe(false);
-		expect(res.status).toBe(401);
-	});
 });
 
 describe("Status & Introspection", () => {
@@ -650,8 +631,8 @@ describe("Status & Introspection", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Status Test Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance", "transfer"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance", "transfer"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -739,8 +720,8 @@ describe("Capability Management", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Cap Budget Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance", "transfer", "admin_panel"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance", "transfer", "admin_panel"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -756,7 +737,7 @@ describe("Capability Management", () => {
 		const res = await api("/agent/request-capability", {
 			method: "POST",
 			headers: { authorization: `Bearer ${jwt}` },
-			body: JSON.stringify({ capabilityIds: ["transfer"] }),
+			body: JSON.stringify({ capability_ids: ["transfer"] }),
 		});
 
 		expect(res.ok).toBe(true);
@@ -776,8 +757,8 @@ describe("Capability Management", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Narrow Cap Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -793,7 +774,7 @@ describe("Capability Management", () => {
 		const res = await api("/agent/request-capability", {
 			method: "POST",
 			headers: { authorization: `Bearer ${jwt}` },
-			body: JSON.stringify({ capabilityIds: ["admin_panel"] }),
+			body: JSON.stringify({ capability_ids: ["admin_panel"] }),
 		});
 
 		expect(res.ok).toBe(true);
@@ -813,8 +794,8 @@ describe("Capability Management", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Approve Cap Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -827,7 +808,7 @@ describe("Capability Management", () => {
 		});
 
 		const approveRes = await authedPost("/agent/approve-capability", {
-			agentId,
+			agent_id: agentId,
 			action: "approve",
 		});
 
@@ -841,8 +822,8 @@ describe("Capability Management", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Deny Cap Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -855,7 +836,7 @@ describe("Capability Management", () => {
 		});
 
 		const denyRes = await authedPost("/agent/approve-capability", {
-			agentId,
+			agent_id: agentId,
 			action: "deny",
 		});
 
@@ -868,8 +849,8 @@ describe("Capability Management", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Direct Grant Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: [],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: [],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -882,8 +863,8 @@ describe("Capability Management", () => {
 		});
 
 		const grantRes = await authedPost("/agent/grant-capability", {
-			agentId,
-			capabilityIds: ["transfer", "admin_panel"],
+			agent_id: agentId,
+			capability_ids: ["transfer", "admin_panel"],
 		});
 
 		expect(grantRes.ok).toBe(true);
@@ -899,8 +880,8 @@ describe("Agent Lifecycle", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Lifecycle Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -919,7 +900,7 @@ describe("Agent Lifecycle", () => {
 		const revokeRes = await api("/agent/revoke", {
 			method: "POST",
 			headers: { authorization: `Bearer ${hostJWT}` },
-			body: JSON.stringify({ agentId }),
+			body: JSON.stringify({ agent_id: agentId }),
 		});
 
 		expect(revokeRes.ok).toBe(true);
@@ -932,8 +913,8 @@ describe("Agent Lifecycle", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Rotate Key Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -950,7 +931,7 @@ describe("Agent Lifecycle", () => {
 		const rotateRes = await api("/agent/rotate-key", {
 			method: "POST",
 			headers: { authorization: `Bearer ${oldJwt}` },
-			body: JSON.stringify({ publicKey: newKeypair.publicKey }),
+			body: JSON.stringify({ public_key: newKeypair.publicKey }),
 		});
 
 		expect(rotateRes.ok).toBe(true);
@@ -989,8 +970,8 @@ describe("Agent Lifecycle", () => {
 				headers: { "content-type": "application/json", cookie },
 				body: JSON.stringify({
 					name: "Cleanup Host",
-					publicKey: hostKeypair.publicKey,
-					defaultCapabilityIds: [],
+					public_key: hostKeypair.publicKey,
+					default_capability_ids: [],
 				}),
 			}),
 		);
@@ -1057,8 +1038,8 @@ describe("Agent Lifecycle", () => {
 				headers: { "content-type": "application/json", cookie },
 				body: JSON.stringify({
 					name: "Reactivation Host",
-					publicKey: hostKeypair.publicKey,
-					defaultCapabilityIds: ["check_balance"],
+					public_key: hostKeypair.publicKey,
+					default_capability_ids: ["check_balance"],
 				}),
 			}),
 		);
@@ -1080,7 +1061,7 @@ describe("Agent Lifecycle", () => {
 				},
 				body: JSON.stringify({
 					name: "Reactivation Agent",
-					capabilityIds: ["check_balance"],
+					capability_ids: ["check_balance"],
 					mode: "delegated",
 				}),
 			}),
@@ -1126,15 +1107,15 @@ describe("Discovery", () => {
 		expect(body.algorithms).toEqual(["Ed25519"]);
 		expect(body.endpoints).toBeDefined();
 		expect(body.endpoints.register).toBe("/agent/register");
-		expect(body.endpoints.capabilities).toBe("/agent/capabilities");
+		expect(body.endpoints.capabilities).toBe("/capabilities");
 		expect(body.endpoints.status).toBe("/agent/status");
 		expect(body.endpoints.introspect).toBe("/agent/introspect");
 	});
 });
 
 describe("Capabilities Endpoint", () => {
-	it("GET /agent/capabilities returns list with id and http descriptor", async () => {
-		const res = await api("/agent/capabilities", { method: "GET" });
+	it("GET /capabilities returns list with id and http descriptor", async () => {
+		const res = await api("/capabilities", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
@@ -1152,8 +1133,8 @@ describe("Capabilities Endpoint", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Cap Endpoint Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -1166,7 +1147,7 @@ describe("Capabilities Endpoint", () => {
 		});
 
 		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId);
-		const res = await api("/agent/capabilities", {
+		const res = await api("/capabilities", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt}` },
 		});
@@ -1185,7 +1166,7 @@ describe("Capabilities Endpoint", () => {
 	});
 
 	it("supports intent filtering", async () => {
-		const res = await api("/agent/capabilities?intent=balance", { method: "GET" });
+		const res = await api("/capabilities?intent=balance", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
@@ -1202,8 +1183,8 @@ describe("Agent Session", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Session Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -1254,8 +1235,8 @@ describe("Edge Cases", () => {
 		const hostKeypair = await generateTestKeypair();
 		const createRes = await authedPost("/agent/host/create", {
 			name: "Introspect Revoke Host",
-			publicKey: hostKeypair.publicKey,
-			defaultCapabilityIds: ["check_balance"],
+			public_key: hostKeypair.publicKey,
+			default_capability_ids: ["check_balance"],
 		});
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -1274,7 +1255,7 @@ describe("Edge Cases", () => {
 		await api("/agent/revoke", {
 			method: "POST",
 			headers: { authorization: `Bearer ${hostJWT}` },
-			body: JSON.stringify({ agentId }),
+			body: JSON.stringify({ agent_id: agentId }),
 		});
 
 		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId);
@@ -1289,7 +1270,7 @@ describe("Edge Cases", () => {
 	});
 
 	it("get-host returns NOT_FOUND for unknown host", async () => {
-		const res = await authedGet("/agent/host/get?hostId=nonexistent");
+		const res = await authedGet("/agent/host/get?host_id=nonexistent");
 		expect(res.ok).toBe(false);
 		expect(res.status).toBe(404);
 	});
@@ -1297,7 +1278,7 @@ describe("Edge Cases", () => {
 	it("host create without publicKey uses enrollment flow", async () => {
 		const res = await authedPost("/agent/host/create", {
 			name: "Enrollment Host",
-			defaultCapabilityIds: ["check_balance"],
+			default_capability_ids: ["check_balance"],
 		});
 
 		expect(res.ok).toBe(true);

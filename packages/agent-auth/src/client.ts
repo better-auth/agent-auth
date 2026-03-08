@@ -10,7 +10,7 @@ export const agentAuthClient = () => {
 		$InferServerPlugin: {} as ReturnType<typeof agentAuth>,
 		pathMethods: {
 			"/agent/agent-configuration": "GET",
-			"/agent/capabilities": "GET",
+			"/capabilities": "GET",
 			"/agent/list": "GET",
 			"/agent/get": "GET",
 			"/agent/status": "GET",
@@ -37,7 +37,6 @@ export const agentAuthClient = () => {
 			"/agent/host/rotate-key": "POST",
 			"/agent/host/enroll": "POST",
 			"/agent/ciba/authorize": "POST",
-			"/agent/ciba/token": "POST",
 			"/agent/ciba/approve": "POST",
 			"/agent/ciba/deny": "POST",
 		},

@@ -25,7 +25,7 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				agentId: z.string(),
+				agent_id: z.string(),
 			}),
 			metadata: {
 				openapi: {
@@ -47,7 +47,7 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { agentId } = ctx.body;
+			const { agent_id: agentId } = ctx.body;
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,

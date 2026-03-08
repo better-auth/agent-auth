@@ -19,7 +19,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 					description:
 						"One-time enrollment token received from the dashboard.",
 				}),
-				publicKey: z
+				public_key: z
 					.record(
 						z.string(),
 						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
@@ -40,7 +40,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 			},
 		},
 		async (ctx) => {
-			const { token, publicKey, name } = ctx.body;
+			const { token, public_key: publicKey, name } = ctx.body;
 
 			if (!publicKey.kty || !publicKey.x) {
 				throw APIError.from("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);

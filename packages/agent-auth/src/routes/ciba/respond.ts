@@ -40,7 +40,7 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				authReqId: z.string().meta({
+				auth_req_id: z.string().meta({
 					description: "The CIBA auth request ID to approve.",
 				}),
 			}),
@@ -56,7 +56,7 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 
 			const request = await ctx.context.adapter.findOne<CibaAuthRequest>({
 				model: TABLE.ciba,
-				where: [{ field: "id", value: ctx.body.authReqId }],
+				where: [{ field: "id", value: ctx.body.auth_req_id }],
 			});
 
 			if (!request) {
@@ -196,7 +196,7 @@ export function cibaDeny(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				authReqId: z.string().meta({
+				auth_req_id: z.string().meta({
 					description: "The CIBA auth request ID to deny.",
 				}),
 			}),
@@ -212,7 +212,7 @@ export function cibaDeny(opts: ResolvedAgentAuthOptions) {
 
 			const request = await ctx.context.adapter.findOne<CibaAuthRequest>({
 				model: TABLE.ciba,
-				where: [{ field: "id", value: ctx.body.authReqId }],
+				where: [{ field: "id", value: ctx.body.auth_req_id }],
 			});
 
 			if (!request) {

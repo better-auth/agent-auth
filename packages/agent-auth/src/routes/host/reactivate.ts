@@ -17,7 +17,7 @@ export function reactivateHost(
 		{
 			method: "POST",
 			body: z.object({
-				hostId: z.string(),
+				host_id: z.string(),
 				proof: z.string().meta({
 					description:
 						"A JWT signed by the host's private key proving possession.",
@@ -31,9 +31,10 @@ export function reactivateHost(
 			},
 		},
 		async (ctx) => {
+			const { host_id: hostId, proof } = ctx.body;
 			const host = await ctx.context.adapter.findOne<AgentHost>({
 				model: TABLE.host,
-				where: [{ field: "id", value: ctx.body.hostId }],
+				where: [{ field: "id", value: hostId }],
 			});
 
 			if (!host) {
@@ -63,7 +64,7 @@ export function reactivateHost(
 			}
 
 			const payload = await verifyAgentJWT({
-				jwt: ctx.body.proof,
+				jwt: proof,
 				publicKey: hostPubKey,
 				maxAge: opts.jwtMaxAge,
 			});

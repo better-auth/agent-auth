@@ -30,7 +30,6 @@ import { updateHost } from "./host/update";
 import { cibaAuthorize } from "./ciba/authorize";
 import { cibaPending } from "./ciba/pending";
 import { cibaApprove, cibaDeny } from "./ciba/respond";
-import { cibaToken } from "./ciba/token";
 
 export function createAgentRoutes(
 	opts: ResolvedAgentAuthOptions,
@@ -46,8 +45,8 @@ export function createAgentRoutes(
 		getAgentSession: getAgentSession(), // not in spec
 		revokeAgent: revokeAgent(opts), // §6.6
 		rotateKey: rotateKey(opts), // §6.7
-		introspect: introspect(opts, jtiCache), // §6.10
-		reactivateAgent: reactivateAgent(opts, jtiCache), // §2.5
+		introspect: introspect(opts, jtiCache, jwksCache), // §6.10
+		reactivateAgent: reactivateAgent(opts), // §6.6
 		cleanupAgents: cleanupAgents(opts), // not in spec
 		approveCapability: approveCapability(opts), // §9.1
 		grantCapability: grantCapability(opts), // §4
@@ -65,7 +64,6 @@ export function createAgentRoutes(
 		updateHost: updateHost(opts), // §3
 		rotateHostKey: rotateHostKey(opts, jtiCache, jwksCache), // §6.8
 		cibaAuthorize: cibaAuthorize(opts), // §9.2
-		cibaToken: cibaToken(opts), // §9.2
 		cibaApprove: cibaApprove(opts), // §9.2
 		cibaDeny: cibaDeny(opts), // §9.2
 		cibaPending: cibaPending(), // §9.2

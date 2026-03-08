@@ -24,7 +24,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 
 			const endpoints: Record<string, string> = {
 				register: "/agent/register",
-				capabilities: "/agent/capabilities",
+				capabilities: "/capabilities",
 				request_capability: "/agent/request-capability",
 				status: "/agent/status",
 				revoke: "/agent/revoke",

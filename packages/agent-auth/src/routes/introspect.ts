@@ -1,5 +1,5 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { decodeJwt } from "jose";
+import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import { TABLE } from "../constants";
 import type {
@@ -10,6 +10,7 @@ import type {
 } from "../types";
 import { verifyAgentJWT } from "../utils/crypto";
 import type { JtiCacheStore } from "../utils/jti-cache";
+import type { JwksCacheStore } from "../utils/jwks-cache";
 import { activeGrants, formatGrantsResponse } from "./_helpers";
 
 /**
@@ -24,6 +25,7 @@ import { activeGrants, formatGrantsResponse } from "./_helpers";
 export function introspect(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiCacheStore,
+	jwksCache?: JwksCacheStore,
 ) {
 	return createAuthEndpoint(
 		"/agent/introspect",
@@ -59,22 +61,32 @@ export function introspect(
 
 			if (!agent) return ctx.json(inactive);
 			if (agent.status !== "active") return ctx.json(inactive);
-			if (!agent.publicKey) return ctx.json(inactive);
 
-			let publicKey: AgentJWK;
-			try {
-				const parsed: unknown = JSON.parse(agent.publicKey);
-				if (
-					!parsed ||
-					typeof parsed !== "object" ||
-					!("kty" in parsed)
-				) {
-					return ctx.json(inactive);
-				}
-				publicKey = parsed as AgentJWK;
-			} catch {
-				return ctx.json(inactive);
+			let publicKey: AgentJWK | null = null;
+
+			if (agent.jwksUrl && jwksCache) {
+				try {
+					const header = decodeProtectedHeader(token);
+					if (header.kid) {
+						publicKey = await jwksCache.getKeyByKid(agent.jwksUrl, header.kid);
+					}
+				} catch {}
 			}
+
+			if (!publicKey && agent.publicKey) {
+				try {
+					const parsed: unknown = JSON.parse(agent.publicKey);
+					if (
+						parsed &&
+						typeof parsed === "object" &&
+						"kty" in parsed
+					) {
+						publicKey = parsed as AgentJWK;
+					}
+				} catch {}
+			}
+
+			if (!publicKey) return ctx.json(inactive);
 
 			const payload = await verifyAgentJWT({
 				jwt: token,

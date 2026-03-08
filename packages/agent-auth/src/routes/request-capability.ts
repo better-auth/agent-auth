@@ -36,9 +36,9 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				capabilityIds: z.array(z.string()).min(1),
+				capability_ids: z.array(z.string()).min(1),
 				reason: z.string().optional(),
-				preferredMethod: z
+				preferred_method: z
 					.enum(["device_authorization", "ciba"])
 					.optional(),
 			}),
@@ -61,7 +61,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { capabilityIds, reason, preferredMethod } = ctx.body;
+			const { capability_ids: capabilityIds, reason, preferred_method: preferredMethod } = ctx.body;
 
 			// Validate blocked (§10.6)
 			if (opts.blockedCapabilityIds.length > 0) {

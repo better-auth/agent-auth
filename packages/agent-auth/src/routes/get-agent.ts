@@ -36,7 +36,7 @@ export function getAgent() {
 		{
 			method: "GET",
 			query: z.object({
-				agentId: z.string(),
+				agent_id: z.string(),
 			}),
 			use: [sessionMiddleware],
 			metadata: {
@@ -52,7 +52,7 @@ export function getAgent() {
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,
 				where: [
-					{ field: "id", value: ctx.query.agentId },
+					{ field: "id", value: ctx.query.agent_id },
 					{ field: "userId", value: session.user.id },
 				],
 			});

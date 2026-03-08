@@ -19,7 +19,7 @@ import type {
  */
 export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
-		"/agent/capabilities",
+		"/capabilities",
 		{
 			method: "GET",
 			query: z

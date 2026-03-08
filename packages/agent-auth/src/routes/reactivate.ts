@@ -4,61 +4,91 @@ import * as z from "zod";
 import { TABLE } from "../constants";
 import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
-import { verifyAgentJWT } from "../utils/crypto";
-import type { JtiCacheStore } from "../utils/jti-cache";
 import { parseCapabilityIds } from "../utils/capabilities";
 import type {
 	Agent,
 	AgentCapabilityGrant,
 	AgentHost,
-	AgentJWK,
+	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../types";
-import { createGrantRows, formatGrantsResponse } from "./_helpers";
+import {
+	buildApprovalInfo,
+	createGrantRows,
+	formatGrantsResponse,
+} from "./_helpers";
 
-export function reactivateAgent(
-	opts: ResolvedAgentAuthOptions,
-	jtiCache?: JtiCacheStore,
-) {
+/**
+ * POST /agent/reactivate (§6.6).
+ *
+ * Reactivates an expired agent. Auth: Host JWT.
+ * Capabilities decay to host defaults; escalated capabilities are lost.
+ */
+export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/reactivate",
 		{
 			method: "POST",
 			body: z.object({
-				agentId: z.string(),
-				proof: z.string().meta({
-					description:
-						"A signed JWT from the agent's existing keypair proving possession.",
-				}),
+				agent_id: z.string(),
 			}),
 			metadata: {
 				openapi: {
 					description:
-						"Reactivate an expired agent via proof-of-possession (§2.5). Capabilities decay to host defaults.",
+						"Reactivate an expired agent (§6.6). Capabilities decay to host defaults.",
 				},
 			},
 		},
 		async (ctx) => {
+			const hostSession = (ctx.context as Record<string, unknown>)
+				.hostSession as HostSession | undefined;
+
+			if (!hostSession) {
+				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
+			}
+
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,
-				where: [{ field: "id", value: ctx.body.agentId }],
+				where: [{ field: "id", value: ctx.body.agent_id }],
 			});
 
 			if (!agent) {
 				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
+			if (agent.hostId !== hostSession.host.id) {
+				throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+			}
+
+			// §6.6 state checks
+			if (agent.status === "active") {
+				const grants =
+					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+						model: TABLE.grant,
+						where: [{ field: "agentId", value: agent.id }],
+					});
+				return ctx.json({
+					agent_id: agent.id,
+					status: "active" as const,
+					agent_capability_grants: formatGrantsResponse(grants),
+					activated_at: agent.activatedAt,
+					expires_at: agent.expiresAt,
+				});
+			}
 			if (agent.status === "revoked") {
 				throw APIError.from("FORBIDDEN", ERR.AGENT_REVOKED);
 			}
-
-			if (agent.status === "active") {
-				return ctx.json({
-					status: "active",
-					message: "Agent is already active.",
-				});
+			if (agent.status === "rejected") {
+				throw APIError.from("FORBIDDEN", ERR.AGENT_REJECTED);
+			}
+			if (agent.status === "claimed") {
+				throw APIError.from("FORBIDDEN", ERR.AGENT_CLAIMED);
+			}
+			if (agent.status === "pending") {
+				throw APIError.from("FORBIDDEN", ERR.AGENT_PENDING);
 			}
 
+			// Absolute lifetime check (§2.4)
 			if (opts.absoluteLifetime > 0 && agent.createdAt) {
 				const absoluteExpiry =
 					new Date(agent.createdAt).getTime() +
@@ -81,66 +111,42 @@ export function reactivateAgent(
 				}
 			}
 
-			if (!agent.publicKey) {
-				throw APIError.from("FORBIDDEN", ERR.AGENT_REVOKED);
-			}
-
-			let publicKey: AgentJWK;
-			try {
-				publicKey = JSON.parse(agent.publicKey) as AgentJWK;
-			} catch {
-				throw APIError.from("FORBIDDEN", ERR.INVALID_PUBLIC_KEY);
-			}
-
-			const payload = await verifyAgentJWT({
-				jwt: ctx.body.proof,
-				publicKey,
-				maxAge: opts.jwtMaxAge,
+			// Resolve host defaults
+			const host = await ctx.context.adapter.findOne<AgentHost>({
+				model: TABLE.host,
+				where: [{ field: "id", value: agent.hostId }],
 			});
 
-			if (!payload || payload.sub !== agent.id) {
-				throw APIError.from("UNAUTHORIZED", ERR.INVALID_JWT);
+			if (!host || host.status === "revoked") {
+				throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
 			}
 
-			if (jtiCache && payload.jti) {
-				if (await jtiCache.has(String(payload.jti))) {
-					throw APIError.from("UNAUTHORIZED", ERR.JWT_REPLAY);
-				}
-				await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
-			}
+			const baseCapabilityIds = parseCapabilityIds(
+				host.defaultCapabilityIds,
+			);
+
+			// Revoke all existing grants and re-grant host defaults
+			await createGrantRows(
+				ctx.context.adapter,
+				agent.id,
+				baseCapabilityIds,
+				agent.userId,
+				{ clearExisting: true },
+				{
+					pluginOpts: opts,
+					hostId: agent.hostId,
+					userId: agent.userId,
+				},
+			);
 
 			const now = new Date();
+			const isHostLinked = !!host.userId;
+			const needsApproval =
+				!isHostLinked && baseCapabilityIds.length > 0;
 
-			if (agent.hostId) {
-				const host = await ctx.context.adapter.findOne<AgentHost>({
-					model: TABLE.host,
-					where: [{ field: "id", value: agent.hostId }],
-				});
-
-				if (!host || host.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
-				}
-
-				const baseCapabilityIds = parseCapabilityIds(
-					host.defaultCapabilityIds,
-				);
-
-				await createGrantRows(
-					ctx.context.adapter,
-					agent.id,
-					baseCapabilityIds,
-					agent.userId,
-					{ clearExisting: true },
-					{
-						pluginOpts: opts,
-						hostId: agent.hostId,
-						userId: agent.userId,
-					},
-				);
-			}
-
+			const newStatus = needsApproval ? "pending" : "active";
 			const expiresAt =
-				opts.agentSessionTTL > 0
+				!needsApproval && opts.agentSessionTTL > 0
 					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
 					: null;
 
@@ -148,13 +154,30 @@ export function reactivateAgent(
 				model: TABLE.agent,
 				where: [{ field: "id", value: agent.id }],
 				update: {
-					status: "active",
-					activatedAt: now,
+					status: newStatus,
+					activatedAt: needsApproval ? null : now,
 					expiresAt,
-					lastUsedAt: now,
+					lastUsedAt: needsApproval ? null : now,
 					updatedAt: now,
 				},
 			});
+
+			if (needsApproval) {
+				const pendingGrants =
+					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+						model: TABLE.grant,
+						where: [{ field: "agentId", value: agent.id }],
+					});
+				for (const g of pendingGrants) {
+					if (g.status === "active") {
+						await ctx.context.adapter.update({
+							model: TABLE.grant,
+							where: [{ field: "id", value: g.id }],
+							update: { status: "pending", updatedAt: now },
+						});
+					}
+				}
+			}
 
 			const grants =
 				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
@@ -162,24 +185,44 @@ export function reactivateAgent(
 					where: [{ field: "agentId", value: agent.id }],
 				});
 
-			const activeGrants = grants.filter((g) => g.status === "active");
-
 			emit(opts, {
 				type: "agent.reactivated",
 				actorType: "agent",
 				agentId: agent.id,
 				hostId: agent.hostId ?? undefined,
 				metadata: {
-					capabilityIds: activeGrants.map((g) => g.capabilityId),
+					capabilityIds: grants
+						.filter((g) => g.status === "active")
+						.map((g) => g.capabilityId),
 				},
 			}, ctx);
 
-			return ctx.json({
-				status: "active" as const,
-				agentId: agent.id,
-				agent_capability_grants: formatGrantsResponse(activeGrants),
-				activatedAt: now,
-			});
+			const response: Record<string, unknown> = {
+				agent_id: agent.id,
+				status: newStatus,
+				agent_capability_grants: formatGrantsResponse(grants),
+				activated_at: needsApproval ? null : now.toISOString(),
+				expires_at: expiresAt ? expiresAt.toISOString() : null,
+			};
+
+			if (needsApproval) {
+				const origin = new URL(ctx.context.baseURL).origin;
+				response.approval = await buildApprovalInfo(
+					opts,
+					ctx.context.adapter,
+					ctx.context.internalAdapter,
+					{
+						origin,
+						agentId: agent.id,
+						userId: agent.userId,
+						agentName: agent.name,
+						hostId: agent.hostId,
+						capabilityIds: baseCapabilityIds,
+					},
+				);
+			}
+
+			return ctx.json(response);
 		},
 	);
 }

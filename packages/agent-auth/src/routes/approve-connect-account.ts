@@ -25,7 +25,7 @@ export function approveConnectAccount(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				requestId: z.string(),
+				request_id: z.string(),
 				action: z.enum(["approve", "deny"]),
 			}),
 			use: [sessionMiddleware],
@@ -40,7 +40,7 @@ export function approveConnectAccount(opts: ResolvedAgentAuthOptions) {
 			const session = ctx.context.session;
 
 			const userId = session.user.id;
-			const { requestId, action } = ctx.body;
+			const { request_id: requestId, action } = ctx.body;
 
 			const request = await ctx.context.adapter.findOne<CibaAuthRequest>({
 				model: TABLE.ciba,

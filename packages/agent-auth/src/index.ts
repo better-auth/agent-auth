@@ -103,7 +103,6 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 			updateHost: routes.updateHost,
 			rotateHostKey: routes.rotateHostKey,
 			cibaAuthorize: routes.cibaAuthorize,
-			cibaToken: routes.cibaToken,
 			cibaApprove: routes.cibaApprove,
 			cibaDeny: routes.cibaDeny,
 			cibaPending: routes.cibaPending,

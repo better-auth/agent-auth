@@ -26,7 +26,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 					description:
 						"Human-readable name identifying the environment/device.",
 				}),
-				publicKey: z
+				public_key: z
 					.record(
 						z.string(),
 						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
@@ -34,13 +34,13 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 					.optional()
 					.meta({
 						description:
-							"Host Ed25519 public key as JWK. Optional when jwksUrl is provided or for enrollment flow.",
+							"Host Ed25519 public key as JWK. Optional when jwks_url is provided or for enrollment flow.",
 					}),
-				jwksUrl: z.string().url().optional().meta({
+				jwks_url: z.string().url().optional().meta({
 					description:
-						"JWKS URL for remote key discovery. If provided, publicKey is optional.",
+						"JWKS URL for remote key discovery. If provided, public_key is optional.",
 				}),
-				defaultCapabilityIds: z.array(z.string()).optional().meta({
+				default_capability_ids: z.array(z.string()).optional().meta({
 					description:
 						"Default capability IDs agents inherit. Reactivated agents reset to these.",
 				}),
@@ -58,9 +58,9 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 
 			const {
 				name: hostName,
-				publicKey,
-				jwksUrl,
-				defaultCapabilityIds: bodyCapIds,
+				public_key: publicKey,
+				jwks_url: jwksUrl,
+				default_capability_ids: bodyCapIds,
 			} = ctx.body;
 			const isEnrollmentFlow = !publicKey && !jwksUrl;
 

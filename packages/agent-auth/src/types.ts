@@ -199,7 +199,7 @@ export type AgentAuthPath =
 	| "/agent/request-capability"
 	| "/agent/approve-capability"
 	| "/agent/agent-configuration"
-	| "/agent/capabilities"
+	| "/capabilities"
 	| "/agent/status"
 	| "/agent/introspect"
 	| "/agent/connect-account"
@@ -214,7 +214,6 @@ export type AgentAuthPath =
 	| "/agent/host/update"
 	| "/agent/host/rotate-key"
 	| "/agent/ciba/authorize"
-	| "/agent/ciba/token"
 	| "/agent/ciba/approve"
 	| "/agent/ciba/deny"
 	| "/agent/ciba/pending";

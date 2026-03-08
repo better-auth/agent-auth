@@ -28,7 +28,7 @@ export function listAgents() {
 						])
 						.optional(),
 					mode: z.enum(["delegated", "autonomous"]).optional(),
-					hostId: z.string().optional(),
+					host_id: z.string().optional(),
 					limit: z.coerce.number().positive().optional(),
 					offset: z.coerce.number().nonnegative().optional(),
 				})
@@ -57,8 +57,8 @@ export function listAgents() {
 			if (ctx.query?.mode) {
 				where.push({ field: "mode", value: ctx.query.mode });
 			}
-			if (ctx.query?.hostId) {
-				where.push({ field: "hostId", value: ctx.query.hostId });
+			if (ctx.query?.host_id) {
+				where.push({ field: "hostId", value: ctx.query.host_id });
 			}
 
 			const allAgents = await ctx.context.adapter.findMany<Agent>({

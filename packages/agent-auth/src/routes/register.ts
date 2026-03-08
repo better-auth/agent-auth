@@ -32,10 +32,10 @@ import {
 
 const registerBodySchema = z.object({
 	name: z.string().min(1),
-	capabilityIds: z.array(z.string()).optional(),
+	capability_ids: z.array(z.string()).optional(),
 	reason: z.string().optional(),
 	mode: z.enum(["delegated", "autonomous"]).optional(),
-	preferredMethod: z.enum(["device_authorization", "ciba"]).optional(),
+	preferred_method: z.enum(["device_authorization", "ciba"]).optional(),
 });
 
 export function register(
@@ -59,10 +59,10 @@ export function register(
 		async (ctx) => {
 			const {
 				name,
-				capabilityIds: requestedCapIds,
+				capability_ids: requestedCapIds,
 				reason,
 				mode: rawMode,
-				preferredMethod,
+				preferred_method: preferredMethod,
 			} = ctx.body;
 
 			// ---------- Require host JWT ----------

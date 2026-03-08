@@ -18,7 +18,7 @@ export function updateAgent(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				agentId: z.string(),
+				agent_id: z.string(),
 				name: z.string().optional(),
 				metadata: z
 					.record(
@@ -42,7 +42,7 @@ export function updateAgent(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const session = ctx.context.session;
 
-			const { agentId, name, metadata } = ctx.body;
+			const { agent_id: agentId, name, metadata } = ctx.body;
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,

@@ -1,49 +1,91 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
+import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
 import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
-import type { Agent, AgentCapabilityGrant, AgentHost, ResolvedAgentAuthOptions } from "../../types";
-import { sessionMiddleware } from "better-auth/api";
+import type {
+	Agent,
+	AgentCapabilityGrant,
+	AgentHost,
+	HostSession,
+	ResolvedAgentAuthOptions,
+} from "../../types";
 import { checkSharedOrg } from "../_helpers";
 
+/**
+ * POST /agent/host/revoke (§6.10).
+ *
+ * Revokes a host and cascades to all agents under it.
+ * Supports two auth modes:
+ *   - Host JWT: the host revokes itself (spec §6.10)
+ *   - User session: user revokes a host they own
+ */
 export function revokeHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/host/revoke",
 		{
 			method: "POST",
-			body: z.object({
-				hostId: z.string(),
-			}),
-			use: [sessionMiddleware],
+			body: z
+				.object({
+					host_id: z.string().optional(),
+				})
+				.optional(),
 			metadata: {
 				openapi: {
 					description:
-						"Revoke an agent host and cascade to all agents under it (§6.9).",
+						"Revoke a host and cascade to all agents under it (§6.10).",
 				},
 			},
 		},
 		async (ctx) => {
-			const session = ctx.context.session;
+			const hostSession = (ctx.context as Record<string, unknown>)
+				.hostSession as HostSession | undefined;
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const userSession = await getSessionFromCtx(ctx as any);
+
+			let targetHostId: string;
+
+			if (hostSession) {
+				targetHostId = ctx.body?.host_id ?? hostSession.host.id;
+				if (targetHostId !== hostSession.host.id) {
+					throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+				}
+			} else if (userSession) {
+				if (!ctx.body?.host_id) {
+					throw new APIError("BAD_REQUEST", {
+						message:
+							"host_id is required when using user session.",
+					});
+				}
+				targetHostId = ctx.body.host_id;
+			} else {
+				throw APIError.from(
+					"UNAUTHORIZED",
+					ERR.UNAUTHORIZED_SESSION,
+				);
+			}
 
 			const host = await ctx.context.adapter.findOne<AgentHost>({
 				model: TABLE.host,
-				where: [{ field: "id", value: ctx.body.hostId }],
+				where: [{ field: "id", value: targetHostId }],
 			});
 
 			if (!host) {
 				throw APIError.from("NOT_FOUND", ERR.HOST_NOT_FOUND);
 			}
 
-			if (host.userId !== session.user.id && host.userId !== null) {
-				const sameOrg = await checkSharedOrg(
-					ctx.context.adapter,
-					session.user.id,
-					host.userId,
-				);
-				if (!sameOrg) {
-					throw APIError.from("NOT_FOUND", ERR.HOST_NOT_FOUND);
+			if (userSession && !hostSession) {
+				if (host.userId !== userSession.user.id && host.userId !== null) {
+					const sameOrg = await checkSharedOrg(
+						ctx.context.adapter,
+						userSession.user.id,
+						host.userId,
+					);
+					if (!sameOrg) {
+						throw APIError.from("NOT_FOUND", ERR.HOST_NOT_FOUND);
+					}
 				}
 			}
 
@@ -106,7 +148,10 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 
 			emit(opts, {
 				type: "host.revoked",
-				actorId: session.user.id,
+				actorId:
+					userSession?.user.id ??
+					hostSession?.host.userId ??
+					undefined,
 				hostId: host.id,
 				metadata: { agentsRevoked: toRevoke.length },
 			}, ctx);
