@@ -1,17 +1,40 @@
 import { agentAuth } from "@better-auth/agent-auth";
-import { fromOpenAPI, createOpenAPIHandler } from "@better-auth/agent-auth/openapi";
+import { createFromOpenAPI } from "@better-auth/agent-auth/openapi";
 import { betterAuth } from "better-auth";
-import { genericOAuth } from "better-auth/plugins";
+import { genericOAuth, anonymous } from "better-auth/plugins";
 import { db, getSetting, insertLog } from "./db";
 
 const VERCEL_OPENAPI_URL =
 	"https://spec.speakeasy.com/vercel/vercel-docs/vercel-oas-with-code-samples";
-
-const vercelSpec = await fetch(VERCEL_OPENAPI_URL).then((r) => r.json());
-
 const VERCEL_MCP_RESOURCE = "https://mcp.vercel.com/";
 const VERCEL_MCP_CLIENT_ID = process.env.VERCEL_MCP_CLIENT_ID as string;
 const VERCEL_MCP_REDIRECT_URI = `${process.env.BETTER_AUTH_URL}/callback`;
+const vercelSpec = await fetch(VERCEL_OPENAPI_URL).then((r) => r.json());
+
+const openapi = createFromOpenAPI(vercelSpec, {
+	baseUrl: "https://api.vercel.com",
+	defaultHostCapabilities: "GET",
+	async resolveHeaders({ agentSession, ctx }) {
+		const account = await ctx.context.adapter.findOne<{
+			accessToken: string | null;
+		}>({
+			model: "account",
+			where: [
+				{ field: "userId", value: agentSession.user.id },
+				{ field: "providerId", value: "vercel-mcp" },
+			],
+		});
+
+		if (!account?.accessToken) {
+			throw new Error(
+				"No Vercel access token found. User must sign in with Vercel first.",
+			);
+		}
+
+		return { Authorization: `Bearer ${account.accessToken}` };
+	},
+})	
+
 
 export const auth = betterAuth({
 	database: db,
@@ -93,39 +116,28 @@ export const auth = betterAuth({
 				},
 			],
 		}),
+		anonymous(),
 		agentAuth({
 			freshSessionWindow: () => {
 				if (getSetting("freshSessionEnabled") !== "true") return 0;
 				return parseInt(getSetting("freshSessionWindow") ?? "300", 10);
 			},
-			providerName: "vercel",
+			...openapi,
+			providerName: "Vercel",
+			
 			providerDescription:
 				"Vercel is a cloud platform for deploying and hosting frontend applications, serverless functions, and full-stack web projects with automatic CI/CD, edge networking, and seamless Git integration.",
-			modes: ["delegated", "autonomous"],
-			capabilities: fromOpenAPI(vercelSpec),
-			onExecute: createOpenAPIHandler(vercelSpec, {
-				baseUrl: "https://api.vercel.com",
-				async resolveHeaders({ agentSession, ctx }) {
-					const account = await ctx.context.adapter.findOne<{
-						accessToken: string | null;
-					}>({
-						model: "account",
-						where: [
-							{ field: "userId", value: agentSession.user.id },
-							{ field: "providerId", value: "vercel-mcp" },
-						],
-					});
-
-					if (!account?.accessToken) {
-						throw new Error(
-							"No Vercel access token found. User must sign in with Vercel first.",
-						);
-					}
-
-					return { Authorization: `Bearer ${account.accessToken}` };
-				},
-			}),
-			onEvent: (event) => {
+			modes: ["delegated"],
+		approvalMethods: ["ciba", "device_authorization"],
+		resolveApprovalMethod: ({ preferredMethod, supportedMethods }) => {
+			const serverPreferred =
+				getSetting("preferredApprovalMethod") ?? "device_authorization";
+			const method = preferredMethod ?? serverPreferred;
+			return supportedMethods.includes(method)
+				? method
+				: "device_authorization";
+		},
+		onEvent: (event) => {
 				try {
 					const {
 						type,
@@ -152,4 +164,3 @@ export const auth = betterAuth({
 		}),
 	],
 });
-

@@ -541,8 +541,11 @@ export function register(
 				agent.id,
 				resolvedCaps,
 				userId,
-				{ reason: reason ?? null },
-				{ pluginOpts: opts, hostId, userId },
+				{
+					reason: reason ?? null,
+					...(isHostPending ? { status: "pending" } : {}),
+				},
+				isHostPending ? undefined : { pluginOpts: opts, hostId, userId },
 			);
 
 			if (pendingCaps.length > 0) {

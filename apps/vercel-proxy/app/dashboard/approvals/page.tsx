@@ -26,14 +26,13 @@ function Spinner() {
 	);
 }
 
-interface CibaRequest {
-	auth_req_id: string;
-	client_id: string;
+interface ApprovalRequest {
+	approval_id: string;
+	method: string;
 	agent_id: string | null;
 	agent_name: string | null;
 	binding_message: string | null;
 	capabilities: string[];
-	delivery_mode: string;
 	expires_in: number;
 	created_at: string;
 }
@@ -51,7 +50,7 @@ function timeAgo(date: string | null) {
 }
 
 export default function ApprovalsPage() {
-	const [requests, setRequests] = useState<CibaRequest[]>([]);
+	const [requests, setRequests] = useState<ApprovalRequest[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [acting, setActing] = useState<string | null>(null);
 
@@ -70,19 +69,19 @@ export default function ApprovalsPage() {
 	}, [fetchRequests]);
 
 	const handleAction = async (
-		authReqId: string,
+		approvalId: string,
 		action: "approve" | "deny",
 	) => {
-		setActing(authReqId);
+		setActing(approvalId);
 		try {
-			const res = await fetch(`/api/auth/agent/ciba/${action}`, {
+			const res = await fetch("/api/auth/agent/approve-capability", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ auth_req_id: authReqId }),
+				body: JSON.stringify({ approval_id: approvalId, action }),
 			});
 			if (res.ok) {
 				setRequests((prev) =>
-					prev.filter((r) => r.auth_req_id !== authReqId),
+					prev.filter((r) => r.approval_id !== approvalId),
 				);
 			}
 		} catch {
@@ -136,7 +135,7 @@ export default function ApprovalsPage() {
 					<div className="flex flex-col gap-3">
 						{requests.map((req) => (
 							<div
-								key={req.auth_req_id}
+								key={req.approval_id}
 								className="rounded-lg border border-border bg-surface"
 							>
 								<div className="px-4 py-4">
@@ -147,7 +146,7 @@ export default function ApprovalsPage() {
 													{req.agent_name ??
 														"Unknown Agent"}
 												</span>
-												<span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
+												<span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-400 ring-1 ring-amber-500/30">
 													pending
 												</span>
 											</div>
@@ -167,25 +166,25 @@ export default function ApprovalsPage() {
 											<button
 												onClick={() =>
 													handleAction(
-														req.auth_req_id,
+														req.approval_id,
 														"approve",
 													)
 												}
-												disabled={acting === req.auth_req_id}
+												disabled={acting === req.approval_id}
 												className="cursor-pointer rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-white/90 disabled:opacity-50"
 											>
-												{acting === req.auth_req_id
+												{acting === req.approval_id
 													? "…"
 													: "Approve"}
 											</button>
 											<button
 												onClick={() =>
 													handleAction(
-														req.auth_req_id,
+														req.approval_id,
 														"deny",
 													)
 												}
-												disabled={acting === req.auth_req_id}
+												disabled={acting === req.approval_id}
 												className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:border-red-500/30 hover:text-red-400 disabled:opacity-50"
 											>
 												Deny

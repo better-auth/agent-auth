@@ -255,7 +255,7 @@ export default function DeviceCapabilities({
 			<div className="flex min-h-screen flex-col items-center justify-center">
 				<div className="flex max-w-sm flex-col items-center gap-6 text-center">
 					<div
-						className={`flex h-14 w-14 items-center justify-center rounded-full ${approved ? "bg-emerald-500/10" : "bg-red-500/10"}`}
+						className={`flex h-14 w-14 items-center justify-center rounded-full ${approved ? "bg-emerald-500/15" : "bg-red-500/15"}`}
 					>
 						{approved ? (
 							<svg
@@ -385,14 +385,11 @@ export default function DeviceCapabilities({
 									<h2 className="text-sm font-medium text-white">
 										{agentInfo?.agent.name}
 									</h2>
-									<p className="mt-0.5 text-xs text-muted">
-										{agentInfo?.agent.mode === "delegated"
-											? "Delegated"
-											: "Autonomous"}{" "}
-										agent
-										{agentInfo?.host?.name &&
-											` via ${agentInfo.host.name}`}
-									</p>
+								<p className="mt-0.5 text-xs text-muted">
+									Agent
+									{agentInfo?.host?.name &&
+										` via ${agentInfo.host.name}`}
+								</p>
 								</div>
 								<span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400">
 									Pending

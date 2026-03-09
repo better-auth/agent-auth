@@ -39,6 +39,44 @@ interface OpenAPISpec {
 	};
 	servers?: Array<{ url: string }>;
 	paths?: Record<string, OpenAPIPathItem>;
+	components?: Record<string, unknown>;
+}
+
+/** Resolve a JSON Reference (`$ref`) against the spec root. */
+function deref<T>(spec: OpenAPISpec, node: T): T {
+	if (node && typeof node === "object" && "$ref" in node) {
+		const ref = (node as Record<string, unknown>).$ref;
+		if (typeof ref === "string" && ref.startsWith("#/")) {
+			let resolved: unknown = spec;
+			for (const part of ref.slice(2).split("/")) {
+				resolved = (resolved as Record<string, unknown>)?.[part];
+			}
+			if (resolved != null) return resolved as T;
+		}
+	}
+	return node;
+}
+
+/** Merge path-level and operation-level parameters, resolving any $refs. */
+function mergeParams(
+	spec: OpenAPISpec,
+	pathItem: OpenAPIPathItem,
+	op: OpenAPIOperation,
+): OpenAPIParameter[] {
+	const pathParams = ((pathItem as Record<string, unknown>).parameters as
+		| OpenAPIParameter[]
+		| undefined) ?? [];
+	const opParams = op.parameters ?? [];
+	const merged = new Map<string, OpenAPIParameter>();
+	for (const p of pathParams) {
+		const resolved = deref(spec, p);
+		if (resolved?.name) merged.set(`${resolved.in}:${resolved.name}`, resolved);
+	}
+	for (const p of opParams) {
+		const resolved = deref(spec, p);
+		if (resolved?.name) merged.set(`${resolved.in}:${resolved.name}`, resolved);
+	}
+	return [...merged.values()];
 }
 
 /** Internal representation of a resolved OpenAPI operation. */
@@ -55,25 +93,28 @@ interface ResolvedOperation {
  * by `POST /capability/execute` (§6.11).
  */
 function buildInputSchema(
-	op: OpenAPIOperation,
+	spec: OpenAPISpec,
+	parameters: OpenAPIParameter[],
+	requestBody?: OpenAPIRequestBody,
 ): Record<string, unknown> | undefined {
 	const properties: Record<string, unknown> = {};
 	const required: string[] = [];
 
-	if (op.parameters?.length) {
-		for (const p of op.parameters) {
-			properties[p.name] = {
-				...(p.schema ?? { type: "string" }),
-				...(p.description ? { description: p.description } : {}),
-			};
-			if (p.required) required.push(p.name);
-		}
+	for (const p of parameters) {
+		properties[p.name] = {
+			...(p.schema ?? { type: "string" }),
+			...(p.description ? { description: p.description } : {}),
+		};
+		if (p.required) required.push(p.name);
 	}
 
-	if (op.requestBody) {
-		const jsonContent = op.requestBody.content?.["application/json"];
+	if (requestBody) {
+		const jsonContent = requestBody.content?.["application/json"];
 		if (jsonContent?.schema) {
-			const bodySchema = jsonContent.schema as Record<string, unknown>;
+			const bodySchema = deref(spec, jsonContent.schema) as Record<
+				string,
+				unknown
+			>;
 			const bodyProps =
 				(bodySchema.properties as Record<string, unknown>) ?? {};
 			const bodyRequired = (bodySchema.required as string[]) ?? [];
@@ -120,11 +161,14 @@ function buildOperationMap(
 			const op = operation as OpenAPIOperation;
 			if (!op.operationId) continue;
 
+			const parameters = mergeParams(spec, pathItem, op);
+			const requestBody = deref(spec, op.requestBody);
+
 			map.set(op.operationId, {
 				method: method.toUpperCase(),
 				url: `${baseUrl}${path}`,
-				parameters: op.parameters ?? [],
-				requestBody: op.requestBody,
+				parameters,
+				requestBody,
 			});
 		}
 	}
@@ -157,7 +201,9 @@ function parseOpenAPICapabilities(spec: OpenAPISpec): ParsedCapability[] {
 			const op = operation as OpenAPIOperation;
 			if (!op.operationId) continue;
 
-			const input = buildInputSchema(op);
+			const parameters = mergeParams(spec, pathItem, op);
+			const requestBody = deref(spec, op.requestBody);
+			const input = buildInputSchema(spec, parameters, requestBody);
 
 			capabilities.push({
 				name: op.operationId,

@@ -218,8 +218,6 @@ export type AgentAuthPath =
 	| "/host/update"
 	| "/host/rotate-key"
 	| "/agent/ciba/authorize"
-	| "/agent/ciba/approve"
-	| "/agent/ciba/deny"
 	| "/agent/ciba/pending";
 
 export interface DefaultHostCapabilitiesContext {
