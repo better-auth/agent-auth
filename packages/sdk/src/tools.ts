@@ -124,6 +124,32 @@ export function getAgentAuthTools(
 			},
 		},
 
+		{
+			name: "describe_capability",
+			description:
+				"Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
+			parameters: {
+				type: "object",
+				properties: {
+					provider: {
+						type: "string",
+						description: "Provider URL, issuer, or name",
+					},
+					name: {
+						type: "string",
+						description: "Capability name to describe",
+					},
+				},
+				required: ["provider", "name"],
+			},
+			async execute(args) {
+				return client.describeCapability({
+					provider: args.provider as string,
+					name: args.name as string,
+				});
+			},
+		},
+
 		// ── Step 3: Connect an agent ──
 
 		{

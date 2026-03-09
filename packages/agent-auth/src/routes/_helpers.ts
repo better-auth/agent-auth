@@ -17,6 +17,7 @@ import type {
 	AgentCapabilityGrant,
 	AgentHost,
 	ApprovalRequest,
+	Capability,
 	DynamicHostDefaultCapabilitiesContext,
 	ResolvedAgentAuthOptions,
 } from "../types";
@@ -135,15 +136,26 @@ export async function createGrantRows(
 	}
 }
 
-/** Format grants for API response — `agent_capability_grants` array (§6.5). */
+/** Format grants for API response — `agent_capability_grants` array (§6.5).
+ *
+ * When `capabilityDefs` is provided, active grants are enriched with the
+ * full capability definition (including `input` schema) so the agent
+ * gets schemas at the moment it's granted access — zero extra calls.
+ */
 export function formatGrantsResponse(
 	grants: AgentCapabilityGrant[],
+	capabilityDefs?: Capability[],
 ): Array<{
 	capability: string;
 	status: string;
 	granted_by?: string | null;
 	expires_at?: string | null;
+	definition?: Omit<Capability, "grant_status">;
 }> {
+	const defsMap = capabilityDefs
+		? new Map(capabilityDefs.map((c) => [c.name, c]))
+		: null;
+
 	return grants.map((g) => ({
 		capability: g.capability,
 		status: g.status,
@@ -151,7 +163,15 @@ export function formatGrantsResponse(
 		...(g.expiresAt
 			? { expires_at: new Date(g.expiresAt).toISOString() }
 			: {}),
+		...(defsMap && g.status === "active" && defsMap.has(g.capability)
+			? { definition: stripGrantStatus(defsMap.get(g.capability)!) }
+			: {}),
 	}));
+}
+
+function stripGrantStatus(cap: Capability): Omit<Capability, "grant_status"> {
+	const { grant_status, ...rest } = cap;
+	return rest;
 }
 
 /** Filter grants to only active, non-expired ones. */

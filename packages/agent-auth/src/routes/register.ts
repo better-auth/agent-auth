@@ -572,7 +572,7 @@ export function register(
 				host_name: hostRecord?.name ?? null,
 				mode: agent.mode,
 				status: agentStatus,
-				agent_capability_grants: formatGrantsResponse(allGrants),
+				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),
 			};
 
 			if (pendingCaps.length > 0 || isHostPending) {

@@ -69,8 +69,8 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		server.registerTool(
 			tool.name,
 			toolOpts,
-			async (args: Record<string, unknown>, extra: { signal: AbortSignal }) => {
-				const result = await tool.execute(args, { signal: extra.signal });
+			async (args: Record<string, unknown>, extra?: { signal?: AbortSignal }) => {
+				const result = await tool.execute(args, { signal: extra?.signal });
 				return {
 					content: [
 						{ type: "text" as const, text: JSON.stringify(result, null, 2) },

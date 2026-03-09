@@ -94,14 +94,11 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const isSearch = !!query;
-
 			return ctx.json({
 				capabilities: page.map((c) => {
 					const { input, ...summary } = c;
-					const base = isSearch ? summary : c;
 					return {
-						...base,
+						...summary,
 						...(grantedCapabilityIds
 							? {
 									grant_status: grantedCapabilityIds.has(c.name)

@@ -18,7 +18,7 @@ const GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
  * The client polls this with the `device_code` (agent_id) until
  * the user approves, denies, or the code expires.
  */
-export function deviceToken(_opts: ResolvedAgentAuthOptions) {
+export function deviceToken(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/device/token",
 		{
@@ -172,7 +172,7 @@ export function deviceToken(_opts: ResolvedAgentAuthOptions) {
 					status: agent.status,
 					mode: agent.mode,
 					agent_capability_grants: formatGrantsResponse(
-						activeGrants(grants),
+						activeGrants(grants), opts.capabilities,
 					),
 					expires_at: agent.expiresAt
 						? new Date(agent.expiresAt).toISOString()

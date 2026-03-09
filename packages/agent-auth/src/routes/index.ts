@@ -3,6 +3,7 @@ import type { JwksCacheStore } from "../utils/jwks-cache";
 import type { ResolvedAgentAuthOptions } from "../types";
 import { approveCapability } from "./approve-capability";
 import { cleanupAgents } from "./cleanup";
+import { describeCapability } from "./describe-capability";
 import { agentConfiguration } from "./discover";
 import { executeCapability } from "./execute-capability";
 import { getAgent } from "./get-agent";
@@ -39,6 +40,7 @@ export function createAgentRoutes(
 	return {
 		getAgentConfiguration: agentConfiguration(opts), // §6.1
 		listCapabilities: listCapabilities(opts), // §6.2
+		describeCapability: describeCapability(opts), // §6.2
 		executeCapability: executeCapability(opts), // §6.11
 		register: register(opts, jtiCache, jwksCache), // §6.3
 		requestCapability: requestCapability(opts), // §6.4

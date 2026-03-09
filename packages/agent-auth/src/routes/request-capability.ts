@@ -293,7 +293,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					agent_id: agentSession.agent.id,
 					status: "granted",
 					agent_capability_grants:
-						formatGrantsResponse(updatedGrants),
+						formatGrantsResponse(updatedGrants, opts.capabilities),
 				});
 			}
 
