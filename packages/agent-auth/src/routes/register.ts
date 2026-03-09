@@ -497,8 +497,9 @@ export function register(
 				);
 			}
 
-			validateCapabilityIds(resolvedCaps, opts);
-			await validateCapabilitiesExist(resolvedCaps, opts);
+			const allRequestedCaps = [...resolvedCaps, ...pendingCaps];
+			validateCapabilityIds(allRequestedCaps, opts);
+			await validateCapabilitiesExist(allRequestedCaps, opts);
 
 			// ---------- Create agent ----------
 			const now = new Date();

@@ -4,17 +4,17 @@ import { useState, useEffect, useCallback } from "react";
 
 function StatusBadge({ status }: { status: string }) {
 	const styles: Record<string, string> = {
-		active: "bg-emerald-500/10 text-emerald-400",
-		pending: "bg-amber-500/10 text-amber-400",
-		expired: "bg-zinc-500/10 text-zinc-400",
-		revoked: "bg-red-500/10 text-red-400",
-		rejected: "bg-red-500/10 text-red-400",
-		claimed: "bg-blue-500/10 text-blue-400",
-		denied: "bg-red-500/10 text-red-400",
+		active: "bg-emerald-950/80 text-emerald-300 ring-1 ring-emerald-500/20",
+		pending: "bg-amber-950/80 text-amber-300 ring-1 ring-amber-500/20",
+		expired: "bg-zinc-800/60 text-zinc-400 ring-1 ring-zinc-600/20",
+		revoked: "bg-red-950/80 text-red-300 ring-1 ring-red-500/20",
+		rejected: "bg-red-950/80 text-red-300 ring-1 ring-red-500/20",
+		claimed: "bg-sky-950/80 text-sky-300 ring-1 ring-sky-500/20",
+		denied: "bg-rose-950/80 text-rose-300 ring-1 ring-rose-500/20",
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? "bg-zinc-500/10 text-zinc-400"}`}
+			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? "bg-zinc-800/60 text-zinc-400 ring-1 ring-zinc-600/20"}`}
 		>
 			{status}
 		</span>
@@ -26,8 +26,8 @@ function ModeBadge({ mode }: { mode: string }) {
 		<span
 			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
 				mode === "delegated"
-					? "bg-blue-500/10 text-blue-400"
-					: "bg-purple-500/10 text-purple-400"
+					? "bg-indigo-950/80 text-indigo-300 ring-1 ring-indigo-500/20"
+					: "bg-violet-950/80 text-violet-300 ring-1 ring-violet-500/20"
 			}`}
 		>
 			{mode}
@@ -96,14 +96,14 @@ function timeAgo(date: string | null) {
 function EventTypeBadge({ type }: { type: string }) {
 	const category = type.split(".")[0];
 	const styles: Record<string, string> = {
-		agent: "bg-blue-500/10 text-blue-400",
-		host: "bg-purple-500/10 text-purple-400",
-		capability: "bg-amber-500/10 text-amber-400",
-		ciba: "bg-cyan-500/10 text-cyan-400",
+		agent: "bg-sky-950/80 text-sky-300 ring-1 ring-sky-500/20",
+		host: "bg-violet-950/80 text-violet-300 ring-1 ring-violet-500/20",
+		capability: "bg-amber-950/80 text-amber-300 ring-1 ring-amber-500/20",
+		ciba: "bg-teal-950/80 text-teal-300 ring-1 ring-teal-500/20",
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-zinc-500/10 text-zinc-400"}`}
+			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-zinc-800/60 text-zinc-400 ring-1 ring-zinc-600/20"}`}
 		>
 			{type}
 		</span>
@@ -188,13 +188,13 @@ function AgentActivityLog({ agentId }: { agentId: string }) {
 								{timeAgo(log.createdAt)}
 							</span>
 						</div>
-						{isExpanded && log.data && (
-							<div className="border-t border-border/50 px-3 py-2">
-								<pre className="text-[11px] font-mono text-foreground/70 whitespace-pre-wrap break-all">
-									{JSON.stringify(log.data, null, 2)}
-								</pre>
-							</div>
-						)}
+					{isExpanded && log.data && (
+						<div className="border-t border-border/50 px-3 py-2">
+							<pre className="text-[11px] font-mono text-foreground/70 whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+								{JSON.stringify(log.data, null, 2)}
+							</pre>
+						</div>
+					)}
 					</button>
 				);
 			})}
@@ -387,84 +387,84 @@ export default function AgentsPage() {
 											))}
 										</div>
 
-										<div className="px-4 py-4">
-											{(activeTab[agent.agent_id] ?? "details") === "details" ? (
-												<>
-													<div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
-														<div>
-															<p className="text-[10px] uppercase tracking-widest text-muted">
-																Agent ID
-															</p>
-															<code className="text-xs font-mono text-foreground break-all">
-																{agent.agent_id}
-															</code>
-														</div>
-														<div>
-															<p className="text-[10px] uppercase tracking-widest text-muted">
-																Host ID
-															</p>
-															<code className="text-xs font-mono text-foreground break-all">
-																{agent.host_id}
-															</code>
-														</div>
-														<div>
-															<p className="text-[10px] uppercase tracking-widest text-muted">
-																Last Used
-															</p>
-															<p className="text-xs text-foreground">
-																{timeAgo(agent.last_used_at)}
-															</p>
-														</div>
-														<div>
-															<p className="text-[10px] uppercase tracking-widest text-muted">
-																Expires
-															</p>
-															<p className="text-xs text-foreground">
-																{agent.expires_at
-																	? new Date(agent.expires_at).toLocaleString()
-																	: "Never"}
-															</p>
+									<div className="px-4 py-4 max-h-80 overflow-y-auto">
+										{(activeTab[agent.agent_id] ?? "details") === "details" ? (
+											<>
+												<div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+													<div>
+														<p className="text-[10px] uppercase tracking-widest text-muted">
+															Agent ID
+														</p>
+														<code className="text-xs font-mono text-foreground break-all">
+															{agent.agent_id}
+														</code>
+													</div>
+													<div>
+														<p className="text-[10px] uppercase tracking-widest text-muted">
+															Host ID
+														</p>
+														<code className="text-xs font-mono text-foreground break-all">
+															{agent.host_id}
+														</code>
+													</div>
+													<div>
+														<p className="text-[10px] uppercase tracking-widest text-muted">
+															Last Used
+														</p>
+														<p className="text-xs text-foreground">
+															{timeAgo(agent.last_used_at)}
+														</p>
+													</div>
+													<div>
+														<p className="text-[10px] uppercase tracking-widest text-muted">
+															Expires
+														</p>
+														<p className="text-xs text-foreground">
+															{agent.expires_at
+																? new Date(agent.expires_at).toLocaleString()
+																: "Never"}
+														</p>
+													</div>
+												</div>
+
+												{agent.agent_capability_grants.length > 0 && (
+													<div className="mb-4">
+														<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
+															Capabilities
+														</p>
+														<div className="space-y-1">
+															{agent.agent_capability_grants.map((g, i) => (
+																<div
+																	key={i}
+																	className="flex items-center justify-between rounded bg-background px-3 py-2"
+																>
+																	<code className="text-xs font-mono text-foreground truncate mr-2">
+																		{g.capability}
+																	</code>
+																	<StatusBadge status={g.status} />
+																</div>
+															))}
 														</div>
 													</div>
+												)}
 
-													{agent.agent_capability_grants.length > 0 && (
-														<div className="mb-4">
-															<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
-																Capabilities
-															</p>
-															<div className="space-y-1">
-																{agent.agent_capability_grants.map((g, i) => (
-																	<div
-																		key={i}
-																		className="flex items-center justify-between rounded bg-background px-3 py-2"
-																	>
-																		<code className="text-xs font-mono text-foreground truncate mr-2">
-																			{g.capability}
-																		</code>
-																		<StatusBadge status={g.status} />
-																	</div>
-																))}
-															</div>
-														</div>
-													)}
-
-													{agent.status === "active" && (
-														<button
-															onClick={(e) => {
-																e.stopPropagation();
-																handleRevoke(agent.agent_id);
-															}}
-															disabled={revoking === agent.agent_id}
-															className="cursor-pointer rounded-md border border-red-500/20 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-														>
-															{revoking === agent.agent_id ? "Revoking…" : "Revoke Agent"}
-														</button>
-													)}
-												</>
-											) : (
-												<AgentActivityLog agentId={agent.agent_id} />
-											)}
-										</div>
+												{agent.status === "active" && (
+													<button
+														onClick={(e) => {
+															e.stopPropagation();
+															handleRevoke(agent.agent_id);
+														}}
+														disabled={revoking === agent.agent_id}
+														className="cursor-pointer rounded-md border border-red-500/20 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+													>
+														{revoking === agent.agent_id ? "Revoking…" : "Revoke Agent"}
+													</button>
+												)}
+											</>
+										) : (
+											<AgentActivityLog agentId={agent.agent_id} />
+										)}
+									</div>
 									</div>
 								)}
 								</div>

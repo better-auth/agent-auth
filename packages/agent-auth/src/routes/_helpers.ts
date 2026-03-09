@@ -330,7 +330,21 @@ export async function validateCapabilitiesExist(
 	capabilityIds: string[],
 	opts: ResolvedAgentAuthOptions,
 ): Promise<void> {
-	if (capabilityIds.length > 0 && opts.validateCapabilities) {
+	if (capabilityIds.length === 0) return;
+
+	if (opts.capabilities && opts.capabilities.length > 0) {
+		const known = new Set(opts.capabilities.map((c) => c.name));
+		const unknown = capabilityIds.filter((id) => !known.has(id));
+		if (unknown.length > 0) {
+			throw agentError(
+				"BAD_REQUEST",
+				ERR.INVALID_CAPABILITIES,
+				`Unknown capabilities: ${unknown.join(", ")}`,
+			);
+		}
+	}
+
+	if (opts.validateCapabilities) {
 		const valid = await opts.validateCapabilities(capabilityIds);
 		if (!valid) {
 			throw agentError("BAD_REQUEST", ERR.INVALID_CAPABILITIES);

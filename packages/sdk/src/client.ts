@@ -405,7 +405,7 @@ export class AgentAuthClient {
 		});
 
 		if (!res.ok) {
-			throw await this.toError(res);
+			throw await this.toError(res, conn.issuer);
 		}
 
 		const resBody = (await res.json()) as RequestCapabilityResponse;
@@ -910,7 +910,7 @@ export class AgentAuthClient {
 		const { res, agentKeypair } = await attempt(host);
 
 		if (!res.ok) {
-			throw await this.toError(res);
+			throw await this.toError(res, config.issuer);
 		}
 
 		const regBody = (await res.json()) as RegisterResponse;
@@ -1179,10 +1179,26 @@ export class AgentAuthClient {
 		return host;
 	}
 
-	private async toError(res: Response): Promise<AgentAuthSDKError> {
+	private async toError(
+		res: Response,
+		issuer?: string,
+	): Promise<AgentAuthSDKError> {
 		try {
-			const body = await res.json();
-			return AgentAuthSDKError.fromResponse(body as Record<string, string>, res.status);
+			const body = (await res.json()) as Record<string, string>;
+			const err = AgentAuthSDKError.fromResponse(body, res.status);
+
+			if (err.code === "invalid_capabilities" && issuer) {
+				const hint = await this.getAvailableCapabilityHint(issuer);
+				if (hint) {
+					return new AgentAuthSDKError(
+						err.code,
+						`${err.message} ${hint}`,
+						err.status,
+					);
+				}
+			}
+
+			return err;
 		} catch {
 			return new AgentAuthSDKError(
 				"request_failed",
@@ -1190,6 +1206,21 @@ export class AgentAuthClient {
 				res.status,
 			);
 		}
+	}
+
+	private async getAvailableCapabilityHint(
+		issuer: string,
+	): Promise<string | null> {
+		try {
+			const config = await this.storage.getProviderConfig(issuer);
+			if (config?.capabilities && config.capabilities.length > 0) {
+				const names = config.capabilities.map((c) => c.name);
+				return `Available capabilities: ${names.join(", ")}`;
+			}
+		} catch {
+			// Best-effort — don't fail if storage lookup errors
+		}
+		return "Call list_capabilities to see available capabilities for this provider.";
 	}
 }
  
