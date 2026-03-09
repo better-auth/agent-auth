@@ -18,7 +18,7 @@ import type {
 	AgentHost,
 	ApprovalRequest,
 	Capability,
-	DynamicHostDefaultCapabilitiesContext,
+	DefaultHostCapabilitiesContext,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
@@ -302,11 +302,11 @@ export async function isDynamicHostAllowed(
 	return flag;
 }
 
-export async function resolveDynamicHostDefaultCapabilities(
+export async function resolveDefaultHostCapabilities(
 	opts: ResolvedAgentAuthOptions,
-	context: DynamicHostDefaultCapabilitiesContext,
+	context: DefaultHostCapabilitiesContext,
 ): Promise<string[]> {
-	const val = opts.dynamicHostDefaultCapabilities;
+	const val = opts.defaultHostCapabilities;
 	if (typeof val === "function") return val(context);
 	return val;
 }

@@ -22,7 +22,7 @@ import {
 	findHostByKey,
 	formatGrantsResponse,
 	isDynamicHostAllowed,
-	resolveDynamicHostDefaultCapabilities,
+	resolveDefaultHostCapabilities,
 	validateCapabilityIds,
 	validateCapabilitiesExist,
 	validateKeyAlgorithm,
@@ -380,7 +380,7 @@ export function register(
 							: null;
 					const resolvedDynHostName = jwtHostName ?? bodyHostName ?? null;
 					const dynCaps =
-						await resolveDynamicHostDefaultCapabilities(
+						await resolveDefaultHostCapabilities(
 							opts,
 							{
 								ctx,
