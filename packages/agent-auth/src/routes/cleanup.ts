@@ -1,7 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { TABLE } from "../constants";
 import { emit } from "../emit";
-import type { Agent, CibaAuthRequest, ResolvedAgentAuthOptions } from "../types";
+import type { Agent, ApprovalRequest, ResolvedAgentAuthOptions } from "../types";
 import { sessionMiddleware } from "better-auth/api";
 
 export function cleanupAgents(opts: ResolvedAgentAuthOptions) {
@@ -44,23 +44,23 @@ export function cleanupAgents(opts: ResolvedAgentAuthOptions) {
 				),
 			);
 
-			const pendingCibas =
-				await ctx.context.adapter.findMany<CibaAuthRequest>({
-					model: TABLE.ciba,
+			const pendingApprovals =
+				await ctx.context.adapter.findMany<ApprovalRequest>({
+					model: TABLE.approval,
 					where: [
 						{ field: "userId", value: session.user.id },
 						{ field: "status", value: "pending" },
 					],
 				});
 
-			const expiredCibas = pendingCibas.filter(
+			const expiredApprovals = pendingApprovals.filter(
 				(r) => new Date(r.expiresAt) <= now,
 			);
 
 			await Promise.all(
-				expiredCibas.map((r) =>
+				expiredApprovals.map((r) =>
 					ctx.context.adapter.update({
-						model: TABLE.ciba,
+						model: TABLE.approval,
 						where: [{ field: "id", value: r.id }],
 						update: { status: "expired", updatedAt: now },
 					}),
@@ -74,14 +74,14 @@ export function cleanupAgents(opts: ResolvedAgentAuthOptions) {
 					metadata: {
 						count: expired.length,
 						agentIds: expired.map((a) => a.id),
-						cibaExpired: expiredCibas.length,
+						approvalsExpired: expiredApprovals.length,
 					},
 				}, ctx);
 			}
 
 			return ctx.json({
 				expired: expired.length,
-				ciba_expired: expiredCibas.length,
+				approvals_expired: expiredApprovals.length,
 			});
 		},
 	);

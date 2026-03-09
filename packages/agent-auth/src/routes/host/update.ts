@@ -1,9 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { parseCapabilityIds } from "../../utils/capabilities";
 import type { AgentHost, ResolvedAgentAuthOptions } from "../../types";
@@ -66,7 +65,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!host) {
-				throw APIError.from("NOT_FOUND", ERR.HOST_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
 			}
 
 			if (host.userId !== session.user.id && host.userId !== null) {
@@ -76,12 +75,12 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 					host.userId,
 				);
 				if (!sameOrg) {
-					throw APIError.from("NOT_FOUND", ERR.HOST_NOT_FOUND);
+					throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
 				}
 			}
 
 			if (host.status === "revoked") {
-				throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
+				throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 			}
 
 			const update: Record<string, unknown> = {
@@ -94,7 +93,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 
 			if (publicKey) {
 				if (!publicKey.kty || !publicKey.x) {
-					throw APIError.from("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
+					throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 				}
 				validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
 				update.publicKey = JSON.stringify(publicKey);

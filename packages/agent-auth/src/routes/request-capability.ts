@@ -1,8 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 import {
@@ -14,7 +13,7 @@ import type {
 	AgentCapabilityGrant,
 	AgentHost,
 	AgentSession,
-	CibaAuthRequest,
+	ApprovalRequest,
 	ResolvedAgentAuthOptions,
 } from "../types";
 import {
@@ -55,7 +54,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				.agentSession as AgentSession | undefined;
 
 			if (!agentSession) {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					ERR.UNAUTHORIZED_SESSION,
 				);
@@ -70,7 +69,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					opts.blockedCapabilities,
 				);
 				if (blocked.length > 0) {
-					throw APIError.from(
+					throw agentError(
 						"BAD_REQUEST",
 						ERR.INVALID_CAPABILITIES,
 					);
@@ -122,7 +121,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					alreadyActive.has(c),
 				);
 				if (allActive) {
-					throw APIError.from(
+					throw agentError(
 						"CONFLICT",
 						ERR.ALREADY_GRANTED,
 					);
@@ -133,9 +132,9 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					alreadyPending.has(c),
 				);
 
-				const existingCiba =
-					await ctx.context.adapter.findOne<CibaAuthRequest>({
-						model: TABLE.ciba,
+				const existingApproval =
+					await ctx.context.adapter.findOne<ApprovalRequest>({
+						model: TABLE.approval,
 						where: [
 							{
 								field: "agentId",
@@ -146,8 +145,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					});
 
 				if (
-					existingCiba &&
-					new Date(existingCiba.expiresAt) > now
+					existingApproval &&
+					new Date(existingApproval.expiresAt) > now
 				) {
 					return ctx.json({
 						agent_id: agentSession.agent.id,
@@ -155,15 +154,15 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						agent_capability_grants:
 							formatGrantsResponse(existingGrants),
 						approval: {
-							method: "ciba",
+							method: existingApproval.method,
 							expires_in: Math.floor(
 								(new Date(
-									existingCiba.expiresAt,
+									existingApproval.expiresAt,
 								).getTime() -
 									now.getTime()) /
 									1000,
 							),
-							interval: existingCiba.interval,
+							interval: existingApproval.interval,
 						},
 					});
 				}
@@ -232,13 +231,11 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 			}
 
 			if (needsApproval.length > 0 && !hostUserId && agentSession.agent.mode === "autonomous") {
-				throw new APIError("FORBIDDEN", {
-					body: {
-						code: ERR.CAPABILITY_DENIED,
-						message:
-							"Requested capabilities are not pre-authorized for this autonomous host.",
-					},
-				});
+				throw agentError(
+					"FORBIDDEN",
+					ERR.CAPABILITY_DENIED,
+					"Requested capabilities are not pre-authorized for this autonomous host.",
+				);
 			}
 
 			// Auto-approve

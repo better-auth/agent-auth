@@ -1,9 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import type {
 	Agent,
@@ -50,18 +49,19 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 			if (hostSession) {
 				targetHostId = ctx.body?.host_id ?? hostSession.host.id;
 				if (targetHostId !== hostSession.host.id) {
-					throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 				}
 			} else if (userSession) {
 				if (!ctx.body?.host_id) {
-					throw new APIError("BAD_REQUEST", {
-						message:
-							"host_id is required when using user session.",
-					});
+				throw agentError(
+					"BAD_REQUEST",
+					ERR.INVALID_REQUEST,
+					"host_id is required when using user session.",
+				);
 				}
 				targetHostId = ctx.body.host_id;
 			} else {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					ERR.UNAUTHORIZED_SESSION,
 				);
@@ -73,7 +73,7 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!host) {
-				throw APIError.from("NOT_FOUND", ERR.HOST_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
 			}
 
 			if (userSession && !hostSession) {
@@ -84,7 +84,7 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 						host.userId,
 					);
 					if (!sameOrg) {
-						throw APIError.from("NOT_FOUND", ERR.HOST_NOT_FOUND);
+						throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
 					}
 				}
 			}

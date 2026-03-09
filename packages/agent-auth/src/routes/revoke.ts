@@ -1,10 +1,9 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
 import { emit } from "../emit";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -41,7 +40,7 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 			const userSession = await getSessionFromCtx(ctx as any);
 
 			if (!hostSession && !userSession) {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					ERR.UNAUTHORIZED_SESSION,
 				);
@@ -55,16 +54,16 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			if (hostSession) {
 				if (agent.hostId !== hostSession.host.id) {
-					throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 				}
 			} else if (userSession) {
 				if (agent.userId !== userSession.user.id) {
-					throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 				}
 			}
 

@@ -1,4 +1,5 @@
 import type { AgentAuthOptions, Capability } from "../types";
+import { asyncResult, streamResult } from "../execute-helpers";
 
 interface OpenAPIParameter {
 	name: string;
@@ -273,14 +274,35 @@ export function createOpenAPIHandler(
 
 		const response = await fetchFn(url, fetchOpts);
 
-		if (!response.ok) {
+		if (!response.ok && response.status !== 202) {
 			const errorBody = await response.text();
 			throw new Error(
 				`Upstream API error ${response.status}: ${errorBody}`,
 			);
 		}
 
+		if (response.status === 202) {
+			const body = await response.json() as Record<string, unknown>;
+			const statusUrl =
+				(body.status_url as string | undefined) ??
+				response.headers.get("location") ??
+				"";
+			const retryAfter = response.headers.get("retry-after");
+			return asyncResult(
+				statusUrl,
+				retryAfter ? parseInt(retryAfter, 10) : undefined,
+			);
+		}
+
 		const contentType = response.headers.get("content-type");
+
+		if (
+			contentType?.includes("text/event-stream") &&
+			response.body
+		) {
+			return streamResult(response.body);
+		}
+
 		if (contentType?.includes("application/json")) {
 			return response.json();
 		}

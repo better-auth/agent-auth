@@ -1,11 +1,10 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE, DEFAULTS } from "../../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import type {
-	CibaAuthRequest,
+	ApprovalRequest,
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../../types";
@@ -41,13 +40,13 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 		},
 		async (ctx) => {
 			if (!opts.approvalMethods.includes("ciba")) {
-				throw APIError.from("BAD_REQUEST", ERR.INVALID_REQUEST);
+				throw agentError("BAD_REQUEST", ERR.INVALID_REQUEST);
 			}
 
 			const hostSession = (ctx.context as { hostSession?: HostSession })
 				.hostSession;
 			if (!hostSession) {
-				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED);
+				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED);
 			}
 
 			const {
@@ -60,7 +59,7 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 			const user =
 				await ctx.context.internalAdapter.findUserByEmail(loginHint);
 			if (!user) {
-				throw APIError.from("NOT_FOUND", ERR.INVALID_REQUEST);
+				throw agentError("NOT_FOUND", ERR.INVALID_REQUEST);
 			}
 
 			const now = new Date();
@@ -74,20 +73,22 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 
 			const request = await ctx.context.adapter.create<
 				Record<string, unknown>,
-				CibaAuthRequest
+				ApprovalRequest
 			>({
-				model: TABLE.ciba,
+				model: TABLE.approval,
 				data: {
-					clientId: hostSession.host.id,
-					loginHint,
-					userId: user.user.id,
+					method: "ciba",
 					agentId: agentId ?? null,
+					hostId: hostSession.host.id,
+					userId: user.user.id,
 					capabilities: capabilitiesStr,
+					status: "pending",
+					userCodeHash: null,
+					loginHint,
 					bindingMessage: bindingMessage ?? null,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,
 					deliveryMode: "poll",
-					status: "pending",
 					interval: DEFAULTS.cibaInterval,
 					lastPolledAt: null,
 					expiresAt,
@@ -97,12 +98,13 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 			});
 
 			emit(opts, {
-				type: "ciba.authorized",
+				type: "approval.created",
 				actorId: user.user.id,
 				hostId: hostSession.host.id,
 				targetId: request.id,
-				targetType: "cibaAuthRequest",
+				targetType: "approvalRequest",
 				metadata: {
+					method: "ciba",
 					capabilities: capabilityIds,
 					bindingMessage,
 					agentId,

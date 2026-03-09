@@ -1,8 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import type { Agent, ResolvedAgentAuthOptions } from "../types";
 import { sessionMiddleware } from "better-auth/api";
@@ -53,7 +52,7 @@ export function updateAgent(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			const update: Record<string, unknown> = {

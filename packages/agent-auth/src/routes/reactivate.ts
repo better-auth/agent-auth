@@ -1,8 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { parseCapabilityIds } from "../utils/capabilities";
 import type {
@@ -44,7 +43,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				.hostSession as HostSession | undefined;
 
 			if (!hostSession) {
-				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
+				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
@@ -53,11 +52,11 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			if (agent.hostId !== hostSession.host.id) {
-				throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
 			// §6.6 state checks
@@ -76,16 +75,16 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				});
 			}
 			if (agent.status === "revoked") {
-				throw APIError.from("FORBIDDEN", ERR.AGENT_REVOKED);
+				throw agentError("FORBIDDEN", ERR.AGENT_REVOKED);
 			}
 			if (agent.status === "rejected") {
-				throw APIError.from("FORBIDDEN", ERR.AGENT_REJECTED);
+				throw agentError("FORBIDDEN", ERR.AGENT_REJECTED);
 			}
 			if (agent.status === "claimed") {
-				throw APIError.from("FORBIDDEN", ERR.AGENT_CLAIMED);
+				throw agentError("FORBIDDEN", ERR.AGENT_CLAIMED);
 			}
 			if (agent.status === "pending") {
-				throw APIError.from("FORBIDDEN", ERR.AGENT_PENDING);
+				throw agentError("FORBIDDEN", ERR.AGENT_PENDING);
 			}
 
 			// Absolute lifetime check (§2.4)
@@ -104,7 +103,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 							updatedAt: new Date(),
 						},
 					});
-					throw APIError.from(
+					throw agentError(
 						"FORBIDDEN",
 						ERR.ABSOLUTE_LIFETIME_EXCEEDED,
 					);
@@ -118,7 +117,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!host || host.status === "revoked") {
-				throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
+				throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 			}
 
 			const baseCapabilityIds = parseCapabilityIds(

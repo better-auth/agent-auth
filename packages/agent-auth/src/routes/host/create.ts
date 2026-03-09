@@ -1,9 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE, DEFAULTS } from "../../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import {
 	generateEnrollmentToken,
@@ -66,7 +65,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 
 			if (publicKey) {
 				if (!publicKey.kty || !publicKey.x) {
-					throw APIError.from("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
+					throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 				}
 				validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
 			}
@@ -87,12 +86,12 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 			if (publicKey) {
 				const existing = await findHostByKey(ctx.context.adapter, publicKey);
 				if (existing && existing.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
+					throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 				}
 
 				if (existing) {
 					if (existing.userId && existing.userId !== session.user.id) {
-						throw APIError.from("CONFLICT", ERR.HOST_ALREADY_LINKED);
+						throw agentError("CONFLICT", ERR.HOST_ALREADY_LINKED);
 					}
 					if (!existing.userId) {
 						await opts.onHostClaimed?.({

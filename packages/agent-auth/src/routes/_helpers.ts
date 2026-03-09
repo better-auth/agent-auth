@@ -1,9 +1,8 @@
 import type { GenericEndpointContext } from "@better-auth/core";
-import { APIError } from "@better-auth/core/error";
 import { TABLE, DEFAULTS } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
-import { generateUserCode } from "../utils/approval";
+import { generateUserCode, hashToken } from "../utils/approval";
 import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 import {
 	findBlockedCapabilities,
@@ -14,9 +13,10 @@ import type {
 	AdapterFindMany,
 	AdapterFindOne,
 	AdapterUpdate,
+	Agent,
 	AgentCapabilityGrant,
 	AgentHost,
-	CibaAuthRequest,
+	ApprovalRequest,
 	DynamicHostDefaultCapabilitiesContext,
 	ResolvedAgentAuthOptions,
 } from "../types";
@@ -168,7 +168,7 @@ export function activeGrants(
 
 export async function buildApprovalInfo(
 	opts: ResolvedAgentAuthOptions,
-	adapter: AdapterCreate,
+	adapter: AdapterCreate & AdapterUpdate,
 	internalAdapter: {
 		findUserById: (
 			id: string,
@@ -197,30 +197,31 @@ export async function buildApprovalInfo(
 		? resolved
 		: "device_authorization";
 
+	const now = new Date();
+	const expiresIn = DEFAULTS.cibaExpiresIn;
+	const interval = DEFAULTS.cibaInterval;
+	const expiresAt = new Date(now.getTime() + expiresIn * 1000);
+	const capabilitiesStr = context.capabilities.join(" ") || null;
+
 	if (method === "ciba" && context.userId) {
 		const user = await internalAdapter.findUserById(context.userId);
 		if (user) {
-			const now = new Date();
-			const expiresAt = new Date(
-				now.getTime() + DEFAULTS.cibaExpiresIn * 1000,
-			);
-			const cibaRequest = await adapter.create<
-				Record<string, unknown>,
-				CibaAuthRequest
-			>({
-				model: TABLE.ciba,
+			await adapter.create<Record<string, unknown>, ApprovalRequest>({
+				model: TABLE.approval,
 				data: {
-					clientId: "agent-auth",
-					loginHint: user.email,
-					userId: context.userId,
+					method: "ciba",
 					agentId: context.agentId,
-					capabilities: context.capabilities.join(" "),
+					hostId: context.hostId,
+					userId: context.userId,
+					capabilities: capabilitiesStr,
+					status: "pending",
+					userCodeHash: null,
+					loginHint: user.email,
 					bindingMessage: `Agent "${context.agentName}" requesting approval`,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,
 					deliveryMode: "poll",
-					status: "pending",
-					interval: DEFAULTS.cibaInterval,
+					interval,
 					lastPolledAt: null,
 					expiresAt,
 					createdAt: now,
@@ -229,20 +230,46 @@ export async function buildApprovalInfo(
 			});
 			return {
 				method: "ciba",
-				expires_in: DEFAULTS.cibaExpiresIn,
-				interval: DEFAULTS.cibaInterval,
+				expires_in: expiresIn,
+				interval,
 			};
 		}
 	}
 
 	const userCode = generateUserCode();
+	const codeHash = await hashToken(userCode);
+
+	await adapter.create<Record<string, unknown>, ApprovalRequest>({
+		model: TABLE.approval,
+		data: {
+			method: "device_authorization",
+			agentId: context.agentId,
+			hostId: context.hostId,
+			userId: context.userId,
+			capabilities: capabilitiesStr,
+			status: "pending",
+			userCodeHash: codeHash,
+			loginHint: null,
+			bindingMessage: null,
+			clientNotificationToken: null,
+			clientNotificationEndpoint: null,
+			deliveryMode: null,
+			interval,
+			lastPolledAt: null,
+			expiresAt,
+			createdAt: now,
+			updatedAt: now,
+		},
+	});
+
 	return {
 		method: "device_authorization",
+		device_code: context.agentId,
 		verification_uri: `${context.origin}/device/capabilities`,
 		verification_uri_complete: `${context.origin}/device/capabilities?agent_id=${context.agentId}&code=${userCode}`,
 		user_code: userCode,
-		expires_in: 300,
-		interval: 5,
+		expires_in: expiresIn,
+		interval,
 	};
 }
 
@@ -272,9 +299,11 @@ export function validateKeyAlgorithm(
 	const crv = publicKey.crv as string | undefined;
 	const keyAlg = crv ?? kty;
 	if (!keyAlg || !allowedAlgorithms.includes(keyAlg)) {
-		throw new APIError("BAD_REQUEST", {
-			message: `Key algorithm "${keyAlg}" is not allowed. Accepted: ${allowedAlgorithms.join(", ")}`,
-		});
+	throw agentError(
+		"BAD_REQUEST",
+		ERR.UNSUPPORTED_ALGORITHM,
+		`Key algorithm "${keyAlg}" is not allowed. Accepted: ${allowedAlgorithms.join(", ")}`,
+	);
 	}
 }
 
@@ -288,9 +317,11 @@ export function validateCapabilityIds(
 			opts.blockedCapabilities,
 		);
 		if (blocked.length > 0) {
-			throw new APIError("BAD_REQUEST", {
-				message: `Blocked capabilities: ${blocked.join(", ")}`,
-			});
+		throw agentError(
+			"BAD_REQUEST",
+			ERR.CAPABILITY_BLOCKED,
+			`Blocked capabilities: ${blocked.join(", ")}`,
+		);
 		}
 	}
 }
@@ -302,7 +333,7 @@ export async function validateCapabilitiesExist(
 	if (capabilityIds.length > 0 && opts.validateCapabilities) {
 		const valid = await opts.validateCapabilities(capabilityIds);
 		if (!valid) {
-			throw APIError.from("BAD_REQUEST", ERR.INVALID_CAPABILITIES);
+			throw agentError("BAD_REQUEST", ERR.INVALID_CAPABILITIES);
 		}
 	}
 }
@@ -326,11 +357,84 @@ export function verifyAudience(
 }
 
 /**
+ * Claim all active autonomous agents under a host (§3.4).
+ * Called when a previously unlinked host acquires a user_id.
+ * Each autonomous agent's capabilities are revoked and status set to "claimed".
+ */
+export async function claimAutonomousAgents(
+	adapter: AdapterFindMany & AdapterUpdate,
+	opts: ResolvedAgentAuthOptions,
+	ctx: GenericEndpointContext,
+	params: {
+		hostId: string;
+		userId: string;
+	},
+): Promise<void> {
+	const agents = await adapter.findMany<Agent>({
+		model: TABLE.agent,
+		where: [{ field: "hostId", value: params.hostId }],
+	});
+
+	const now = new Date();
+	const autonomous = agents.filter(
+		(a) => a.mode === "autonomous" && a.status === "active",
+	);
+
+	for (const agent of autonomous) {
+		const grants = await adapter.findMany<AgentCapabilityGrant>({
+			model: TABLE.grant,
+			where: [{ field: "agentId", value: agent.id }],
+		});
+
+		const activeCapabilities = grants
+			.filter((g) => g.status === "active")
+			.map((g) => g.capability);
+
+		for (const g of grants) {
+			if (g.status === "active" || g.status === "pending") {
+				await adapter.update({
+					model: TABLE.grant,
+					where: [{ field: "id", value: g.id }],
+					update: { status: "denied", updatedAt: now },
+				});
+			}
+		}
+
+		await adapter.update({
+			model: TABLE.agent,
+			where: [{ field: "id", value: agent.id }],
+			update: {
+				status: "claimed",
+				userId: params.userId,
+				updatedAt: now,
+			},
+		});
+
+		await opts.onAutonomousAgentClaimed?.({
+			ctx,
+			agentId: agent.id,
+			hostId: params.hostId,
+			userId: params.userId,
+			agentName: agent.name,
+			capabilities: activeCapabilities,
+		});
+
+		emit(opts, {
+			type: "agent.claimed",
+			actorId: params.userId,
+			agentId: agent.id,
+			hostId: params.hostId,
+			metadata: { capabilities: activeCapabilities },
+		}, ctx);
+	}
+}
+
+/**
  * Activate a pending agent and link its host to the approving user
  * if the host is unclaimed. Shared by device-auth and CIBA approval paths.
  */
 export async function activatePendingAgent(
-	adapter: AdapterFindOne & AdapterUpdate,
+	adapter: AdapterFindOne & AdapterFindMany & AdapterUpdate,
 	opts: ResolvedAgentAuthOptions,
 	ctx: GenericEndpointContext,
 	params: {
@@ -365,6 +469,10 @@ export async function activatePendingAgent(
 			where: [{ field: "id", value: params.agent.hostId }],
 		});
 		if (host && !host.userId) {
+			await claimAutonomousAgents(adapter, opts, ctx, {
+				hostId: host.id,
+				userId: params.userId,
+			});
 			await opts.onHostClaimed?.({
 				ctx,
 				hostId: host.id,
@@ -392,29 +500,66 @@ export async function activatePendingAgent(
 }
 
 /**
- * Bulk-resolve any pending CIBA requests for an agent.
- * Used by the device-auth approval path to keep CIBA state in sync.
+ * Bulk-resolve any pending approval requests for an agent.
+ * Called after an agent is approved/denied so all outstanding
+ * approval requests (device auth + CIBA) are kept in sync.
  */
-export async function resolvePendingCibaRequests(
+export async function resolvePendingApprovalRequests(
 	adapter: AdapterFindMany & AdapterUpdate,
 	params: {
 		agentId: string;
 		status: "approved" | "denied";
+		excludeId?: string;
 	},
-): Promise<void> {
+): Promise<ApprovalRequest[]> {
 	const now = new Date();
-	const pending = await adapter.findMany<CibaAuthRequest>({
-		model: TABLE.ciba,
+	const pending = await adapter.findMany<ApprovalRequest>({
+		model: TABLE.approval,
 		where: [
 			{ field: "agentId", value: params.agentId },
 			{ field: "status", value: "pending" },
 		],
 	});
-	for (const ciba of pending) {
+	const resolved: ApprovalRequest[] = [];
+	for (const req of pending) {
+		if (params.excludeId && req.id === params.excludeId) continue;
 		await adapter.update({
-			model: TABLE.ciba,
-			where: [{ field: "id", value: ciba.id }],
+			model: TABLE.approval,
+			where: [{ field: "id", value: req.id }],
 			update: { status: params.status, updatedAt: now },
 		});
+		resolved.push({ ...req, status: params.status });
+	}
+	return resolved;
+}
+
+/**
+ * Fire-and-forget CIBA push/ping notification for resolved approval requests.
+ */
+export async function deliverApprovalNotifications(
+	requests: ApprovalRequest[],
+	payload: Record<string, unknown>,
+): Promise<void> {
+	for (const req of requests) {
+		if (
+			req.method !== "ciba" ||
+			!req.clientNotificationEndpoint ||
+			!req.clientNotificationToken
+		)
+			continue;
+		if (req.deliveryMode !== "ping" && req.deliveryMode !== "push")
+			continue;
+		try {
+			await globalThis.fetch(req.clientNotificationEndpoint, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${req.clientNotificationToken}`,
+				},
+				body: JSON.stringify(payload),
+			});
+		} catch {
+			// fire-and-forget
+		}
 	}
 }

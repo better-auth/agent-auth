@@ -1,13 +1,12 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { hashToken } from "../../utils/approval";
 import { parseCapabilityIds } from "../../utils/capabilities";
 import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../../types";
-import { findHostByKey, validateKeyAlgorithm } from "../_helpers";
+import { claimAutonomousAgents, findHostByKey, validateKeyAlgorithm } from "../_helpers";
 
 export function enrollHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -43,7 +42,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 			const { token, public_key: publicKey, name } = ctx.body;
 
 			if (!publicKey.kty || !publicKey.x) {
-				throw APIError.from("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
+				throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 			}
 
 			validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
@@ -57,18 +56,18 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 
 			const host = hosts[0] ?? null;
 			if (!host) {
-				throw APIError.from("UNAUTHORIZED", ERR.ENROLLMENT_TOKEN_INVALID);
+				throw agentError("UNAUTHORIZED", ERR.ENROLLMENT_TOKEN_INVALID);
 			}
 
 			if (host.status !== "pending_enrollment") {
-				throw APIError.from("BAD_REQUEST", ERR.HOST_NOT_PENDING_ENROLLMENT);
+				throw agentError("BAD_REQUEST", ERR.HOST_NOT_PENDING_ENROLLMENT);
 			}
 
 			if (
 				host.enrollmentTokenExpiresAt &&
 				new Date(host.enrollmentTokenExpiresAt) <= new Date()
 			) {
-				throw APIError.from("UNAUTHORIZED", ERR.ENROLLMENT_TOKEN_EXPIRED);
+				throw agentError("UNAUTHORIZED", ERR.ENROLLMENT_TOKEN_EXPIRED);
 			}
 
 			const now = new Date();
@@ -81,12 +80,18 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 			const existing = await findHostByKey(ctx.context.adapter, publicKey);
 			if (existing && existing.id !== host.id) {
 				if (existing.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
+					throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 				}
 				if (existing.userId && existing.userId !== host.userId) {
-					throw APIError.from("CONFLICT", ERR.HOST_ALREADY_LINKED);
+					throw agentError("CONFLICT", ERR.HOST_ALREADY_LINKED);
 				}
 				if (!existing.userId && host.userId) {
+					await claimAutonomousAgents(
+						ctx.context.adapter,
+						opts,
+						ctx,
+						{ hostId: existing.id, userId: host.userId },
+					);
 					await opts.onHostClaimed?.({
 						ctx,
 						hostId: existing.id,
@@ -118,6 +123,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 						where: [{ field: "hostId", value: existing.id }],
 					});
 					for (const agent of hostAgents) {
+						if (agent.status === "claimed") continue;
 						await ctx.context.adapter.update({
 							model: TABLE.agent,
 							where: [{ field: "id", value: agent.id }],

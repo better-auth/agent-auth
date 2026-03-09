@@ -2,8 +2,9 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
+import { isAsyncResult, isStreamResult } from "../execute-helpers";
 import type {
 	AgentCapabilityGrant,
 	AgentSession,
@@ -11,12 +12,17 @@ import type {
 } from "../types";
 
 /**
- * POST /capabilities/execute (§6.11).
+ * POST /capability/execute (§6.11).
  *
  * Executes a granted capability on behalf of the agent.
  * Validates the agent JWT, checks that the agent has an active grant
  * for the requested capability, calls the onExecute handler,
  * and returns the result.
+ *
+ * Supports three interaction modes based on the onExecute return value:
+ * - Plain value → sync `{ data: result }`
+ * - asyncResult() → 202 with `{ status, status_url }`
+ * - streamResult() → SSE `text/event-stream`
  */
 export function executeCapability(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -40,9 +46,11 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 				.agentSession as AgentSession | undefined;
 
 			if (!agentSession) {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					ERR.UNAUTHORIZED_SESSION,
+					undefined,
+					agentAuthChallenge(ctx.context.baseURL),
 				);
 			}
 
@@ -53,12 +61,11 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 				(c) => c.name === capabilityName,
 			);
 			if (!capabilityDef) {
-				throw new APIError("NOT_FOUND", {
-					body: {
-						code: ERR.CAPABILITY_NOT_FOUND.code,
-						message: `Capability "${capabilityName}" does not exist.`,
-					},
-				});
+				throw agentError(
+					"NOT_FOUND",
+					ERR.CAPABILITY_NOT_FOUND,
+					`Capability "${capabilityName}" does not exist.`,
+				);
 			}
 
 			const grants =
@@ -78,23 +85,18 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 			);
 
 			if (!activeGrant) {
-				throw new APIError("FORBIDDEN", {
-					body: {
-						code: ERR.CAPABILITY_NOT_GRANTED.code,
-						message: `Agent does not have an active grant for capability "${capabilityName}".`,
-					},
-				});
+				throw agentError(
+					"FORBIDDEN",
+					ERR.CAPABILITY_NOT_GRANTED,
+					`Agent does not have an active grant for capability "${capabilityName}".`,
+				);
 			}
 
 			if (!opts.onExecute) {
-				throw new APIError("NOT_IMPLEMENTED" as any, {
-					body: {
-						code: ERR.EXECUTE_NOT_CONFIGURED.code,
-						message:
-							"The server has not configured a capability execution handler.",
-					},
-					status: 501,
-				});
+				throw agentError(
+					"NOT_IMPLEMENTED" as any,
+					ERR.EXECUTE_NOT_CONFIGURED,
+				);
 			}
 
 			const startTime = Date.now();
@@ -114,30 +116,29 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					err instanceof Error ? err.message : String(err);
 				const durationMs = Date.now() - startTime;
 
-			emit(
-				opts,
-				{
-					type: "capability.executed",
-					capability: capabilityName,
-					agentId: agentSession.agent.id,
-					hostId: agentSession.agent.hostId,
-					userId: agentSession.host?.userId ?? undefined,
-					agentName: agentSession.agent.name,
-					arguments: args,
-					status: "error",
-					error: execError,
-					durationMs,
-				},
-				ctx,
-			);
+				emit(
+					opts,
+					{
+						type: "capability.executed",
+						capability: capabilityName,
+						agentId: agentSession.agent.id,
+						hostId: agentSession.agent.hostId,
+						userId: agentSession.host?.userId ?? undefined,
+						agentName: agentSession.agent.name,
+						arguments: args,
+						status: "error",
+						error: execError,
+						durationMs,
+					},
+					ctx,
+				);
 
 				if (err instanceof APIError) throw err;
-				throw new APIError("INTERNAL_SERVER_ERROR", {
-					body: {
-						code: ERR.INTERNAL_ERROR.code,
-						message: execError,
-					},
-				});
+				throw agentError(
+					"INTERNAL_SERVER_ERROR",
+					ERR.INTERNAL_ERROR,
+					execError,
+				);
 			}
 
 			const durationMs = Date.now() - startTime;
@@ -152,12 +153,40 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					userId: agentSession.host?.userId ?? undefined,
 					agentName: agentSession.agent.name,
 					arguments: args,
-					output: result,
 					status: "success",
 					durationMs,
 				},
 				ctx,
 			);
+
+			if (isAsyncResult(result)) {
+				const headers: Record<string, string> = {};
+				if (result.retryAfter) {
+					headers["Retry-After"] = String(result.retryAfter);
+				}
+				return ctx.json(
+					{
+						status: "pending",
+						status_url: result.statusUrl,
+						...(result.retryAfter
+							? { retry_after: result.retryAfter }
+							: {}),
+					},
+					{ status: 202, headers },
+				);
+			}
+
+			if (isStreamResult(result)) {
+				return new Response(result.body, {
+					status: 200,
+					headers: {
+						"Content-Type": "text/event-stream",
+						"Cache-Control": "no-cache",
+						Connection: "keep-alive",
+						...result.headers,
+					},
+				});
+			}
 
 			return ctx.json({ data: result });
 		},

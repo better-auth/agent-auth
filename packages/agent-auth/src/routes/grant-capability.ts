@@ -1,9 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 import type {
@@ -58,11 +57,11 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			if (agent.status === "revoked") {
-				throw APIError.from("FORBIDDEN", ERR.AGENT_REVOKED);
+				throw agentError("FORBIDDEN", ERR.AGENT_REVOKED);
 			}
 
 			if (agent.userId && agent.userId !== session.user.id) {
@@ -72,10 +71,10 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 						where: [{ field: "id", value: agent.hostId }],
 					});
 					if (!host || host.userId !== session.user.id) {
-						throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+						throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 					}
 				} else {
-					throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 				}
 			}
 

@@ -5,7 +5,7 @@ import type {
 	Agent,
 	AgentCapabilityGrant,
 	AgentHost,
-	CibaAuthRequest,
+	ApprovalRequest,
 	FullAdapter,
 	ResolvedAgentAuthOptions,
 } from "./types";
@@ -217,39 +217,39 @@ export function getAgentAuthAdapter(
 		}
 	};
 
-	const findCibaRequestById = (id: string) =>
-		adapter.findOne<CibaAuthRequest>({
-			model: TABLE.ciba,
+	const findApprovalRequestById = (id: string) =>
+		adapter.findOne<ApprovalRequest>({
+			model: TABLE.approval,
 			where: [{ field: "id", value: id }],
 		});
 
-	const findPendingCibaRequestsByUser = (userId: string) =>
-		adapter.findMany<CibaAuthRequest>({
-			model: TABLE.ciba,
+	const findPendingApprovalsByUser = (userId: string) =>
+		adapter.findMany<ApprovalRequest>({
+			model: TABLE.approval,
 			where: [
 				{ field: "userId", value: userId },
 				{ field: "status", value: "pending" },
 			],
 		});
 
-	const findPendingCibaRequestsByAgent = (agentId: string) =>
-		adapter.findMany<CibaAuthRequest>({
-			model: TABLE.ciba,
+	const findPendingApprovalsByAgent = (agentId: string) =>
+		adapter.findMany<ApprovalRequest>({
+			model: TABLE.approval,
 			where: [
 				{ field: "agentId", value: agentId },
 				{ field: "status", value: "pending" },
 			],
 		});
 
-	const createCibaRequest = (data: Record<string, unknown>) =>
-		adapter.create<Record<string, unknown>, CibaAuthRequest>({
-			model: TABLE.ciba,
+	const createApprovalRequest = (data: Record<string, unknown>) =>
+		adapter.create<Record<string, unknown>, ApprovalRequest>({
+			model: TABLE.approval,
 			data,
 		});
 
-	const updateCibaRequest = (id: string, data: Record<string, unknown>) =>
+	const updateApprovalRequest = (id: string, data: Record<string, unknown>) =>
 		adapter.update({
-			model: TABLE.ciba,
+			model: TABLE.approval,
 			where: [{ field: "id", value: id }],
 			update: data,
 		});
@@ -363,11 +363,11 @@ export function getAgentAuthAdapter(
 		deleteGrantsByAgent,
 		createGrantRows,
 
-		findCibaRequestById,
-		findPendingCibaRequestsByUser,
-		findPendingCibaRequestsByAgent,
-		createCibaRequest,
-		updateCibaRequest,
+		findApprovalRequestById,
+		findPendingApprovalsByUser,
+		findPendingApprovalsByAgent,
+		createApprovalRequest,
+		updateApprovalRequest,
 
 		checkSharedOrg,
 		transparentReactivation,

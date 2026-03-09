@@ -103,9 +103,9 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 			updateHost: routes.updateHost,
 			rotateHostKey: routes.rotateHostKey,
 			cibaAuthorize: routes.cibaAuthorize,
-			cibaApprove: routes.cibaApprove,
-			cibaDeny: routes.cibaDeny,
 			cibaPending: routes.cibaPending,
+			deviceCode: routes.deviceCode,
+			deviceToken: routes.deviceToken,
 		},
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,
@@ -116,3 +116,4 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 export type * from "./types";
 export { verifyAgentRequest } from "./verify-agent-request";
 export { AGENT_AUTH_ERROR_CODES } from "./errors";
+export { asyncResult, streamResult } from "./execute-helpers";

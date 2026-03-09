@@ -1,9 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { hasCapability, parseCapabilityIds } from "../utils/capabilities";
 import { verifyAgentJWT } from "../utils/crypto";
@@ -76,13 +75,13 @@ export function register(
 					: null;
 
 			if (!hostJWT) {
-				throw APIError.from("UNAUTHORIZED", ERR.INVALID_JWT);
+				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 
 			const mode = rawMode ?? "delegated";
 
 			if (!opts.modes.includes(mode)) {
-				throw APIError.from("BAD_REQUEST", ERR.UNSUPPORTED_MODE);
+				throw agentError("BAD_REQUEST", ERR.UNSUPPORTED_MODE);
 			}
 
 			// ---------- Decode host JWT ----------
@@ -93,7 +92,7 @@ export function register(
 				decoded = decodeJwt(hostJWT);
 				if (decoded.sub) hostIdFromJwt = String(decoded.sub);
 			} catch {
-				throw APIError.from("UNAUTHORIZED", ERR.INVALID_JWT);
+				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 
 			let agentPublicKey: Record<string, unknown> | null = null;
@@ -142,25 +141,25 @@ export function register(
 			if (hostRecord) {
 				// ---- Known host ----
 				if (hostRecord.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
+					throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 				}
 
 				if (
 					hostRecord.status !== "active" &&
 					hostRecord.status !== "pending"
 				) {
-					throw APIError.from("FORBIDDEN", ERR.HOST_EXPIRED);
+					throw agentError("FORBIDDEN", ERR.HOST_EXPIRED);
 				}
 
 				if (!hostRecord.publicKey && !hostRecord.jwksUrl) {
-					throw APIError.from("FORBIDDEN", ERR.HOST_REVOKED);
+					throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 				}
 
 				let hostPubKey: AgentJWK;
 				if (hostRecord.jwksUrl) {
 					const header = await decodeProtectedHeader(hostJWT);
 					if (!header.kid) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.INVALID_JWT,
 						);
@@ -170,7 +169,7 @@ export function register(
 						header.kid,
 					);
 					if (!key) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.INVALID_PUBLIC_KEY,
 						);
@@ -182,7 +181,7 @@ export function register(
 							hostRecord.publicKey!,
 						) as AgentJWK;
 					} catch {
-						throw APIError.from(
+						throw agentError(
 							"FORBIDDEN",
 							ERR.INVALID_PUBLIC_KEY,
 						);
@@ -196,7 +195,7 @@ export function register(
 				});
 
 				if (!payload || payload.sub !== hostRecord.id) {
-					throw APIError.from("UNAUTHORIZED", ERR.INVALID_JWT);
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
 				if (payload.aud) {
@@ -207,7 +206,7 @@ export function register(
 							ctx.headers,
 						)
 					) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.INVALID_JWT,
 						);
@@ -217,13 +216,13 @@ export function register(
 				// JTI replay (§5.6)
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.INVALID_JWT,
 						);
 					}
 					if (jtiCache && (await jtiCache.has(String(payload.jti)))) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.JWT_REPLAY,
 						);
@@ -286,7 +285,7 @@ export function register(
 			} else {
 				// ---- Unknown host — dynamic registration ----
 				if (!(await isDynamicHostAllowed(opts, ctx))) {
-					throw APIError.from(
+					throw agentError(
 						"FORBIDDEN",
 						ERR.DYNAMIC_HOST_REGISTRATION_DISABLED,
 					);
@@ -310,7 +309,7 @@ export function register(
 				}
 
 				if (!resolvedHostPubKey) {
-					throw APIError.from("UNAUTHORIZED", ERR.INVALID_JWT);
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
 				const payload = await verifyAgentJWT({
@@ -320,7 +319,7 @@ export function register(
 				});
 
 				if (!payload) {
-					throw APIError.from("UNAUTHORIZED", ERR.INVALID_JWT);
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
 				if (payload.aud) {
@@ -331,7 +330,7 @@ export function register(
 							ctx.headers,
 						)
 					) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.INVALID_JWT,
 						);
@@ -341,13 +340,13 @@ export function register(
 				// JTI replay (§5.6)
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.INVALID_JWT,
 						);
 					}
 					if (jtiCache && (await jtiCache.has(String(payload.jti)))) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							ERR.JWT_REPLAY,
 						);
@@ -366,7 +365,7 @@ export function register(
 						payload.sub &&
 						payload.sub !== existingHost.id
 					) {
-						throw APIError.from("UNAUTHORIZED", ERR.INVALID_JWT);
+						throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 					}
 					hostRecord = existingHost;
 					hostId = existingHost.id;
@@ -424,7 +423,7 @@ export function register(
 			}
 
 			if (mode === "autonomous" && userId) {
-				throw APIError.from("BAD_REQUEST", ERR.UNSUPPORTED_MODE);
+				throw agentError("BAD_REQUEST", ERR.UNSUPPORTED_MODE);
 			}
 
 			const publicKey = agentPublicKey;
@@ -435,7 +434,7 @@ export function register(
 				!publicKey.kty ||
 				!publicKey.x
 			) {
-				throw APIError.from("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
+				throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 			}
 
 			if (publicKey) {
@@ -452,7 +451,7 @@ export function register(
 					],
 				});
 				if (activeCount >= opts.maxAgentsPerUser) {
-					throw APIError.from(
+					throw agentError(
 						"BAD_REQUEST",
 						ERR.AGENT_LIMIT_REACHED,
 					);
@@ -493,13 +492,11 @@ export function register(
 			}
 
 			if (pendingCaps.length > 0 && !userId && mode === "autonomous") {
-				throw new APIError("FORBIDDEN", {
-					body: {
-						code: ERR.CAPABILITY_DENIED,
-						message:
-							"Requested capabilities are not pre-authorized for this autonomous host.",
-					},
-				});
+				throw agentError(
+					"FORBIDDEN",
+					ERR.CAPABILITY_DENIED,
+					"Requested capabilities are not pre-authorized for this autonomous host.",
+				);
 			}
 
 			validateCapabilityIds(resolvedCaps, opts);

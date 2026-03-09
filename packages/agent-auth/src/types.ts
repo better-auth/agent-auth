@@ -24,6 +24,28 @@ export interface Capability {
 	[key: string]: unknown;
 }
 
+/**
+ * Returned from `onExecute` to signal an async capability (§4.1).
+ * The server responds with `202 Accepted` and a polling URL.
+ */
+export interface AsyncExecuteResult {
+	readonly __type: "async";
+	statusUrl: string;
+	retryAfter?: number;
+}
+
+/**
+ * Returned from `onExecute` to signal a streaming capability (§4.1).
+ * The server responds with `text/event-stream` SSE.
+ */
+export interface StreamExecuteResult {
+	readonly __type: "stream";
+	body: ReadableStream;
+	headers?: Record<string, string>;
+}
+
+export type ExecuteResult = AsyncExecuteResult | StreamExecuteResult;
+
 export type AgentMode = "delegated" | "autonomous";
 
 export type AgentStatus =
@@ -97,19 +119,23 @@ export interface AgentCapabilityGrant {
 	updatedAt: Date;
 }
 
-/** CIBA backchannel authentication request (§9.2). */
-export interface CibaAuthRequest {
+/** Unified approval request for device authorization and CIBA flows. */
+export interface ApprovalRequest {
 	id: string;
-	clientId: string;
-	loginHint: string;
-	userId: string | null;
+	method: "device_authorization" | "ciba";
 	agentId: string | null;
+	hostId: string | null;
+	userId: string | null;
 	capabilities: string | null;
+	status: "pending" | "approved" | "denied" | "expired";
+	/** SHA-256 hash of the user_code (device authorization only). */
+	userCodeHash: string | null;
+	/** CIBA login hint (email). */
+	loginHint: string | null;
 	bindingMessage: string | null;
 	clientNotificationToken: string | null;
 	clientNotificationEndpoint: string | null;
-	deliveryMode: "poll" | "ping" | "push";
-	status: "pending" | "approved" | "denied" | "expired";
+	deliveryMode: string | null;
 	interval: number;
 	lastPolledAt: Date | null;
 	expiresAt: Date;
@@ -442,9 +468,13 @@ export interface AgentAuthOptions {
 	/**
 	 * Execute a capability on behalf of the agent (§6.11).
 	 *
-	 * Called by `POST /capabilities/execute`. The server validates the
+	 * Called by `POST /capability/execute`. The server validates the
 	 * agent JWT and checks grants before invoking this handler.
-	 * Return the result payload to send back to the client.
+	 *
+	 * Return types determine the interaction mode:
+	 * - **Plain value** → sync response (`{ data: result }`)
+	 * - **`asyncResult(...)`** → `202 Accepted` with `status_url` for polling
+	 * - **`streamResult(...)`** → SSE stream (`text/event-stream`)
 	 *
 	 * If not provided, the endpoint returns `501 Not Implemented`.
 	 */
@@ -454,7 +484,23 @@ export interface AgentAuthOptions {
 		capabilityDef: Capability;
 		arguments?: Record<string, unknown>;
 		agentSession: AgentSession;
-	}) => unknown | Promise<unknown>;
+	}) => unknown | ExecuteResult | Promise<unknown | ExecuteResult>;
+	/**
+	 * Called when an autonomous agent is claimed (§3.4).
+	 *
+	 * Triggered when a previously unlinked host acquires a user_id,
+	 * causing all active autonomous agents under it to be claimed.
+	 * Use this to transfer resources, notify systems, or perform
+	 * any application-specific cleanup.
+	 */
+	onAutonomousAgentClaimed?: (context: {
+		ctx: GenericEndpointContext;
+		agentId: string;
+		hostId: string;
+		userId: string;
+		agentName: string;
+		capabilities: string[];
+	}) => void | Promise<void>;
 }
 
 export type ResolvedAgentAuthOptions = Required<
@@ -496,6 +542,7 @@ export type AgentAuthAuditEventType =
 	| "agent.created"
 	| "agent.updated"
 	| "agent.revoked"
+	| "agent.claimed"
 	| "agent.reactivated"
 	| "agent.key_rotated"
 	| "agent.cleanup"
@@ -510,9 +557,9 @@ export type AgentAuthAuditEventType =
 	| "capability.approved"
 	| "capability.denied"
 	| "capability.granted"
-	| "ciba.authorized"
-	| "ciba.approved"
-	| "ciba.denied";
+	| "approval.created"
+	| "approval.approved"
+	| "approval.denied";
 
 export interface AgentAuthAuditEvent extends AgentAuthEventBase {
 	type: AgentAuthAuditEventType;

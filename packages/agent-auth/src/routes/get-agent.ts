@@ -1,8 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -58,7 +57,7 @@ export function getAgent() {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			const grants =

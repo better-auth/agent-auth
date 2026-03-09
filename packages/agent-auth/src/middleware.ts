@@ -4,7 +4,7 @@ import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { getAgentAuthAdapter } from "./adapter";
 import { TABLE } from "./constants";
-import { AGENT_AUTH_ERROR_CODES } from "./errors";
+import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES } from "./errors";
 import { parseCapabilityIds } from "./utils/capabilities";
 import { verifyAgentJWT } from "./utils/crypto";
 import type { JtiCacheStore } from "./utils/jti-cache";
@@ -63,6 +63,8 @@ export function createAgentAuthBeforeHook(
 			return bearer.split(".").length === 3;
 		},
 		handler: createAuthMiddleware(async (ctx) => {
+		const challenge = agentAuthChallenge(ctx.context.baseURL);
+		try {
 			const db = getAgentAuthAdapter(
 				ctx.context.adapter as FullAdapter,
 				opts,
@@ -75,7 +77,7 @@ export function createAgentAuthBeforeHook(
 			try {
 				const decoded = decodeJwt(bearer);
 				if (!decoded.sub) {
-					throw APIError.from(
+					throw agentError(
 						"UNAUTHORIZED",
 						AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 					);
@@ -101,7 +103,7 @@ export function createAgentAuthBeforeHook(
 							acceptedOrigins.has(String(a)),
 						)
 					) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 						);
@@ -109,7 +111,7 @@ export function createAgentAuthBeforeHook(
 				}
 			} catch (e) {
 				if (e instanceof APIError) throw e;
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 				);
@@ -140,14 +142,14 @@ export function createAgentAuthBeforeHook(
 						try {
 							hostPubKey = JSON.parse(host.publicKey) as AgentJWK;
 						} catch {
-							throw APIError.from(
+							throw agentError(
 								"UNAUTHORIZED",
 								AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
 							);
 						}
 					}
 					if (!hostPubKey) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
 						);
@@ -158,7 +160,7 @@ export function createAgentAuthBeforeHook(
 						maxAge: opts.jwtMaxAge,
 					});
 					if (!hostPayload) {
-						throw APIError.from(
+						throw agentError(
 							"UNAUTHORIZED",
 							AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 						);
@@ -182,26 +184,26 @@ export function createAgentAuthBeforeHook(
 					return { context: ctx };
 				}
 
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.AGENT_NOT_FOUND,
 				);
 			}
 
 			if (agent.status === "revoked") {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
 				);
 			}
 			if (agent.status === "pending") {
-				throw APIError.from(
+				throw agentError(
 					"FORBIDDEN",
 					AGENT_AUTH_ERROR_CODES.AGENT_PENDING,
 				);
 			}
 			if (agent.status === "rejected") {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
 				);
@@ -223,7 +225,7 @@ export function createAgentAuthBeforeHook(
 							})
 							.catch(() => {}),
 					);
-					throw APIError.from(
+					throw agentError(
 						"UNAUTHORIZED",
 						AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
 					);
@@ -265,14 +267,14 @@ export function createAgentAuthBeforeHook(
 				try {
 					publicKey = JSON.parse(agent.publicKey) as AgentJWK;
 				} catch {
-					throw APIError.from(
+					throw agentError(
 						"UNAUTHORIZED",
 						AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
 					);
 				}
 			}
 			if (!publicKey) {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
 				);
@@ -290,7 +292,7 @@ export function createAgentAuthBeforeHook(
 						updatedAt: new Date(),
 					}).catch(() => {});
 				}
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 				);
@@ -298,13 +300,13 @@ export function createAgentAuthBeforeHook(
 
 			// JTI replay (§5.6)
 			if (!payload.jti) {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 				);
 			}
 			if (await jtiCache.has(String(payload.jti))) {
-				throw APIError.from(
+				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
 				);
@@ -315,7 +317,7 @@ export function createAgentAuthBeforeHook(
 				const reactivated =
 					await db.transparentReactivation(agent);
 				if (!reactivated) {
-					throw APIError.from(
+					throw agentError(
 						"UNAUTHORIZED",
 						AGENT_AUTH_ERROR_CODES.AGENT_EXPIRED,
 					);
@@ -349,13 +351,11 @@ export function createAgentAuthBeforeHook(
 			]);
 
 			if (!user) {
-				throw new APIError("UNAUTHORIZED", {
-					body: {
-						code: AGENT_AUTH_ERROR_CODES.AUTONOMOUS_OWNER_REQUIRED,
-						message:
-							"Could not resolve a session user for this agent.",
-					},
-				});
+				throw agentError(
+					"UNAUTHORIZED",
+					AGENT_AUTH_ERROR_CODES.AUTONOMOUS_OWNER_REQUIRED,
+					"Could not resolve a session user for this agent.",
+				);
 			}
 
 			const now = new Date();
@@ -459,6 +459,12 @@ export function createAgentAuthBeforeHook(
 			}
 
 			return { context: ctx };
+		} catch (e) {
+			if (e instanceof APIError && (e.statusCode === 401 || e.status === "UNAUTHORIZED")) {
+				Object.assign(e.headers, challenge);
+			}
+			throw e;
+		}
 		}),
 	};
 }

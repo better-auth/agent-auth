@@ -9,19 +9,25 @@ import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 import { findBlockedCapabilities } from "../utils/capabilities";
 import {
 	activatePendingAgent,
-	resolvePendingCibaRequests,
+	resolvePendingApprovalRequests,
+	deliverApprovalNotifications,
 } from "./_helpers";
 import type {
 	Agent,
 	AgentCapabilityGrant,
+	ApprovalRequest,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
 /**
  * POST /agent/approve-capability
  *
- * Browser-based (device authorization) approval path (§9.1).
- * Optionally requires a fresh session (configurable via `freshSessionWindow`).
+ * Unified user-facing approval endpoint for both device authorization
+ * and CIBA flows. Optionally requires a fresh session.
+ *
+ * Accepts `agent_id` directly, or `approval_id` to resolve via an
+ * approval request record (for CIBA flows where the UI shows the
+ * approval request ID).
  */
 export function approveCapability(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -29,7 +35,8 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				agent_id: z.string(),
+				agent_id: z.string().optional(),
+				approval_id: z.string().optional(),
 				action: z.enum(["approve", "deny"]),
 				capabilities: z.array(z.string()).optional(),
 				ttl: z.number().positive().optional(),
@@ -38,7 +45,7 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Approve or deny pending capability requests via device authorization (§9.1).",
+						"Approve or deny a pending agent registration or capability request.",
 				},
 			},
 		},
@@ -46,11 +53,37 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 			const session = ctx.context.session;
 
 			const {
-				agent_id: agentId,
+				agent_id: directAgentId,
+				approval_id: approvalId,
 				action,
 				capabilities: userCapIds,
 				ttl: explicitTTL,
 			} = ctx.body;
+
+			let agentId: string;
+			let approvalRequest: ApprovalRequest | null = null;
+
+			if (approvalId) {
+				approvalRequest =
+					await ctx.context.adapter.findOne<ApprovalRequest>({
+						model: TABLE.approval,
+						where: [{ field: "id", value: approvalId }],
+					});
+				if (!approvalRequest || !approvalRequest.agentId) {
+					throw APIError.from(
+						"NOT_FOUND",
+						ERR.CAPABILITY_REQUEST_NOT_FOUND,
+					);
+				}
+				agentId = approvalRequest.agentId;
+			} else if (directAgentId) {
+				agentId = directAgentId;
+			} else {
+				throw new APIError("BAD_REQUEST", {
+					message:
+						"Either agent_id or approval_id is required.",
+				});
+			}
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,
@@ -109,9 +142,18 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 					});
 				}
 
-				await resolvePendingCibaRequests(ctx.context.adapter, {
-					agentId,
+				const resolved =
+					await resolvePendingApprovalRequests(
+						ctx.context.adapter,
+						{ agentId, status: "denied" },
+					);
+
+				void deliverApprovalNotifications(resolved, {
+					agent_id: agentId,
 					status: "denied",
+					error: "access_denied",
+					error_description:
+						"User denied the authorization request.",
 				});
 
 				emit(opts, {
@@ -133,7 +175,6 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 				? new Set(userCapIds)
 				: new Set(pendingGrants.map((g) => g.capability));
 
-			// Fresh session enforcement (§10.11)
 			const capabilities = [...approvedCapIds];
 			const freshWindow =
 				typeof opts.freshSessionWindow === "function"
@@ -212,9 +253,17 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			await resolvePendingCibaRequests(ctx.context.adapter, {
-				agentId,
-				status: added.length > 0 ? "approved" : "denied",
+			const resolved = await resolvePendingApprovalRequests(
+				ctx.context.adapter,
+				{
+					agentId,
+					status: added.length > 0 ? "approved" : "denied",
+				},
+			);
+
+			void deliverApprovalNotifications(resolved, {
+				agent_id: agentId,
+				status: "approved",
 			});
 
 			await activatePendingAgent(
@@ -243,5 +292,3 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 		},
 	);
 }
-
-	

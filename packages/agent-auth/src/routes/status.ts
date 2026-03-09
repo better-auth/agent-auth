@@ -1,8 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -46,14 +45,15 @@ export function agentStatus() {
 				targetAgentId = ctx.query?.agent_id ?? agentSession.agent.id;
 			} else if (hostSession) {
 				if (!ctx.query?.agent_id) {
-					throw new APIError("BAD_REQUEST", {
-						message:
-							"agentId query parameter is required when using host JWT.",
-					});
+				throw agentError(
+					"BAD_REQUEST",
+					ERR.INVALID_REQUEST,
+					"agent_id query parameter is required when using host JWT.",
+				);
 				}
 				targetAgentId = ctx.query.agent_id;
 			} else {
-				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
+				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
@@ -62,11 +62,11 @@ export function agentStatus() {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			if (hostSession && agent.hostId !== hostSession.host.id) {
-				throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
 			const grants =

@@ -4,7 +4,7 @@ export const TABLE = {
 	agent: "agent",
 	host: "agentHost",
 	grant: "agentCapabilityGrant",
-	ciba: "cibaAuthRequest",
+	approval: "approvalRequest",
 } as const;
 
 export const DEFAULTS = {

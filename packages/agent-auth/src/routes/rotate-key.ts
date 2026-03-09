@@ -1,8 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import type { Agent, AgentSession, ResolvedAgentAuthOptions } from "../types";
 import { validateKeyAlgorithm } from "./_helpers";
@@ -34,7 +33,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 			).agentSession;
 
 			if (!agentSession) {
-				throw APIError.from("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
+				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}
 
 			const agentId = agentSession.agent.id;
@@ -48,7 +47,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			const kid =

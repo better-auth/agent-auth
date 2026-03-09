@@ -28,7 +28,8 @@ import { rotateHostKey } from "./host/rotate-key";
 import { updateHost } from "./host/update";
 import { cibaAuthorize } from "./ciba/authorize";
 import { cibaPending } from "./ciba/pending";
-import { cibaApprove, cibaDeny } from "./ciba/respond";
+import { deviceCode } from "./device/code";
+import { deviceToken } from "./device/token";
 
 export function createAgentRoutes(
 	opts: ResolvedAgentAuthOptions,
@@ -61,8 +62,8 @@ export function createAgentRoutes(
 		updateHost: updateHost(opts), // §3
 		rotateHostKey: rotateHostKey(opts, jtiCache, jwksCache), // §6.8
 		cibaAuthorize: cibaAuthorize(opts), // §9.2
-		cibaApprove: cibaApprove(opts), // §9.2
-		cibaDeny: cibaDeny(opts), // §9.2
 		cibaPending: cibaPending(), // §9.2
+		deviceCode: deviceCode(opts), // RFC 8628 §3.1–3.2
+		deviceToken: deviceToken(opts), // RFC 8628 §3.4
 	};
 }

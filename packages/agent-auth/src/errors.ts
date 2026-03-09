@@ -1,68 +1,231 @@
+import { APIError } from "@better-auth/core/error";
+
 export interface ErrorDef {
 	readonly code: string;
 	readonly message: string;
 }
 
-function defineErrors<T extends Record<string, string>>(
-	codes: T,
-): { [K in keyof T & string]: ErrorDef } {
-	const result = {} as Record<string, ErrorDef>;
-	for (const [key, value] of Object.entries(codes)) {
-		result[key] = { code: key, message: value };
-	}
-	return result as { [K in keyof T & string]: ErrorDef };
+/**
+ * Create a spec-compliant error (§6.13).
+ * Response body: `{ error: "error_code", message: "Human-readable description" }`
+ */
+export function agentError(
+	status: ConstructorParameters<typeof APIError>[0],
+	err: ErrorDef,
+	overrideMessage?: string,
+	headers?: Record<string, string>,
+): APIError {
+	return new APIError(
+		status,
+		{
+			error: err.code,
+			message: overrideMessage ?? err.message,
+		},
+		headers ?? {},
+	);
 }
 
-export const AGENT_AUTH_ERROR_CODES = defineErrors({
-	INVALID_REQUEST: "invalid_request",
-	INVALID_JWT: "invalid_jwt",
-	AGENT_REVOKED: "agent_revoked",
-	AGENT_EXPIRED: "agent_expired",
-	ABSOLUTE_LIFETIME_EXCEEDED: "absolute_lifetime_exceeded",
-	AGENT_PENDING: "agent_pending",
-	AGENT_REJECTED: "agent_rejected",
-	AGENT_CLAIMED: "agent_claimed",
-	AGENT_NOT_EXPIRED: "agent_not_expired",
-	HOST_REVOKED: "host_revoked",
-	HOST_PENDING: "host_pending",
-	UNAUTHORIZED: "unauthorized",
-	RATE_LIMITED: "rate_limited",
-	INTERNAL_ERROR: "internal_error",
-	UNSUPPORTED_MODE: "unsupported_mode",
-	UNSUPPORTED_ALGORITHM: "unsupported_algorithm",
-	INVALID_CAPABILITIES: "invalid_capabilities",
-	AGENT_EXISTS: "agent_exists",
-	ALREADY_GRANTED: "already_granted",
-	CAPABILITY_NOT_GRANTED: "capability_not_granted",
-	LIMIT_EXCEEDED: "limit_exceeded",
-	CAPABILITY_BLOCKED: "capability_blocked",
-	AGENT_NOT_FOUND: "agent_not_found",
-	HOST_NOT_FOUND: "host_not_found",
-	UNAUTHORIZED_SESSION: "unauthorized_session",
-	INVALID_PUBLIC_KEY: "invalid_public_key",
-	JWT_REPLAY: "jti_replay",
-	REQUEST_BINDING_MISMATCH: "request_binding_mismatch",
-	HOST_EXPIRED: "host_expired",
-	HOST_ALREADY_LINKED: "host_already_linked",
-	HOST_NOT_PENDING_ENROLLMENT: "host_not_pending_enrollment",
-	DYNAMIC_HOST_REGISTRATION_DISABLED:
-		"dynamic_host_registration_disabled",
-	ENROLLMENT_TOKEN_INVALID: "enrollment_token_invalid",
-	ENROLLMENT_TOKEN_EXPIRED: "enrollment_token_expired",
-	CAPABILITY_REQUEST_NOT_FOUND: "capability_request_not_found",
-	CAPABILITY_REQUEST_ALREADY_RESOLVED:
-		"capability_request_already_resolved",
-	CAPABILITY_REQUEST_OWNER_MISMATCH:
-		"capability_request_owner_mismatch",
-	FRESH_SESSION_REQUIRED: "fresh_session_required",
-	CAPABILITY_DENIED: "capability_denied",
-	AGENT_LIMIT_REACHED: "agent_limit_reached",
-	AUTONOMOUS_OWNER_REQUIRED: "autonomous_owner_required",
-	CIBA_NOT_FOUND: "ciba_not_found",
-	CIBA_EXPIRED: "ciba_expired",
-	CIBA_ALREADY_RESOLVED: "ciba_already_resolved",
-	CIBA_SLOW_DOWN: "slow_down",
-	UNKNOWN_CAPABILITIES: "unknown_capabilities",
-	CAPABILITY_NOT_FOUND: "capability_not_found",
-	EXECUTE_NOT_CONFIGURED: "execute_not_configured",
-});
+/**
+ * Build the `WWW-Authenticate: AgentAuth` challenge header value (§6.14).
+ */
+export function agentAuthChallenge(baseURL: string): Record<string, string> {
+	const origin = new URL(baseURL).origin;
+	return {
+		"WWW-Authenticate": `AgentAuth discovery="${origin}/.well-known/agent-configuration"`,
+	};
+}
+
+export const AGENT_AUTH_ERROR_CODES = {
+	INVALID_REQUEST: {
+		code: "invalid_request",
+		message: "Malformed request, missing required fields, or invalid parameter types",
+	},
+	INVALID_JWT: {
+		code: "invalid_jwt",
+		message: "JWT is invalid, expired, or signature failed",
+	},
+	AGENT_REVOKED: {
+		code: "agent_revoked",
+		message: "Agent has been revoked",
+	},
+	AGENT_EXPIRED: {
+		code: "agent_expired",
+		message: "Agent session has expired",
+	},
+	ABSOLUTE_LIFETIME_EXCEEDED: {
+		code: "absolute_lifetime_exceeded",
+		message: "Agent's absolute lifetime has elapsed",
+	},
+	AGENT_PENDING: {
+		code: "agent_pending",
+		message: "Agent is still pending approval",
+	},
+	AGENT_REJECTED: {
+		code: "agent_rejected",
+		message: "Agent registration was denied",
+	},
+	AGENT_CLAIMED: {
+		code: "agent_claimed",
+		message: "Agent has been claimed and is no longer active",
+	},
+	AGENT_NOT_EXPIRED: {
+		code: "agent_not_expired",
+		message: "Agent is not in an expired state",
+	},
+	HOST_REVOKED: {
+		code: "host_revoked",
+		message: "Host has been revoked",
+	},
+	HOST_PENDING: {
+		code: "host_pending",
+		message: "Host is still pending approval",
+	},
+	UNAUTHORIZED: {
+		code: "unauthorized",
+		message: "Caller is not authorized for this operation",
+	},
+	RATE_LIMITED: {
+		code: "rate_limited",
+		message: "Too many requests",
+	},
+	INTERNAL_ERROR: {
+		code: "internal_error",
+		message: "Server-side failure",
+	},
+	UNSUPPORTED_MODE: {
+		code: "unsupported_mode",
+		message: "Requested mode is not supported by this server",
+	},
+	UNSUPPORTED_ALGORITHM: {
+		code: "unsupported_algorithm",
+		message: "Key algorithm is not in the server's supported set",
+	},
+	INVALID_CAPABILITIES: {
+		code: "invalid_capabilities",
+		message: "One or more requested capability names don't exist or are blocked",
+	},
+	AGENT_EXISTS: {
+		code: "agent_exists",
+		message: "An agent with this public key is already registered",
+	},
+	ALREADY_GRANTED: {
+		code: "already_granted",
+		message: "All requested capabilities are already granted",
+	},
+	CAPABILITY_NOT_GRANTED: {
+		code: "capability_not_granted",
+		message: "Agent does not have an active grant for this capability",
+	},
+	LIMIT_EXCEEDED: {
+		code: "limit_exceeded",
+		message: "Request exceeds the agent's limits for this capability",
+	},
+	CAPABILITY_BLOCKED: {
+		code: "capability_blocked",
+		message: "One or more requested capabilities are blocked by server policy",
+	},
+	AGENT_NOT_FOUND: {
+		code: "agent_not_found",
+		message: "Agent not found",
+	},
+	HOST_NOT_FOUND: {
+		code: "host_not_found",
+		message: "Host not found",
+	},
+	UNAUTHORIZED_SESSION: {
+		code: "unauthorized",
+		message: "Authentication required",
+	},
+	INVALID_PUBLIC_KEY: {
+		code: "invalid_public_key",
+		message: "Public key is invalid or malformed",
+	},
+	JWT_REPLAY: {
+		code: "jti_replay",
+		message: "JWT has already been used",
+	},
+	REQUEST_BINDING_MISMATCH: {
+		code: "request_binding_mismatch",
+		message: "Request binding does not match the JWT",
+	},
+	HOST_EXPIRED: {
+		code: "host_expired",
+		message: "Host has expired",
+	},
+	HOST_ALREADY_LINKED: {
+		code: "host_already_linked",
+		message: "Host is already linked to a different user",
+	},
+	HOST_NOT_PENDING_ENROLLMENT: {
+		code: "host_not_pending_enrollment",
+		message: "Host is not in a pending enrollment state",
+	},
+	DYNAMIC_HOST_REGISTRATION_DISABLED: {
+		code: "dynamic_host_registration_disabled",
+		message: "Dynamic host registration is not enabled on this server",
+	},
+	ENROLLMENT_TOKEN_INVALID: {
+		code: "enrollment_token_invalid",
+		message: "Enrollment token is invalid",
+	},
+	ENROLLMENT_TOKEN_EXPIRED: {
+		code: "enrollment_token_expired",
+		message: "Enrollment token has expired",
+	},
+	CAPABILITY_REQUEST_NOT_FOUND: {
+		code: "capability_request_not_found",
+		message: "Capability request not found",
+	},
+	CAPABILITY_REQUEST_ALREADY_RESOLVED: {
+		code: "capability_request_already_resolved",
+		message: "Capability request has already been resolved",
+	},
+	CAPABILITY_REQUEST_OWNER_MISMATCH: {
+		code: "capability_request_owner_mismatch",
+		message: "Capability request does not belong to this user",
+	},
+	FRESH_SESSION_REQUIRED: {
+		code: "fresh_session_required",
+		message: "A fresh authentication session is required for this operation",
+	},
+	CAPABILITY_DENIED: {
+		code: "capability_denied",
+		message: "Capability request was denied",
+	},
+	AGENT_LIMIT_REACHED: {
+		code: "agent_limit_reached",
+		message: "Maximum number of active agents per user reached",
+	},
+	AUTONOMOUS_OWNER_REQUIRED: {
+		code: "autonomous_owner_required",
+		message: "Autonomous agents require an owner to be resolved",
+	},
+	CIBA_NOT_FOUND: {
+		code: "ciba_not_found",
+		message: "CIBA authentication request not found",
+	},
+	CIBA_EXPIRED: {
+		code: "ciba_expired",
+		message: "CIBA authentication request has expired",
+	},
+	CIBA_ALREADY_RESOLVED: {
+		code: "ciba_already_resolved",
+		message: "CIBA authentication request has already been resolved",
+	},
+	CIBA_SLOW_DOWN: {
+		code: "slow_down",
+		message: "Polling too frequently, slow down",
+	},
+	UNKNOWN_CAPABILITIES: {
+		code: "unknown_capabilities",
+		message: "One or more capability names are not recognized",
+	},
+	CAPABILITY_NOT_FOUND: {
+		code: "capability_not_found",
+		message: "Capability does not exist",
+	},
+	EXECUTE_NOT_CONFIGURED: {
+		code: "execute_not_configured",
+		message: "Server has not configured a capability execution handler",
+	},
+} as const satisfies Record<string, ErrorDef>;

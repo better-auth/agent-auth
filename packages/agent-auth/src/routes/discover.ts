@@ -38,6 +38,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				rotate_host_key: `${basePath}/host/rotate-key`,
 				introspect: `${basePath}/agent/introspect`,
 				device_authorization: `${basePath}/device/code`,
+				device_token: `${basePath}/device/token`,
 			};
 
 			if (opts.approvalMethods.includes("ciba")) {

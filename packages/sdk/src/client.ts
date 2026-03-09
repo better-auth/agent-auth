@@ -9,12 +9,10 @@ import type {
 	AgentStatus,
 	ApprovalInfo,
 	CapabilitiesResponse,
-	Capability,
 	CapabilityGrant,
 	EnrollHostResponse,
 	ExecuteCapabilityResponse,
 	HostIdentity,
-	Keypair,
 	ProviderConfig,
 	ProviderInfo,
 	RegisterResponse,
@@ -142,12 +140,14 @@ export class AgentAuthClient {
 		query?: string;
 		agentId?: string;
 		cursor?: string;
+		limit?: number;
 	}): Promise<CapabilitiesResponse> {
 		const config = await this.resolveConfig(opts.provider);
 		const capPath = config.endpoints.capabilities ?? "/capability/list";
 		const url = new URL(capPath, config.issuer);
 		if (opts.query) url.searchParams.set("query", opts.query);
 		if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
+		if (opts.limit != null) url.searchParams.set("limit", String(opts.limit));
 
 		const headers: Record<string, string> = {
 			accept: "application/json",
@@ -156,6 +156,16 @@ export class AgentAuthClient {
 		if (opts.agentId) {
 			const token = await this.signJwt({ agentId: opts.agentId });
 			headers.authorization = `Bearer ${token.token}`;
+		} else {
+			const host = await this.storage.getHostIdentity(config.issuer);
+			if (host?.hostId) {
+				const hostJWT = await signHostJWT({
+					hostKeypair: host.keypair,
+					subject: host.hostId,
+					audience: config.issuer,
+				});
+				headers.authorization = `Bearer ${hostJWT}`;
+			}
 		}
 
 		const res = await this.fetchFn(url.toString(), { method: "GET", headers });
@@ -191,7 +201,6 @@ export class AgentAuthClient {
 		hostId: string;
 		status: AgentStatus;
 		capabilityGrants: CapabilityGrant[];
-		approval?: ApprovalInfo;
 	}> {
 		const config = await this.resolveConfig(opts.provider);
 		const host = await this.resolveHost(config);
@@ -869,6 +878,102 @@ export class AgentAuthClient {
 			? signals[0]
 			: AbortSignal.any(signals);
 
+		if (approval.notification_url) {
+			try {
+				return await this.waitForApprovalSSE(
+					config, host, agentId, approval.notification_url, signal,
+				);
+			} catch (err) {
+				if (err instanceof AgentAuthSDKError) throw err;
+				if (signal.aborted) throw err;
+			}
+		}
+
+		return this.pollForApproval(config, host, agentId, approval, signal);
+	}
+
+	private async waitForApprovalSSE(
+		config: ProviderConfig,
+		host: HostIdentity,
+		agentId: string,
+		notificationUrl: string,
+		signal: AbortSignal,
+	): Promise<StatusResponse> {
+		const deadline = Date.now() + this.approvalTimeoutMs;
+
+		return new Promise<StatusResponse>((resolve, reject) => {
+			if (signal.aborted) {
+				reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+				return;
+			}
+
+			const eventSource = new EventSource(notificationUrl);
+			let settled = false;
+
+			const cleanup = () => {
+				settled = true;
+				eventSource.close();
+			};
+
+			const onAbort = () => {
+				cleanup();
+				reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+			};
+			signal.addEventListener("abort", onAbort, { once: true });
+
+			const timeoutId = setTimeout(() => {
+				if (!settled) {
+					cleanup();
+					reject(new AgentAuthSDKError("approval_timeout", "Approval timed out."));
+				}
+			}, Math.max(0, deadline - Date.now()));
+
+			eventSource.addEventListener("status", async (event) => {
+				if (settled) return;
+				try {
+					const data = JSON.parse(event.data) as StatusResponse;
+
+					if (this.onApprovalStatusChange) {
+						await this.onApprovalStatusChange(data.status);
+					}
+
+					if (data.status === "active") {
+						cleanup();
+						clearTimeout(timeoutId);
+						resolve(data);
+					} else if (data.status === "rejected" || data.status === "revoked") {
+						cleanup();
+						clearTimeout(timeoutId);
+						reject(new AgentAuthSDKError(
+							`agent_${data.status}`,
+							`Agent was ${data.status} during approval.`,
+						));
+					}
+				} catch {
+					// Malformed event — ignore, keep listening
+				}
+			});
+
+			eventSource.onerror = () => {
+				if (settled) return;
+				cleanup();
+				clearTimeout(timeoutId);
+				signal.removeEventListener("abort", onAbort);
+				reject(new AgentAuthSDKError(
+					"sse_failed",
+					"SSE connection failed, falling back to polling.",
+				));
+			};
+		});
+	}
+
+	private async pollForApproval(
+		config: ProviderConfig,
+		host: HostIdentity,
+		agentId: string,
+		approval: ApprovalInfo,
+		signal: AbortSignal,
+	): Promise<StatusResponse> {
 		const interval = (approval.interval ?? 5) * 1000;
 		const deadline = Date.now() + Math.min(
 			(approval.expires_in ?? 300) * 1000,
