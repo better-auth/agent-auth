@@ -52,13 +52,9 @@ function buildInputSchema(
 
 	if (op.parameters?.length) {
 		for (const p of op.parameters) {
-			const desc = p.description ?? (p.schema as Record<string, unknown>)?.description as string | undefined;
-			const resolvedDesc = p.required
-				? `(required) ${desc ?? p.name}`
-				: desc;
 			properties[p.name] = {
 				...(p.schema ?? { type: "string" }),
-				...(resolvedDesc ? { description: resolvedDesc } : {}),
+				...(p.description ? { description: p.description } : {}),
 			};
 			if (p.required) required.push(p.name);
 		}
@@ -73,14 +69,7 @@ function buildInputSchema(
 			const bodyRequired = (bodySchema.required as string[]) ?? [];
 
 			for (const [key, val] of Object.entries(bodyProps)) {
-				const prop = val as Record<string, unknown>;
-				const isRequired = bodyRequired.includes(key);
-				properties[key] = {
-					...prop,
-					...(isRequired
-						? { description: `(required) ${(prop.description as string) ?? key}` }
-						: {}),
-				};
+				properties[key] = val;
 			}
 			for (const r of bodyRequired) {
 				if (!required.includes(r)) required.push(r);
