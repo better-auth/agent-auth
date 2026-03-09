@@ -787,56 +787,6 @@ export class AgentAuthClient {
 		return body;
 	}
 
-	// ─── Account Linking (§3.4) ─────────────────────────────────
-
-	/**
-	 * Initiate account linking for an autonomous agent — §3.4.
-	 * The server creates a CIBA-style request and the user
-	 * approves on their device.
-	 */
-	async connectAccount(agentId: string): Promise<{
-		authReqId: string;
-		expiresIn: number;
-		interval: number;
-	}> {
-		const conn = await this.requireConnection(agentId);
-		const config = await this.requireConfig(conn.issuer);
-		const host = await this.requireHost(conn.issuer);
-
-		const hostJWT = await signHostJWT({
-			hostKeypair: host.keypair,
-			subject: host.hostId ?? conn.hostId,
-			audience: config.issuer,
-		});
-
-		const url = new URL("/agent/connect-account", config.issuer);
-
-		const res = await this.fetchFn(url.toString(), {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				authorization: `Bearer ${hostJWT}`,
-			},
-			body: JSON.stringify({ agent_id: agentId }),
-		});
-
-		if (!res.ok) {
-			throw await this.toError(res);
-		}
-
-		const body = (await res.json()) as {
-			auth_req_id: string;
-			expires_in: number;
-			interval: number;
-		};
-
-		return {
-			authReqId: body.auth_req_id,
-			expiresIn: body.expires_in,
-			interval: body.interval,
-		};
-	}
-
 	// ─── Agent Connection Accessors ─────────────────────────────
 
 	/**

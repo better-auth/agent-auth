@@ -59,13 +59,9 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 				where: [{ field: "id", value: ctx.body.auth_req_id }],
 			});
 
-			if (!request) {
-				throw APIError.from("NOT_FOUND", ERR.CIBA_NOT_FOUND);
-			}
-
-			if (request.loginHint === "connect-account") {
-				throw APIError.from("BAD_REQUEST", ERR.INVALID_REQUEST);
-			}
+		if (!request) {
+			throw APIError.from("NOT_FOUND", ERR.CIBA_NOT_FOUND);
+		}
 
 			if (request.userId && request.userId !== session.user.id) {
 				throw APIError.from(
@@ -215,13 +211,9 @@ export function cibaDeny(opts: ResolvedAgentAuthOptions) {
 				where: [{ field: "id", value: ctx.body.auth_req_id }],
 			});
 
-			if (!request) {
-				throw APIError.from("NOT_FOUND", ERR.CIBA_NOT_FOUND);
-			}
-
-			if (request.loginHint === "connect-account") {
-				throw APIError.from("BAD_REQUEST", ERR.INVALID_REQUEST);
-			}
+		if (!request) {
+			throw APIError.from("NOT_FOUND", ERR.CIBA_NOT_FOUND);
+		}
 
 			if (request.userId && request.userId !== session.user.id) {
 				throw APIError.from(

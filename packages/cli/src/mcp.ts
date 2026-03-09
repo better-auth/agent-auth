@@ -196,18 +196,6 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
-	server.registerTool(
-		"connect_account",
-		{
-			description: "Initiate account linking for an autonomous agent. Requires an agent_id from connect_agent.",
-			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
-		},
-		async ({ agent_id }) => {
-			const result = await client.connectAccount(agent_id);
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
 	// ── Host management ──
 
 	server.registerTool(

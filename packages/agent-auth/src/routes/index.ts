@@ -2,9 +2,7 @@ import type { JtiCacheStore } from "../utils/jti-cache";
 import type { JwksCacheStore } from "../utils/jwks-cache";
 import type { ResolvedAgentAuthOptions } from "../types";
 import { approveCapability } from "./approve-capability";
-import { approveConnectAccount } from "./approve-connect-account";
 import { cleanupAgents } from "./cleanup";
-import { connectAccount } from "./connect-account";
 import { agentConfiguration } from "./discover";
 import { executeCapability } from "./execute-capability";
 import { getAgent } from "./get-agent";
@@ -52,8 +50,6 @@ export function createAgentRoutes(
 		cleanupAgents: cleanupAgents(opts), // not in spec
 		approveCapability: approveCapability(opts), // §9.1
 		grantCapability: grantCapability(opts), // §4
-		connectAccount: connectAccount(), // §3.4
-		approveConnectAccount: approveConnectAccount(opts), // §3.4
 		listAgents: listAgents(), // §8
 		getAgent: getAgent(), // §8
 		updateAgent: updateAgent(opts), // §8

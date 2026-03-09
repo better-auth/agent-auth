@@ -263,15 +263,5 @@ export function buildCli(): Command {
 			}),
 		);
 
-	program
-		.command("connect-account <agent-id>")
-		.description("Initiate account linking for an autonomous agent")
-		.action((agentId: string) =>
-			run(async () => {
-				const result = await client().connectAccount(agentId);
-				json(result);
-			}),
-		);
-
 	return program;
 }

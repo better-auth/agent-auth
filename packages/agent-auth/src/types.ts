@@ -183,8 +183,6 @@ export type AgentAuthPath =
 	| "/capability/execute"
 	| "/agent/status"
 	| "/agent/introspect"
-	| "/agent/connect-account"
-	| "/agent/approve-connect-account"
 	| "/agent/grant-capability"
 	| "/host/create"
 	| "/host/enroll"

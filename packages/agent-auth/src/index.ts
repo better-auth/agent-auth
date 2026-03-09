@@ -94,8 +94,6 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 			executeCapability: routes.executeCapability,
 			agentStatus: routes.agentStatus,
 			introspect: routes.introspect,
-			connectAccount: routes.connectAccount,
-			approveConnectAccount: routes.approveConnectAccount,
 			grantCapability: routes.grantCapability,
 			createHost: routes.createHost,
 			enrollHost: routes.enrollHost,

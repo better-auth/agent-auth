@@ -363,100 +363,110 @@ export default function AgentsPage() {
 										</svg>
 									</button>
 
-									{isExpanded && (
-										<div className="border-t border-border px-4 py-4">
-											<div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
-												<div>
-													<p className="text-[10px] uppercase tracking-widest text-muted">
-														Agent ID
-													</p>
-													<code className="text-xs font-mono text-foreground break-all">
-														{agent.agent_id}
-													</code>
-												</div>
-												<div>
-													<p className="text-[10px] uppercase tracking-widest text-muted">
-														Host ID
-													</p>
-													<code className="text-xs font-mono text-foreground break-all">
-														{agent.host_id}
-													</code>
-												</div>
-												<div>
-													<p className="text-[10px] uppercase tracking-widest text-muted">
-														Last Used
-													</p>
-													<p className="text-xs text-foreground">
-														{timeAgo(
-															agent.last_used_at,
-														)}
-													</p>
-												</div>
-												<div>
-													<p className="text-[10px] uppercase tracking-widest text-muted">
-														Expires
-													</p>
-													<p className="text-xs text-foreground">
-														{agent.expires_at
-															? new Date(
-																	agent.expires_at,
-																).toLocaleString()
-															: "Never"}
-													</p>
-												</div>
-											</div>
-
-											{agent.agent_capability_grants
-												.length > 0 && (
-												<div className="mb-4">
-													<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
-														Capabilities
-													</p>
-													<div className="space-y-1">
-														{agent.agent_capability_grants.map(
-															(g, i) => (
-																<div
-																	key={i}
-																	className="flex items-center justify-between rounded bg-background px-3 py-2"
-																>
-																	<code className="text-xs font-mono text-foreground truncate mr-2">
-																		{
-																			g.capability
-																		}
-																	</code>
-																	<StatusBadge
-																		status={
-																			g.status
-																		}
-																	/>
-																</div>
-															),
-														)}
-													</div>
-												</div>
-											)}
-
-											{agent.status === "active" && (
+								{isExpanded && (
+									<div className="border-t border-border">
+										<div className="flex gap-0 border-b border-border">
+											{(["details", "activity"] as const).map((tab) => (
 												<button
-													onClick={() =>
-														handleRevoke(
-															agent.agent_id,
-														)
-													}
-													disabled={
-														revoking ===
-														agent.agent_id
-													}
-													className="cursor-pointer rounded-md border border-red-500/20 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+													key={tab}
+													onClick={(e) => {
+														e.stopPropagation();
+														setActiveTab((prev) => ({
+															...prev,
+															[agent.agent_id]: tab,
+														}));
+													}}
+													className={`cursor-pointer px-4 py-2 text-xs font-medium capitalize transition-colors ${
+														(activeTab[agent.agent_id] ?? "details") === tab
+															? "text-white border-b-2 border-white -mb-px"
+															: "text-muted hover:text-foreground"
+													}`}
 												>
-													{revoking ===
-													agent.agent_id
-														? "Revoking…"
-														: "Revoke Agent"}
+													{tab}
 												</button>
+											))}
+										</div>
+
+										<div className="px-4 py-4">
+											{(activeTab[agent.agent_id] ?? "details") === "details" ? (
+												<>
+													<div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+														<div>
+															<p className="text-[10px] uppercase tracking-widest text-muted">
+																Agent ID
+															</p>
+															<code className="text-xs font-mono text-foreground break-all">
+																{agent.agent_id}
+															</code>
+														</div>
+														<div>
+															<p className="text-[10px] uppercase tracking-widest text-muted">
+																Host ID
+															</p>
+															<code className="text-xs font-mono text-foreground break-all">
+																{agent.host_id}
+															</code>
+														</div>
+														<div>
+															<p className="text-[10px] uppercase tracking-widest text-muted">
+																Last Used
+															</p>
+															<p className="text-xs text-foreground">
+																{timeAgo(agent.last_used_at)}
+															</p>
+														</div>
+														<div>
+															<p className="text-[10px] uppercase tracking-widest text-muted">
+																Expires
+															</p>
+															<p className="text-xs text-foreground">
+																{agent.expires_at
+																	? new Date(agent.expires_at).toLocaleString()
+																	: "Never"}
+															</p>
+														</div>
+													</div>
+
+													{agent.agent_capability_grants.length > 0 && (
+														<div className="mb-4">
+															<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
+																Capabilities
+															</p>
+															<div className="space-y-1">
+																{agent.agent_capability_grants.map((g, i) => (
+																	<div
+																		key={i}
+																		className="flex items-center justify-between rounded bg-background px-3 py-2"
+																	>
+																		<code className="text-xs font-mono text-foreground truncate mr-2">
+																			{g.capability}
+																		</code>
+																		<StatusBadge status={g.status} />
+																	</div>
+																))}
+															</div>
+														</div>
+													)}
+
+													{agent.status === "active" && (
+														<button
+															onClick={(e) => {
+																e.stopPropagation();
+																handleRevoke(agent.agent_id);
+															}}
+															disabled={revoking === agent.agent_id}
+															className="cursor-pointer rounded-md border border-red-500/20 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+														>
+															{revoking === agent.agent_id ? "Revoking…" : "Revoke Agent"}
+														</button>
+													)}
+												</>
+											) : (
+												<AgentActivityLog agentId={agent.agent_id} />
 											)}
 										</div>
-									)}
+									</div>
+								)}
 								</div>
 							);
 						})}

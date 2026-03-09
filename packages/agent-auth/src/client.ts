@@ -28,8 +28,6 @@ export const agentAuthClient = () => {
 			"/agent/request-capability": "POST",
 			"/agent/approve-capability": "POST",
 			"/agent/introspect": "POST",
-			"/agent/connect-account": "POST",
-			"/agent/approve-connect-account": "POST",
 			"/agent/grant-capability": "POST",
 			"/host/create": "POST",
 			"/host/revoke": "POST",
