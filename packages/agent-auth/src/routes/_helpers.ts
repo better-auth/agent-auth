@@ -360,13 +360,10 @@ export async function validateCapabilitiesExist(
 	const hasCustomValidator = !!opts.validateCapabilities;
 
 	if (!hasStaticList && !hasCustomValidator) {
-		if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
-			console.warn(
-				"[agent-auth] Capabilities requested (%s) but no capabilities list or " +
-				"validateCapabilities function is configured. All names are accepted unchecked.",
-				capabilityIds.join(", "),
-			);
-		}
+		console.warn(
+			`[agent-auth] Capabilities requested (${capabilityIds.join(", ")}) but no capabilities list or ` +
+			"validateCapabilities function is configured. All names are accepted unchecked.",
+		);
 		return;
 	}
 
