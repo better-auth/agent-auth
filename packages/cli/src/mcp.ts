@@ -1,246 +1,84 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import { z, type ZodRawShape } from "zod";
+import { getAgentAuthTools, type ToolParameters } from "@better-auth/agent-auth-sdk";
 import { createClient, type ClientConfig } from "./client.js";
+
+const zodTypeMap: Record<string, () => z.ZodTypeAny> = {
+	string: () => z.string(),
+	number: () => z.number(),
+	boolean: () => z.boolean(),
+	object: () => z.record(z.string(), z.unknown()),
+};
+
+interface PropertyDescriptor {
+	type?: string;
+	items?: { type?: string };
+	enum?: [string, ...string[]];
+	description?: string;
+}
+
+function jsonSchemaToZod(params: ToolParameters): ZodRawShape | undefined {
+	const { properties, required } = params;
+	const entries = Object.entries(properties);
+	if (entries.length === 0) return undefined;
+
+	const shape: ZodRawShape = {};
+	const requiredSet = new Set(required ?? []);
+
+	for (const [key, value] of entries) {
+		const prop = value as PropertyDescriptor;
+		let schema: z.ZodTypeAny;
+
+		if (prop.type === "array") {
+			schema = z.array(prop.items?.type === "string" ? z.string() : z.unknown());
+		} else if (prop.enum) {
+			schema = z.enum(prop.enum);
+		} else {
+			schema = (zodTypeMap[prop.type ?? "string"] ?? (() => z.unknown()))();
+		}
+
+		if (prop.description) {
+			schema = schema.describe(prop.description);
+		}
+
+		shape[key] = requiredSet.has(key) ? schema : schema.optional();
+	}
+
+	return shape;
+}
 
 export async function startMcpServer(config: ClientConfig): Promise<void> {
 	const client = createClient(config);
+	const tools = getAgentAuthTools(client);
 
 	const server = new McpServer({
 		name: "agent-auth",
 		version: "0.1.0",
 	});
 
-	// ── Step 1: Find a provider ──
+	for (const tool of tools) {
+		const zodShape = jsonSchemaToZod(tool.parameters);
+		const toolOpts: { description: string; inputSchema?: ZodRawShape } = {
+			description: tool.description,
+		};
+		if (zodShape) {
+			toolOpts.inputSchema = zodShape;
+		}
 
-	server.registerTool(
-		"list_providers",
-		{
-			description: "Step 1a — ALWAYS call this first. Lists providers that have already been discovered, connected, or pre-configured. Check here before searching or discovering. If the provider you need is already listed, skip straight to Step 2.",
-		},
-		async () => {
-			const results = await client.listProviders();
-			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"search_providers",
-		{
-			description: "Step 1b: Search the registry for providers by name or intent. Call this when list_providers doesn't have what you need. Use the provider name (e.g. 'vercel', 'github') or describe what you want to do (e.g. 'deploy web apps'). Found providers are automatically cached so you can use them immediately.",
-			inputSchema: { intent: z.string().describe("Provider name or what you want to do (e.g. 'vercel', 'deploy web apps', 'send emails')") },
-		},
-		async ({ intent }) => {
-			const results = await client.searchProviders(intent);
-			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"discover_provider",
-		{
-			description: "Step 1c — Last resort. Look up a provider by URL. When a registry is configured (default), this only resolves providers through the registry — it will NOT fetch from arbitrary URLs. Only use this if list_providers and search_providers didn't find what you need.",
-			inputSchema: { url: z.string().describe("Service URL or domain to look up (e.g. https://api.example.com, vercel.com)") },
-		},
-		async ({ url }) => {
-			const result = await client.discoverProvider(url);
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	// ── Step 2: Browse capabilities ──
-
-	server.registerTool(
-		"list_capabilities",
-		{
-			description: "Step 2: List capabilities offered by a provider. Call after discovering a provider to see what it offers before connecting an agent.",
-		inputSchema: {
-			provider: z.string().describe("Provider URL, issuer, or name"),
-			query: z.string().optional().describe("Search query to filter capabilities by name or description"),
-			agent_id: z.string().optional().describe("Agent ID to see grant status (only after connect_agent)"),
-			cursor: z.string().optional().describe("Pagination cursor"),
-		},
-	},
-	async ({ provider, query, agent_id, cursor }) => {
-		const result = await client.listCapabilities({
-			provider,
-			query,
-			agentId: agent_id,
-			cursor,
-		});
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	// ── Step 3: Connect an agent ──
-
-	server.registerTool(
-		"connect_agent",
-		{
-			description: "Step 3: Connect a new agent to a provider. YOU MUST CALL THIS before using any tool that requires an agent_id. Creates a keypair, registers the agent, and handles approval flow. Returns the agent_id you'll need for all subsequent operations (execute_capability, agent_status, sign_jwt, etc.).",
-			inputSchema: {
-				provider: z.string().describe("Provider URL, issuer, or name"),
-				capabilities: z.array(z.string()).optional().describe("Capabilities to request"),
-				mode: z.enum(["delegated", "autonomous"]).optional().describe("Agent mode"),
-				name: z.string().optional().describe("Agent name"),
-				reason: z.string().optional().describe("Reason for requesting capabilities"),
+		server.registerTool(
+			tool.name,
+			toolOpts,
+			async (args: Record<string, unknown>, extra: { signal: AbortSignal }) => {
+				const result = await tool.execute(args, { signal: extra.signal });
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(result, null, 2) },
+					],
+				};
 			},
-		},
-		async ({ provider, capabilities, mode, name, reason }, extra) => {
-			const result = await client.connectAgent({
-				provider,
-				capabilities,
-				mode,
-				name,
-				reason,
-				signal: extra.signal,
-			});
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	// ── Step 4: Use the agent (all require agent_id from connect_agent) ──
-
-	server.registerTool(
-		"execute_capability",
-		{
-			description: "Step 4: Execute a capability on behalf of an agent. Requires an agent_id from connect_agent. Signs a scoped JWT and sends the request to the provider.",
-			inputSchema: {
-				agent_id: z.string().describe("Agent ID returned by connect_agent"),
-				capability: z.string().describe("Capability to execute"),
-				arguments: z.record(z.string(), z.unknown()).optional().describe("Arguments for the capability, conforming to its input schema"),
-			},
-		},
-		async ({ agent_id, capability, arguments: args }) => {
-			const result = await client.executeCapability({
-				agentId: agent_id,
-				capability,
-				arguments: args,
-			});
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"agent_status",
-		{
-			description: "Check the status of an agent (active, pending, expired, revoked) and its capability grants. Requires an agent_id from connect_agent.",
-			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
-		},
-		async ({ agent_id }) => {
-			const result = await client.agentStatus(agent_id);
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"sign_jwt",
-		{
-			description: "Sign an agent JWT for manual authentication. Requires an agent_id from connect_agent. Usually not needed — execute_capability handles signing automatically.",
-			inputSchema: {
-				agent_id: z.string().describe("Agent ID returned by connect_agent"),
-				capabilities: z.array(z.string()).optional().describe("Scope to specific capabilities"),
-			},
-		},
-		async ({ agent_id, capabilities }) => {
-			const result = await client.signJwt({
-				agentId: agent_id,
-				capabilities,
-			});
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"request_capability",
-		{
-			description: "Request additional capabilities for an existing agent. Requires an agent_id from connect_agent.",
-			inputSchema: {
-				agent_id: z.string().describe("Agent ID returned by connect_agent"),
-				capabilities: z.array(z.string()).describe("Capabilities to request"),
-				reason: z.string().optional().describe("Reason for request"),
-			},
-		},
-		async ({ agent_id, capabilities, reason }, extra) => {
-			const result = await client.requestCapability({
-				agentId: agent_id,
-				capabilities,
-				reason,
-				signal: extra.signal,
-			});
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"disconnect_agent",
-		{
-			description: "Disconnect and revoke an agent. Requires an agent_id from connect_agent.",
-			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
-		},
-		async ({ agent_id }) => {
-			await client.disconnectAgent(agent_id);
-			return { content: [{ type: "text", text: JSON.stringify({ ok: true, agentId: agent_id }) }] };
-		},
-	);
-
-	server.registerTool(
-		"reactivate_agent",
-		{
-			description: "Reactivate an expired agent. Requires an agent_id from connect_agent.",
-			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
-		},
-		async ({ agent_id }, extra) => {
-			const result = await client.reactivateAgent(agent_id, { signal: extra.signal });
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	// ── Host management ──
-
-	server.registerTool(
-		"enroll_host",
-		{
-			description: "Enroll a host using a one-time enrollment token. Only needed when the host was pre-registered without a public key.",
-			inputSchema: {
-				provider: z.string().describe("Provider URL, issuer, or name"),
-				enrollment_token: z.string().describe("One-time enrollment token"),
-				name: z.string().optional().describe("Host name"),
-			},
-		},
-		async ({ provider, enrollment_token, name }) => {
-			const result = await client.enrollHost({
-				provider,
-				enrollmentToken: enrollment_token,
-				name,
-			});
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"rotate_agent_key",
-		{
-			description: "Rotate an agent's keypair. Requires an agent_id from connect_agent.",
-			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
-		},
-		async ({ agent_id }) => {
-			const result = await client.rotateAgentKey(agent_id);
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"rotate_host_key",
-		{
-			description: "Rotate the host keypair for a provider.",
-			inputSchema: { issuer: z.string().describe("Provider issuer URL") },
-		},
-		async ({ issuer }) => {
-			const result = await client.rotateHostKey(issuer);
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
+		);
+	}
 
 	const transport = new StdioServerTransport();
 	await server.connect(transport);

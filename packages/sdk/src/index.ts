@@ -5,6 +5,7 @@ export { discoverProvider, searchProviders, searchRegistryFull, lookupByUrl } fr
 export { detectHostName, detectTool } from "./host-name";
 export { executeHttpCapability } from "./http";
 export { AgentAuthSDKError } from "./types";
+export { getAgentAuthTools, toOpenAITools, toAISDKTools } from "./tools";
 
 export type {
 	AgentJWK,
@@ -40,3 +41,11 @@ export type {
 } from "./crypto";
 
 export type { ToolDetection } from "./host-name";
+export type {
+	AgentAuthTool,
+	ToolParameters,
+	ToolContext,
+	OpenAIToolDefinition,
+	OpenAITools,
+	AISDKTool,
+} from "./tools";
