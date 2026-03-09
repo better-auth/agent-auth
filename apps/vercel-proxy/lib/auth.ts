@@ -2,7 +2,7 @@ import { agentAuth } from "@better-auth/agent-auth";
 import { fromOpenAPI, createOpenAPIHandler } from "@better-auth/agent-auth/openapi";
 import { betterAuth } from "better-auth";
 import { genericOAuth } from "better-auth/plugins";
-import { db, getSetting } from "./db";
+import { db, getSetting, insertLog } from "./db";
 
 const VERCEL_OPENAPI_URL =
 	"https://spec.speakeasy.com/vercel/vercel-docs/vercel-oas-with-code-samples";
@@ -12,11 +12,6 @@ const vercelSpec = await fetch(VERCEL_OPENAPI_URL).then((r) => r.json());
 const VERCEL_MCP_RESOURCE = "https://mcp.vercel.com/";
 const VERCEL_MCP_CLIENT_ID = process.env.VERCEL_MCP_CLIENT_ID as string;
 const VERCEL_MCP_REDIRECT_URI = `${process.env.BETTER_AUTH_URL}/callback`;
-
-const insertLog = db.prepare(
-	`INSERT INTO event_log (type, actorId, actorType, agentId, hostId, orgId, data, createdAt)
-	 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-);
 
 export const auth = betterAuth({
 	database: db,
@@ -105,7 +100,7 @@ export const auth = betterAuth({
 			},
 			providerName: "vercel",
 			providerDescription:
-				"A deployment platform for your apps. Next.js, React, Node.js, etc.",
+				"Vercel is a cloud platform for deploying and hosting frontend applications, serverless functions, and full-stack web projects with automatic CI/CD, edge networking, and seamless Git integration.",
 			modes: ["delegated", "autonomous"],
 			capabilities: fromOpenAPI(vercelSpec),
 			onExecute: createOpenAPIHandler(vercelSpec, {
@@ -157,3 +152,4 @@ export const auth = betterAuth({
 		}),
 	],
 });
+

@@ -13,7 +13,7 @@ const DEFAULT_DIR = path.join(os.homedir(), ".agent-auth");
 /**
  * File-based storage that persists data to disk as JSON files.
  * Data is stored in ~/.agent-auth/ by default, organized as:
- *   hosts/<encoded-issuer>.json
+ *   host.json              — single host identity (shared across providers)
  *   agents/<agent-id>.json
  *   providers/<encoded-issuer>.json
  */
@@ -22,9 +22,10 @@ export class FileStorage implements Storage {
 
 	constructor(dir?: string) {
 		this.dir = dir ?? DEFAULT_DIR;
-		for (const sub of ["hosts", "agents", "providers"]) {
+		for (const sub of ["agents", "providers"]) {
 			fs.mkdirSync(path.join(this.dir, sub), { recursive: true });
 		}
+		fs.mkdirSync(this.dir, { recursive: true });
 	}
 
 	private encode(key: string): string {
@@ -61,23 +62,20 @@ export class FileStorage implements Storage {
 
 	// ─── Host Identity ──────────────────────────────────────────
 
-	async getHostIdentity(issuer: string): Promise<HostIdentity | null> {
-		return this.readJSON(
-			path.join(this.dir, "hosts", `${this.encode(issuer)}.json`),
-		);
+	private get hostPath(): string {
+		return path.join(this.dir, "host.json");
 	}
 
-	async setHostIdentity(issuer: string, host: HostIdentity): Promise<void> {
-		this.writeJSON(
-			path.join(this.dir, "hosts", `${this.encode(issuer)}.json`),
-			host,
-		);
+	async getHostIdentity(): Promise<HostIdentity | null> {
+		return this.readJSON(this.hostPath);
 	}
 
-	async deleteHostIdentity(issuer: string): Promise<void> {
-		this.deleteFile(
-			path.join(this.dir, "hosts", `${this.encode(issuer)}.json`),
-		);
+	async setHostIdentity(host: HostIdentity): Promise<void> {
+		this.writeJSON(this.hostPath, host);
+	}
+
+	async deleteHostIdentity(): Promise<void> {
+		this.deleteFile(this.hostPath);
 	}
 
 	// ─── Agent Connection ───────────────────────────────────────

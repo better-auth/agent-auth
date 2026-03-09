@@ -87,6 +87,12 @@ export function getAgentAuthAdapter(
 			where: [{ field: "id", value: id }],
 		});
 
+	const findHostByKid = (kid: string) =>
+		adapter.findOne<AgentHost>({
+			model: TABLE.host,
+			where: [{ field: "kid", value: kid }],
+		});
+
 	const findHostByKey = async (
 		publicKey: Record<string, unknown>,
 	): Promise<AgentHost | null> => {
@@ -350,6 +356,7 @@ export function getAgentAuthAdapter(
 		countActiveAgents,
 
 		findHostById,
+		findHostByKid,
 		findHostByKey,
 		findHostsByEnrollmentTokenHash,
 		findHostsForUser,

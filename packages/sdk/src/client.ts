@@ -1,5 +1,6 @@
 import { generateKeypair, signAgentJWT, signHostJWT } from "./crypto";
-import { discoverProvider, searchProviders } from "./discovery";
+import { discoverProvider, lookupByUrl, searchRegistryFull } from "./discovery";
+import { detectHostName } from "./host-name";
 import { executeHttpCapability } from "./http";
 import { MemoryStorage } from "./storage";
 import type {
@@ -13,6 +14,7 @@ import type {
 	EnrollHostResponse,
 	ExecuteCapabilityResponse,
 	HostIdentity,
+	Keypair,
 	ProviderConfig,
 	ProviderInfo,
 	RegisterResponse,
@@ -50,6 +52,7 @@ export class AgentAuthClient {
 	private readonly storage: Storage;
 	private readonly fetchFn: typeof globalThis.fetch;
 	private readonly registryUrl: string | null;
+	private readonly allowDirectDiscovery: boolean;
 	private readonly jwtExpirySeconds: number;
 	private readonly hostName: string | null;
 	private readonly onApprovalRequired:
@@ -65,8 +68,10 @@ export class AgentAuthClient {
 		this.storage = opts.storage ?? new MemoryStorage();
 		this.fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
 		this.registryUrl = opts.registryUrl ?? null;
+		this.allowDirectDiscovery =
+			opts.allowDirectDiscovery ?? !this.registryUrl;
 		this.jwtExpirySeconds = opts.jwtExpirySeconds ?? 60;
-		this.hostName = opts.hostName ?? null;
+		this.hostName = opts.hostName ?? detectHostName();
 		this.onApprovalRequired = opts.onApprovalRequired ?? null;
 		this.onApprovalStatusChange = opts.onApprovalStatusChange ?? null;
 		this.approvalTimeoutMs = opts.approvalTimeoutMs ?? 300_000;
@@ -107,6 +112,8 @@ export class AgentAuthClient {
 
 	/**
 	 * Search a registry for providers by intent — §7.1.2.
+	 * Results are automatically cached so the providers can be used
+	 * immediately (e.g. with `connectAgent` or `listCapabilities`).
 	 */
 	async searchProviders(intent: string): Promise<ProviderInfo[]> {
 		if (!this.registryUrl) {
@@ -115,19 +122,67 @@ export class AgentAuthClient {
 				"No registry URL configured. Set registryUrl in client options.",
 			);
 		}
-		return searchProviders(this.registryUrl, intent, {
+		const configs = await searchRegistryFull(this.registryUrl, intent, {
 			fetchFn: this.fetchFn,
 		});
+		for (const config of configs) {
+			await this.storage.setProviderConfig(config.issuer, config);
+		}
+		return configs.map((c) => ({
+			name: c.provider_name,
+			description: c.description,
+			issuer: c.issuer,
+		}));
 	}
 
 	/**
 	 * Discover a provider from a service URL — §7.1.3.
 	 * Fetches and caches the discovery document.
+	 *
+	 * When `allowDirectDiscovery` is `false` (the default when a registry
+	 * URL is configured), only resolves through the registry — never
+	 * fetches `.well-known` from arbitrary URLs.
+	 *
+	 * When direct discovery is allowed, tries the `.well-known` endpoint
+	 * first and falls back to registry lookup on failure.
 	 */
 	async discoverProvider(url: string): Promise<ProviderConfig> {
-		const config = await discoverProvider(url, this.fetchFn);
-		await this.storage.setProviderConfig(config.issuer, config);
-		return config;
+		if (!this.allowDirectDiscovery) {
+			if (!this.registryUrl) {
+				throw new AgentAuthSDKError(
+					"direct_discovery_blocked",
+					"Direct discovery is disabled and no registry URL is configured.",
+				);
+			}
+			const config = await lookupByUrl(this.registryUrl, url, {
+				fetchFn: this.fetchFn,
+			});
+			if (config) {
+				await this.storage.setProviderConfig(config.issuer, config);
+				return config;
+			}
+			throw new AgentAuthSDKError(
+				"provider_not_in_registry",
+				`Provider at "${url}" was not found in the registry. Direct discovery is disabled when a registry URL is configured. Set allowDirectDiscovery: true to override.`,
+			);
+		}
+
+		try {
+			const config = await discoverProvider(url, this.fetchFn);
+			await this.storage.setProviderConfig(config.issuer, config);
+			return config;
+		} catch (originalError) {
+			if (this.registryUrl) {
+				const config = await lookupByUrl(this.registryUrl, url, {
+					fetchFn: this.fetchFn,
+				});
+				if (config) {
+					await this.storage.setProviderConfig(config.issuer, config);
+					return config;
+				}
+			}
+			throw originalError;
+		}
 	}
 
 	// ─── Capabilities (§7.2) ────────────────────────────────────
@@ -157,18 +212,21 @@ export class AgentAuthClient {
 			const token = await this.signJwt({ agentId: opts.agentId });
 			headers.authorization = `Bearer ${token.token}`;
 		} else {
-			const host = await this.storage.getHostIdentity(config.issuer);
-			if (host?.hostId) {
+			const host = await this.storage.getHostIdentity();
+			if (host) {
 				const hostJWT = await signHostJWT({
 					hostKeypair: host.keypair,
-					subject: host.hostId,
 					audience: config.issuer,
 				});
 				headers.authorization = `Bearer ${hostJWT}`;
 			}
 		}
 
-		const res = await this.fetchFn(url.toString(), { method: "GET", headers });
+		let res = await this.fetchFn(url.toString(), { method: "GET", headers });
+		if (!res.ok && res.status === 401 && !opts.agentId && headers.authorization) {
+			delete headers.authorization;
+			res = await this.fetchFn(url.toString(), { method: "GET", headers });
+		}
 		if (!res.ok) {
 			throw await this.toError(res);
 		}
@@ -203,50 +261,13 @@ export class AgentAuthClient {
 		capabilityGrants: CapabilityGrant[];
 	}> {
 		const config = await this.resolveConfig(opts.provider);
-		const host = await this.resolveHost(config);
-		const agentKeypair = await generateKeypair();
-
-		const hostJWT = await signHostJWT({
-			hostKeypair: host.keypair,
-			subject: host.hostId ?? `host-${globalThis.crypto.randomUUID()}`,
-			audience: config.issuer,
-			agentPublicKey: agentKeypair.publicKey,
-			hostName: this.hostName ?? undefined,
-		});
-
-		const registerUrl = this.resolveEndpoint(config, "register", "/agent/register");
-
-		const body: Record<string, unknown> = {
-			name: opts.name ?? `agent-${Date.now()}`,
-			mode: opts.mode ?? "delegated",
-		};
-		if (opts.capabilities) body.capabilities = opts.capabilities;
-		if (opts.reason) body.reason = opts.reason;
-		if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
-
-		const res = await this.fetchFn(registerUrl, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				authorization: `Bearer ${hostJWT}`,
-			},
-			body: JSON.stringify(body),
-		});
-
-		if (!res.ok) {
-			throw await this.toError(res);
-		}
-
-		const regBody = (await res.json()) as RegisterResponse;
-
-		if (!host.hostId && regBody.host_id) {
-			host.hostId = regBody.host_id;
-			await this.storage.setHostIdentity(config.issuer, host);
-		}
+		const { regBody, host, agentKeypair } =
+			await this.registerAgent(config, opts);
 
 		const connection: AgentConnection = {
 			agentId: regBody.agent_id,
 			hostId: regBody.host_id,
+			hostName: regBody.host_name ?? this.hostName,
 			providerName: config.provider_name,
 			issuer: config.issuer,
 			mode: regBody.mode,
@@ -390,7 +411,7 @@ export class AgentAuthClient {
 		const resBody = (await res.json()) as RequestCapabilityResponse;
 
 		if (resBody.status === "pending" && resBody.approval) {
-			const host = await this.storage.getHostIdentity(conn.issuer);
+			const host = await this.storage.getHostIdentity();
 			if (host) {
 				const finalStatus = await this.waitForApproval(
 					config,
@@ -426,12 +447,11 @@ export class AgentAuthClient {
 	async disconnectAgent(agentId: string): Promise<void> {
 		const conn = await this.requireConnection(agentId);
 		const config = await this.requireConfig(conn.issuer);
-		const host = await this.storage.getHostIdentity(conn.issuer);
+		const host = await this.storage.getHostIdentity();
 
 		if (host) {
 			const hostJWT = await signHostJWT({
 				hostKeypair: host.keypair,
-				subject: host.hostId ?? conn.hostId,
 				audience: config.issuer,
 			});
 
@@ -466,11 +486,10 @@ export class AgentAuthClient {
 	}> {
 		const conn = await this.requireConnection(agentId);
 		const config = await this.requireConfig(conn.issuer);
-		const host = await this.requireHost(conn.issuer);
+		const host = await this.requireHost();
 
 		const hostJWT = await signHostJWT({
 			hostKeypair: host.keypair,
-			subject: host.hostId ?? conn.hostId,
 			audience: config.issuer,
 		});
 
@@ -528,11 +547,10 @@ export class AgentAuthClient {
 	async agentStatus(agentId: string): Promise<StatusResponse> {
 		const conn = await this.requireConnection(agentId);
 		const config = await this.requireConfig(conn.issuer);
-		const host = await this.requireHost(conn.issuer);
+		const host = await this.requireHost();
 
 		const hostJWT = await signHostJWT({
 			hostKeypair: host.keypair,
-			subject: host.hostId ?? conn.hostId,
 			audience: config.issuer,
 		});
 
@@ -725,12 +743,11 @@ export class AgentAuthClient {
 		status: string;
 	}> {
 		const config = await this.requireConfig(issuer);
-		const host = await this.requireHost(config.issuer);
+		const host = await this.requireHost();
 		const newKeypair = await generateKeypair();
 
 		const hostJWT = await signHostJWT({
 			hostKeypair: host.keypair,
-			subject: host.hostId!,
 			audience: config.issuer,
 		});
 
@@ -752,7 +769,7 @@ export class AgentAuthClient {
 		const body = (await res.json()) as { host_id: string; status: string };
 
 		host.keypair = newKeypair;
-		await this.storage.setHostIdentity(config.issuer, host);
+		await this.storage.setHostIdentity(host);
 
 		return { hostId: body.host_id, status: body.status };
 	}
@@ -770,7 +787,7 @@ export class AgentAuthClient {
 		name?: string;
 	}): Promise<EnrollHostResponse> {
 		const config = await this.resolveConfig(opts.provider);
-		const host = await this.resolveHost(config);
+		const host = await this.resolveHost();
 
 		const url = new URL("/host/enroll", config.issuer);
 
@@ -790,8 +807,7 @@ export class AgentAuthClient {
 
 		const body = (await res.json()) as EnrollHostResponse;
 
-		host.hostId = body.hostId;
-		await this.storage.setHostIdentity(config.issuer, host);
+		await this.storage.setHostIdentity(host);
 
 		return body;
 	}
@@ -836,18 +852,77 @@ export class AgentAuthClient {
 		);
 	}
 
-	private async resolveHost(config: ProviderConfig): Promise<HostIdentity> {
-		let host = await this.storage.getHostIdentity(config.issuer);
+	/**
+	 * Send the registration request to the server.
+	 * If a 401 is returned and we have a stale host ID, reset it and retry
+	 * once so dynamic host registration can succeed with a fresh identity.
+	 */
+	private async registerAgent(
+		config: ProviderConfig,
+		opts: {
+			capabilities?: string[];
+			mode?: AgentMode;
+			reason?: string;
+			preferredMethod?: string;
+			name?: string;
+		},
+	): Promise<{
+		regBody: RegisterResponse;
+		host: HostIdentity;
+		agentKeypair: Keypair;
+	}> {
+		const registerUrl = this.resolveEndpoint(config, "register", "/agent/register");
+
+		const buildBody = () => {
+			const body: Record<string, unknown> = {
+				name: opts.name ?? `agent-${Date.now()}`,
+				mode: opts.mode ?? "delegated",
+			};
+			if (opts.capabilities) body.capabilities = opts.capabilities;
+			if (opts.reason) body.reason = opts.reason;
+			if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
+			if (this.hostName) body.host_name = this.hostName;
+			return body;
+		};
+
+		const attempt = async (host: HostIdentity) => {
+			const agentKeypair = await generateKeypair();
+			const hostJWT = await signHostJWT({
+				hostKeypair: host.keypair,
+				audience: config.issuer,
+				agentPublicKey: agentKeypair.publicKey,
+				hostName: this.hostName ?? undefined,
+			});
+
+			const res = await this.fetchFn(registerUrl, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${hostJWT}`,
+				},
+				body: JSON.stringify(buildBody()),
+			});
+
+			return { res, agentKeypair };
+		};
+
+		const host = await this.resolveHost();
+		const { res, agentKeypair } = await attempt(host);
+
+		if (!res.ok) {
+			throw await this.toError(res);
+		}
+
+		const regBody = (await res.json()) as RegisterResponse;
+		return { regBody, host, agentKeypair };
+	}
+
+	private async resolveHost(): Promise<HostIdentity> {
+		let host = await this.storage.getHostIdentity();
 		if (!host) {
 			const keypair = await generateKeypair();
-			host = {
-				hostId: null,
-				providerName: config.provider_name,
-				issuer: config.issuer,
-				keypair,
-				createdAt: Date.now(),
-			};
-			await this.storage.setHostIdentity(config.issuer, host);
+			host = { keypair, createdAt: Date.now() };
+			await this.storage.setHostIdentity(host);
 		}
 		return host;
 	}
@@ -986,7 +1061,6 @@ export class AgentAuthClient {
 			try {
 				const hostJWT = await signHostJWT({
 					hostKeypair: host.keypair,
-					subject: host.hostId ?? agentId,
 					audience: config.issuer,
 				});
 
@@ -1094,12 +1168,12 @@ export class AgentAuthClient {
 		return config;
 	}
 
-	private async requireHost(issuer: string): Promise<HostIdentity> {
-		const host = await this.storage.getHostIdentity(issuer);
+	private async requireHost(): Promise<HostIdentity> {
+		const host = await this.storage.getHostIdentity();
 		if (!host) {
 			throw new AgentAuthSDKError(
 				"host_not_found",
-				`No host identity for issuer ${issuer}.`,
+				"No host identity found. Call connectAgent first.",
 			);
 		}
 		return host;

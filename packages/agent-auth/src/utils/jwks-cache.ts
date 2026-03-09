@@ -5,6 +5,25 @@ const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const MAX_URL_LENGTH = 2048;
 const FETCH_TIMEOUT_MS = 5000;
 const MAX_RESPONSE_BYTES = 1_048_576;
+const MAX_REDIRECTS = 3;
+
+const BLOCKED_HOSTNAMES = new Set([
+	"localhost",
+	"127.0.0.1",
+	"[::1]",
+	"0.0.0.0",
+]);
+
+function isBlockedHostname(hostname: string): boolean {
+	if (BLOCKED_HOSTNAMES.has(hostname)) return true;
+	const bare = hostname.replace(/^\[|\]$/g, "");
+	if (bare === "::1" || bare === "0:0:0:0:0:0:0:1") return true;
+	if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname))
+		return true;
+	if (hostname.endsWith(".local") || hostname.endsWith(".internal"))
+		return true;
+	return false;
+}
 
 export interface JwksCacheStore {
 	getKeyByKid(
@@ -16,36 +35,64 @@ export interface JwksCacheStore {
 
 async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
 	try {
-		const controller = new AbortController();
-		const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+		let currentUrl = url;
 
-		const res = await fetch(url, {
-			signal: controller.signal,
-			headers: { Accept: "application/json" },
-		});
-		clearTimeout(timer);
+		for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+			const parsed = new URL(currentUrl);
+			if (parsed.protocol !== "https:") return null;
+			if (isBlockedHostname(parsed.hostname)) return null;
 
-		if (!res.ok) return null;
+			const controller = new AbortController();
+			const timer = setTimeout(
+				() => controller.abort(),
+				FETCH_TIMEOUT_MS,
+			);
 
-		const contentLength = res.headers.get("content-length");
-		if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
-			return null;
+			const res = await fetch(currentUrl, {
+				signal: controller.signal,
+				headers: { Accept: "application/json" },
+				redirect: "manual",
+			});
+			clearTimeout(timer);
+
+			if (res.status >= 300 && res.status < 400) {
+				const location = res.headers.get("location");
+				if (!location || redirects === MAX_REDIRECTS) return null;
+				currentUrl = new URL(location, currentUrl).href;
+				continue;
+			}
+
+			if (!res.ok) return null;
+
+			const contentLength = res.headers.get("content-length");
+			if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
+				return null;
+			}
+
+			const text = await res.text();
+			if (text.length > MAX_RESPONSE_BYTES) return null;
+
+			const body = JSON.parse(text) as { keys?: AgentJWK[] };
+			if (!body.keys || !Array.isArray(body.keys)) return null;
+
+			return body.keys;
 		}
 
-		const text = await res.text();
-		if (text.length > MAX_RESPONSE_BYTES) return null;
-
-		const body = JSON.parse(text) as { keys?: AgentJWK[] };
-		if (!body.keys || !Array.isArray(body.keys)) return null;
-
-		return body.keys;
+		return null;
 	} catch {
 		return null;
 	}
 }
 
 function validateUrl(url: string): boolean {
-	return url.length <= MAX_URL_LENGTH && url.startsWith("https://");
+	if (url.length > MAX_URL_LENGTH || !url.startsWith("https://")) return false;
+	try {
+		const parsed = new URL(url);
+		if (isBlockedHostname(parsed.hostname)) return false;
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 export class MemoryJwksCache implements JwksCacheStore {
@@ -106,7 +153,7 @@ export class SecondaryStorageJwksCache implements JwksCacheStore {
 		let keys: AgentJWK[] | null = null;
 		if (cached) {
 			try {
-				keys = JSON.parse(cached) as AgentJWK[];
+				keys = typeof cached === "string" ? JSON.parse(cached) as AgentJWK[] : cached as AgentJWK[] | null;
 			} catch {
 				keys = null;
 			}

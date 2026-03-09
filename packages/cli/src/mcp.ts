@@ -14,22 +14,21 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	// ── Step 1: Find a provider ──
 
 	server.registerTool(
-		"discover_provider",
+		"list_providers",
 		{
-			description: "Step 1a: Discover a provider's Agent Auth configuration from a service URL. Call this first when you know the provider's URL. Returns endpoints, capabilities, and modes.",
-			inputSchema: { url: z.string().describe("Service URL to discover (e.g. https://api.example.com)") },
+			description: "Step 1a — ALWAYS call this first. Lists providers that have already been discovered, connected, or pre-configured. Check here before searching or discovering. If the provider you need is already listed, skip straight to Step 2.",
 		},
-		async ({ url }) => {
-			const result = await client.discoverProvider(url);
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+		async () => {
+			const results = await client.listProviders();
+			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
 		},
 	);
 
 	server.registerTool(
 		"search_providers",
 		{
-			description: "Step 1b: Search the registry for providers matching an intent. Use when you don't have a specific provider URL.",
-			inputSchema: { intent: z.string().describe("What you want to do (e.g. 'deploy web apps', 'send emails')") },
+			description: "Step 1b: Search the registry for providers by name or intent. Call this when list_providers doesn't have what you need. Use the provider name (e.g. 'vercel', 'github') or describe what you want to do (e.g. 'deploy web apps'). Found providers are automatically cached so you can use them immediately.",
+			inputSchema: { intent: z.string().describe("Provider name or what you want to do (e.g. 'vercel', 'deploy web apps', 'send emails')") },
 		},
 		async ({ intent }) => {
 			const results = await client.searchProviders(intent);
@@ -38,13 +37,14 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	);
 
 	server.registerTool(
-		"list_providers",
+		"discover_provider",
 		{
-			description: "Step 1c: List providers that have already been discovered or pre-configured. Use to see what's available before connecting.",
+			description: "Step 1c — Last resort. Look up a provider by URL. When a registry is configured (default), this only resolves providers through the registry — it will NOT fetch from arbitrary URLs. Only use this if list_providers and search_providers didn't find what you need.",
+			inputSchema: { url: z.string().describe("Service URL or domain to look up (e.g. https://api.example.com, vercel.com)") },
 		},
-		async () => {
-			const results = await client.listProviders();
-			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+		async ({ url }) => {
+			const result = await client.discoverProvider(url);
+			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 

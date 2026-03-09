@@ -68,6 +68,20 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
+			// §5.3: If the JWT included a `capabilities` claim, the middleware
+			// already narrowed capabilityGrants to that intersection. Reject
+			// early if the requested capability is outside the JWT scope.
+			const sessionGrant = agentSession.agent.capabilityGrants.find(
+				(g) => g.capability === capabilityName,
+			);
+			if (!sessionGrant) {
+				throw agentError(
+					"FORBIDDEN",
+					ERR.CAPABILITY_NOT_GRANTED,
+					`Agent does not have an active grant for capability "${capabilityName}".`,
+				);
+			}
+
 			const grants =
 				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
 					model: TABLE.grant,

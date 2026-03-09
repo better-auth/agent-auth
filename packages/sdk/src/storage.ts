@@ -11,20 +11,20 @@ import type {
  * All data is lost when the process exits.
  */
 export class MemoryStorage implements Storage {
-	private hosts = new Map<string, HostIdentity>();
+	private host: HostIdentity | null = null;
 	private agents = new Map<string, AgentConnection>();
 	private providers = new Map<string, ProviderConfig>();
 
-	async getHostIdentity(issuer: string): Promise<HostIdentity | null> {
-		return this.hosts.get(issuer) ?? null;
+	async getHostIdentity(): Promise<HostIdentity | null> {
+		return this.host;
 	}
 
-	async setHostIdentity(issuer: string, host: HostIdentity): Promise<void> {
-		this.hosts.set(issuer, host);
+	async setHostIdentity(host: HostIdentity): Promise<void> {
+		this.host = host;
 	}
 
-	async deleteHostIdentity(issuer: string): Promise<void> {
-		this.hosts.delete(issuer);
+	async deleteHostIdentity(): Promise<void> {
+		this.host = null;
 	}
 
 	async getAgentConnection(agentId: string): Promise<AgentConnection | null> {

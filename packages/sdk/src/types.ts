@@ -116,6 +116,7 @@ export interface RegisterResponse {
 	agent_id: string;
 	host_id: string;
 	name: string;
+	host_name?: string | null;
 	mode: AgentMode;
 	status: AgentStatus;
 	agent_capability_grants: CapabilityGrant[];
@@ -203,6 +204,7 @@ export interface CapabilitiesResponse {
 export interface AgentConnection {
 	agentId: string;
 	hostId: string;
+	hostName?: string | null;
 	providerName: string;
 	issuer: string;
 	mode: AgentMode;
@@ -211,23 +213,20 @@ export interface AgentConnection {
 	createdAt: number;
 }
 
-/** Locally-stored host identity for a specific provider. */
+/** Locally-stored host identity — one per client, shared across all providers. */
 export interface HostIdentity {
-	hostId: string | null;
-	providerName: string;
-	issuer: string;
 	keypair: Keypair;
 	createdAt: number;
 }
 
 /**
- * Pluggable storage interface for persisting host identities
+ * Pluggable storage interface for persisting host identity
  * and agent connections across sessions.
  */
 export interface Storage {
-	getHostIdentity(issuer: string): Promise<HostIdentity | null>;
-	setHostIdentity(issuer: string, host: HostIdentity): Promise<void>;
-	deleteHostIdentity(issuer: string): Promise<void>;
+	getHostIdentity(): Promise<HostIdentity | null>;
+	setHostIdentity(host: HostIdentity): Promise<void>;
+	deleteHostIdentity(): Promise<void>;
 
 	getAgentConnection(agentId: string): Promise<AgentConnection | null>;
 	setAgentConnection(
@@ -263,6 +262,18 @@ export interface AgentAuthClientOptions {
 	 * If not provided, `searchProviders` is unavailable.
 	 */
 	registryUrl?: string;
+	/**
+	 * Allow direct discovery from arbitrary URLs
+	 * (`.well-known/agent-configuration`).
+	 *
+	 * When `false` and a `registryUrl` is set, `discoverProvider` will
+	 * only resolve providers through the registry — never fetch from
+	 * untrusted endpoints. This prevents agents from being tricked
+	 * into connecting to malicious services.
+	 *
+	 * @default true when no registryUrl, false when registryUrl is set
+	 */
+	allowDirectDiscovery?: boolean;
 	/**
 	 * Pre-configured providers. Skips discovery for these.
 	 */

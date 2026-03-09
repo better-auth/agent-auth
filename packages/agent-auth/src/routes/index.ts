@@ -65,5 +65,5 @@ export function createAgentRoutes(
 		cibaPending: cibaPending(), // §9.2
 		deviceCode: deviceCode(opts), // RFC 8628 §3.1–3.2
 		deviceToken: deviceToken(opts), // RFC 8628 §3.4
-	};
+	} as const;
 }

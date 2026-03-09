@@ -31,3 +31,8 @@ export function getSetting(key: string): string | undefined {
 export function setSetting(key: string, value: string): void {
 	db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
 }
+
+export const insertLog = db.prepare(
+	`INSERT INTO event_log (type, actorId, actorType, agentId, hostId, orgId, data, createdAt)
+	 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+);

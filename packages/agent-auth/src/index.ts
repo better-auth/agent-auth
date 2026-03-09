@@ -17,7 +17,7 @@ declare module "@better-auth/core" {
 	}
 }
 
-export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
+export const agentAuth = (options?: AgentAuthOptions) => {
 	const opts: ResolvedAgentAuthOptions = {
 		...options,
 		allowedKeyAlgorithms: options?.allowedKeyAlgorithms ?? ["Ed25519"],
@@ -106,7 +106,7 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 			cibaPending: routes.cibaPending,
 			deviceCode: routes.deviceCode,
 			deviceToken: routes.deviceToken,
-		},
+		} as const,
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,
 		options,

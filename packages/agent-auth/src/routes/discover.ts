@@ -2,7 +2,7 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import type { ResolvedAgentAuthOptions } from "../types";
 
 /**
- * GET /agent/agent-configuration (§6.1).
+ * GET /agent-configuration (§6.1).
  *
  * Returns the Agent Auth discovery document. Users should expose this
  * at `/.well-known/agent-configuration` on their server root by calling
@@ -10,7 +10,7 @@ import type { ResolvedAgentAuthOptions } from "../types";
  */
 export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
-		"/agent/agent-configuration",
+		"/agent-configuration",
 		{
 			method: "GET",
 			metadata: {
@@ -38,7 +38,6 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				rotate_host_key: `${basePath}/host/rotate-key`,
 				introspect: `${basePath}/agent/introspect`,
 				device_authorization: `${basePath}/device/code`,
-				device_token: `${basePath}/device/token`,
 			};
 
 			if (opts.approvalMethods.includes("ciba")) {

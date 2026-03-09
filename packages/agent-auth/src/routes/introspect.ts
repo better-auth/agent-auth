@@ -11,7 +11,7 @@ import type {
 import { verifyAgentJWT } from "../utils/crypto";
 import type { JtiCacheStore } from "../utils/jti-cache";
 import type { JwksCacheStore } from "../utils/jwks-cache";
-import { activeGrants, formatGrantsResponse } from "./_helpers";
+import { activeGrants, formatGrantsResponse, verifyAudience } from "./_helpers";
 
 /**
  * POST /agent/introspect
@@ -95,6 +95,13 @@ export function introspect(
 			});
 
 			if (!payload) return ctx.json(inactive);
+
+			if (
+				payload.aud &&
+				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers)
+			) {
+				return ctx.json(inactive);
+			}
 
 			if (jtiCache && typeof payload.jti === "string") {
 				if (await jtiCache.has(payload.jti)) {

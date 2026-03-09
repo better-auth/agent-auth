@@ -120,7 +120,8 @@ export function createAgentAuthBeforeHook(
 			let agent = await db.findAgentById(agentId);
 
 			if (!agent) {
-				const host = await db.findHostById(agentId);
+				const host = await db.findHostById(agentId)
+					?? await db.findHostByKid(agentId);
 
 				const hostAllowed =
 					host &&

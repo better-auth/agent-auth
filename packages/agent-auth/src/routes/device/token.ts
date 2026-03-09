@@ -106,6 +106,30 @@ export function deviceToken(_opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
+			// RFC 8628 §3.5: slow_down — enforce polling interval
+			const now = new Date();
+			if (latestReq.lastPolledAt) {
+				const elapsed =
+					now.getTime() -
+					new Date(latestReq.lastPolledAt).getTime();
+				if (elapsed < latestReq.interval * 1000) {
+					return ctx.json(
+						{
+							error: "slow_down",
+							error_description:
+								"Polling too frequently. Wait at least the interval between requests.",
+						},
+						{ status: 400 },
+					);
+				}
+			}
+
+			await ctx.context.adapter.update<ApprovalRequest>({
+				model: TABLE.approval,
+				where: [{ field: "id", value: latestReq.id }],
+				update: { lastPolledAt: now },
+			});
+
 			if (agent.status === "pending") {
 				return ctx.json(
 					{

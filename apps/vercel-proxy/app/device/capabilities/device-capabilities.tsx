@@ -305,6 +305,15 @@ export default function DeviceCapabilities({
 									granted
 								</p>
 							)}
+						<a
+							href="/dashboard/agents"
+							className="mt-5 inline-flex items-center gap-1.5 rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/15"
+						>
+							Go to Agents
+							<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+							</svg>
+						</a>
 					</div>
 				</div>
 			</div>

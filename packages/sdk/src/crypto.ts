@@ -1,4 +1,5 @@
 import {
+	calculateJwkThumbprint,
 	exportJWK,
 	generateKeyPair,
 	importJWK,
@@ -28,6 +29,9 @@ export async function generateKeypair(): Promise<Keypair> {
 	});
 	const pubJWK = await exportJWK(publicKey);
 	const privJWK = await exportJWK(privateKey);
+	const kid = await calculateJwkThumbprint(pubJWK, "sha256");
+	pubJWK.kid = kid;
+	privJWK.kid = kid;
 	return {
 		publicKey: pubJWK as AgentJWK,
 		privateKey: privJWK as AgentJWK,
@@ -36,8 +40,12 @@ export async function generateKeypair(): Promise<Keypair> {
 
 export interface SignHostJWTOptions {
 	hostKeypair: Keypair;
-	/** JWT `sub` claim — the host's ID (or a self-chosen identifier for new hosts). */
-	subject: string;
+	/**
+	 * JWT `sub` claim. Defaults to the public key's `kid` (JWK thumbprint),
+	 * which is the recommended value — it's deterministic, derived from
+	 * the key itself, and requires no server-assigned ID.
+	 */
+	subject?: string;
 	/** JWT `aud` claim — the server's issuer URL. */
 	audience: string;
 	/** Agent's public key to embed in the host JWT for registration. */
@@ -50,12 +58,17 @@ export interface SignHostJWTOptions {
 
 /**
  * Sign a host JWT per §5.2.
+ * Uses the JWK thumbprint as the `sub` claim by default.
  * Includes `host_public_key` and optionally `agent_public_key` for registration.
  */
 export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 	const alg = resolveAlgorithm(opts.hostKeypair.privateKey);
 	const key = await importJWK(opts.hostKeypair.privateKey, alg);
 	const kid = opts.hostKeypair.publicKey.kid;
+	const sub = opts.subject ?? kid ?? await calculateJwkThumbprint(
+		opts.hostKeypair.publicKey,
+		"sha256",
+	);
 
 	const claims: Record<string, unknown> = {
 		host_public_key: opts.hostKeypair.publicKey,
@@ -70,7 +83,7 @@ export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 
 	return new SignJWT(claims)
 		.setProtectedHeader({ alg, ...(kid ? { kid } : {}) })
-		.setSubject(opts.subject)
+		.setSubject(sub)
 		.setAudience(opts.audience)
 		.setIssuedAt()
 		.setExpirationTime(`${opts.expiresInSeconds ?? 60}s`)

@@ -35,6 +35,7 @@ const registerBodySchema = z.object({
 	reason: z.string().optional(),
 	mode: z.enum(["delegated", "autonomous"]).optional(),
 	preferred_method: z.enum(["device_authorization", "ciba"]).optional(),
+	host_name: z.string().optional(),
 });
 
 export function register(
@@ -62,6 +63,7 @@ export function register(
 			reason,
 			mode: rawMode,
 			preferred_method: preferredMethod,
+			host_name: bodyHostName,
 		} = ctx.body;
 
 			// ---------- Require host JWT ----------
@@ -246,8 +248,9 @@ export function register(
 					typeof decoded.host_name === "string"
 						? decoded.host_name
 						: null;
-				if (jwtHostName && jwtHostName !== hostRecord.name) {
-					bgUpdates.name = jwtHostName;
+				const resolvedHostName = jwtHostName ?? bodyHostName ?? null;
+				if (resolvedHostName && resolvedHostName !== hostRecord.name) {
+					bgUpdates.name = resolvedHostName;
 				}
 				if (Object.keys(bgUpdates).length > 0) {
 					ctx.context.runInBackground(
@@ -361,12 +364,6 @@ export function register(
 					resolvedHostPubKey,
 				);
 				if (existingHost) {
-					if (
-						payload.sub &&
-						payload.sub !== existingHost.id
-					) {
-						throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
-					}
 					hostRecord = existingHost;
 					hostId = existingHost.id;
 					userId = existingHost.userId ?? null;
@@ -381,6 +378,7 @@ export function register(
 						typeof decoded.host_name === "string"
 							? decoded.host_name
 							: null;
+					const resolvedDynHostName = jwtHostName ?? bodyHostName ?? null;
 					const dynCaps =
 						await resolveDynamicHostDefaultCapabilities(
 							opts,
@@ -389,7 +387,7 @@ export function register(
 								mode,
 								userId: null,
 								hostId: null,
-								hostName: jwtHostName,
+								hostName: resolvedDynHostName,
 							},
 						);
 					const newHost = await ctx.context.adapter.create<
@@ -398,7 +396,7 @@ export function register(
 					>({
 						model: TABLE.host,
 						data: {
-							name: jwtHostName,
+							name: resolvedDynHostName,
 							userId: null,
 							publicKey: JSON.stringify(resolvedHostPubKey),
 							kid: hostKid,
@@ -570,6 +568,7 @@ export function register(
 				agent_id: agent.id,
 				host_id: hostId,
 				name: agent.name,
+				host_name: hostRecord?.name ?? null,
 				mode: agent.mode,
 				status: agentStatus,
 				agent_capability_grants: formatGrantsResponse(allGrants),

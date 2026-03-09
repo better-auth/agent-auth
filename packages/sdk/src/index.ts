@@ -1,7 +1,8 @@
 export { AgentAuthClient } from "./client";
 export { MemoryStorage } from "./storage";
 export { generateKeypair, signHostJWT, signAgentJWT } from "./crypto";
-export { discoverProvider, searchProviders } from "./discovery";
+export { discoverProvider, searchProviders, searchRegistryFull, lookupByUrl } from "./discovery";
+export { detectHostName, detectTool } from "./host-name";
 export { executeHttpCapability } from "./http";
 export { AgentAuthSDKError } from "./types";
 
@@ -37,3 +38,5 @@ export type {
 	SignHostJWTOptions,
 	SignAgentJWTOptions,
 } from "./crypto";
+
+export type { ToolDetection } from "./host-name";
