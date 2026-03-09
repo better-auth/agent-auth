@@ -13,34 +13,6 @@ export interface Keypair {
 	privateKey: AgentJWK;
 }
 
-/** OpenAPI-aligned parameter definition for the HTTP profile — §4.2. */
-export interface HttpParameter {
-	name: string;
-	in: "path" | "query" | "header";
-	required?: boolean;
-	schema?: Record<string, unknown>;
-	description?: string;
-}
-
-/** OpenAPI-aligned request body definition for the HTTP profile — §4.2. */
-export interface HttpRequestBody {
-	required?: boolean;
-	description?: string;
-	content?: Record<string, { schema?: Record<string, unknown> }>;
-}
-
-/** Standard HTTP execution profile — §4.2. */
-export interface HttpDescriptor {
-	method: string;
-	url: string;
-	headers?: Record<string, string>;
-	interaction_mode?: "sync" | "stream" | "async";
-	input?: {
-		parameters?: HttpParameter[];
-		requestBody?: HttpRequestBody;
-	};
-}
-
 /** Capability definition — §4. */
 export interface Capability {
 	name: string;
@@ -51,8 +23,6 @@ export interface Capability {
 	 */
 	input?: Record<string, unknown>;
 	grant_status?: "granted" | "not_granted";
-	/** Direct execution metadata — §4.2. */
-	http?: HttpDescriptor;
 	[key: string]: unknown;
 }
 

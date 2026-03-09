@@ -3,16 +3,12 @@ export { MemoryStorage } from "./storage";
 export { generateKeypair, signHostJWT, signAgentJWT } from "./crypto";
 export { discoverProvider, searchProviders, searchRegistryFull, lookupByUrl } from "./discovery";
 export { detectHostName, detectTool } from "./host-name";
-export { executeHttpCapability } from "./http";
 export { AgentAuthSDKError } from "./types";
 export { getAgentAuthTools, toOpenAITools, toAISDKTools } from "./tools";
 
 export type {
 	AgentJWK,
 	Keypair,
-	HttpParameter,
-	HttpRequestBody,
-	HttpDescriptor,
 	Capability,
 	AgentMode,
 	AgentStatus,

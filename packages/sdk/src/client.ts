@@ -1,7 +1,6 @@
 import { generateKeypair, signAgentJWT, signHostJWT } from "./crypto";
 import { discoverProvider, lookupByUrl, searchRegistryFull } from "./discovery";
 import { detectHostName } from "./host-name";
-import { executeHttpCapability } from "./http";
 import { MemoryStorage } from "./storage";
 import type {
 	AgentAuthClientOptions,
@@ -634,62 +633,6 @@ export class AgentAuthClient {
 		}
 
 		return body;
-	}
-
-	// ─── Direct HTTP Execution (§4.2) ───────────────────────────
-
-	/**
-	 * Execute a capability via direct HTTP call — §4.2.
-	 *
-	 * Uses the capability's `http` descriptor to construct and send
-	 * an HTTP request directly to the service endpoint. This bypasses
-	 * the server's execute endpoint. Prefer `executeCapability` unless
-	 * you have a specific reason for direct execution.
-	 */
-	async httpRequest(opts: {
-		agentId: string;
-		capability: string;
-		arguments?: Record<string, unknown>;
-	}): Promise<{
-		status: number;
-		headers: Record<string, string>;
-		body: unknown;
-	}> {
-		const conn = await this.requireConnection(opts.agentId);
-		const config = await this.requireConfig(conn.issuer);
-
-		const capRes = await this.listCapabilities({
-			provider: config.provider_name,
-			agentId: opts.agentId,
-		});
-
-		const capabilityDef = capRes.capabilities.find(
-			(c) => c.name === opts.capability,
-		);
-		if (!capabilityDef) {
-			throw new AgentAuthSDKError(
-				"capability_not_found",
-				`Capability "${opts.capability}" not found on ${config.provider_name}.`,
-			);
-		}
-		if (!capabilityDef.http) {
-			throw new AgentAuthSDKError(
-				"no_http_profile",
-				`Capability "${opts.capability}" does not have an http execution profile.`,
-			);
-		}
-
-		const token = await this.signJwt({
-			agentId: opts.agentId,
-			capabilities: [opts.capability],
-		});
-
-		return executeHttpCapability({
-			capability: capabilityDef,
-			token: token.token,
-			arguments: opts.arguments,
-			fetchFn: this.fetchFn,
-		});
 	}
 
 	// ─── Agent Key Rotation (§6.8) ──────────────────────────────

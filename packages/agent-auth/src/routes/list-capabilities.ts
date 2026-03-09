@@ -7,7 +7,7 @@ import type {
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../types";
-import { matchQuery } from "../utils/intent";
+import { matchQuery } from "../utils/search";
 
 /**
  * GET /capability/list
@@ -94,17 +94,23 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
+			const isSearch = !!query;
+
 			return ctx.json({
-				capabilities: page.map((c) => ({
-					...c,
-					...(grantedCapabilityIds
-						? {
-								grant_status: grantedCapabilityIds.has(c.name)
-									? ("granted" as const)
-									: ("not_granted" as const),
-							}
-						: {}),
-				})),
+				capabilities: page.map((c) => {
+					const { input, ...summary } = c;
+					const base = isSearch ? summary : c;
+					return {
+						...base,
+						...(grantedCapabilityIds
+							? {
+									grant_status: grantedCapabilityIds.has(c.name)
+										? ("granted" as const)
+										: ("not_granted" as const),
+								}
+							: {}),
+					};
+				}),
 				has_more: hasMore,
 				...(hasMore
 					? { next_cursor: String(cursorIdx + limit) }
