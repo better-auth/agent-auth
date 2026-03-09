@@ -11,7 +11,6 @@ const vercelSpec = await fetch(VERCEL_OPENAPI_URL).then((r) => r.json());
 
 const VERCEL_MCP_RESOURCE = "https://mcp.vercel.com/";
 const VERCEL_MCP_CLIENT_ID = process.env.VERCEL_MCP_CLIENT_ID as string;
-const VERCEL_MCP_CLIENT_SECRET = process.env.VERCEL_MCP_CLIENT_SECRET as string;
 const VERCEL_MCP_REDIRECT_URI = `${process.env.BETTER_AUTH_URL}/callback`;
 
 export const auth = betterAuth({
@@ -22,7 +21,6 @@ export const auth = betterAuth({
 				{
 				providerId: "vercel-mcp",
 				clientId: VERCEL_MCP_CLIENT_ID,
-				clientSecret: VERCEL_MCP_CLIENT_SECRET,
 				redirectURI: `${process.env.BETTER_AUTH_URL}/callback`,
 				authorizationUrl: "https://vercel.com/oauth/authorize",
 				tokenUrl: "https://vercel.com/api/login/oauth/token",
@@ -36,7 +34,6 @@ export const auth = betterAuth({
 						const params = new URLSearchParams({
 							grant_type: "authorization_code",
 							client_id: VERCEL_MCP_CLIENT_ID,
-							client_secret: VERCEL_MCP_CLIENT_SECRET,
 							code,
 							redirect_uri: VERCEL_MCP_REDIRECT_URI,
 							resource: VERCEL_MCP_RESOURCE,

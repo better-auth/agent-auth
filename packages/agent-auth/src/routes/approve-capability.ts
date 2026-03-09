@@ -187,9 +187,15 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 					: 0;
 				const age = (Date.now() - sessionCreated) / 1000;
 				if (age > freshWindow) {
-					throw APIError.from(
-						"FORBIDDEN",
-						ERR.FRESH_SESSION_REQUIRED,
+					return ctx.json(
+						{
+							code: "fresh_session_required",
+							message:
+								"A fresh authentication session is required for this operation. Please re-authenticate and try again.",
+							max_age: freshWindow,
+							session_age: Math.floor(age),
+						},
+						{ status: 403 },
 					);
 				}
 			}
