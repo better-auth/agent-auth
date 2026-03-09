@@ -3,7 +3,11 @@ import { getSetting, setSetting } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
-const ALLOWED_KEYS = ["freshSessionEnabled", "freshSessionWindow"] as const;
+const ALLOWED_KEYS = [
+	"freshSessionEnabled",
+	"freshSessionWindow",
+	"allowDynamicHostRegistration",
+] as const;
 
 export async function GET() {
 	const session = await auth.api.getSession({
@@ -19,6 +23,8 @@ export async function GET() {
 			getSetting("freshSessionWindow") ?? "300",
 			10,
 		),
+		allowDynamicHostRegistration:
+			getSetting("allowDynamicHostRegistration") === "true",
 	});
 }
 

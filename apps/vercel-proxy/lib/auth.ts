@@ -98,6 +98,9 @@ export const auth = betterAuth({
 				if (getSetting("freshSessionEnabled") !== "true") return 0;
 				return parseInt(getSetting("freshSessionWindow") ?? "300", 10);
 			},
+			allowDynamicHostRegistration: () =>
+				getSetting("allowDynamicHostRegistration") === "true",
+			trustProxy: process.env.TRUST_PROXY === "true",
 			providerName: "vercel",
 			providerDescription:
 				"Vercel is a cloud platform for deploying and hosting frontend applications, serverless functions, and full-stack web projects with automatic CI/CD, edge networking, and seamless Git integration.",
