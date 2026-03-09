@@ -69,9 +69,9 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				return ctx.json({
 					agent_id: agent.id,
 					status: "active" as const,
-					agent_capability_grants: formatGrantsResponse(grants),
-					activated_at: agent.activatedAt,
-					expires_at: agent.expiresAt,
+				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+				activated_at: agent.activatedAt,
+				expires_at: agent.expiresAt,
 				});
 			}
 			if (agent.status === "revoked") {
@@ -199,8 +199,8 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 			const response: Record<string, unknown> = {
 				agent_id: agent.id,
 				status: newStatus,
-				agent_capability_grants: formatGrantsResponse(grants),
-				activated_at: needsApproval ? null : now.toISOString(),
+			agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+			activated_at: needsApproval ? null : now.toISOString(),
 				expires_at: expiresAt ? expiresAt.toISOString() : null,
 			};
 

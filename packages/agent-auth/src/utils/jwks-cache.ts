@@ -62,7 +62,10 @@ async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
 				continue;
 			}
 
-			if (!res.ok) return null;
+			if (!res.ok) {
+				console.error(`[agent-auth] JWKS fetch failed: ${currentUrl} responded with status ${res.status}`);
+				return null;
+			}
 
 			const contentLength = res.headers.get("content-length");
 			if (contentLength && Number(contentLength) > MAX_RESPONSE_BYTES) {
@@ -79,7 +82,8 @@ async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
 		}
 
 		return null;
-	} catch {
+	} catch (err) {
+		console.error("[agent-auth] JWKS fetch error:", err);
 		return null;
 	}
 }

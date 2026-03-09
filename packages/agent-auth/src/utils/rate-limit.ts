@@ -32,6 +32,17 @@ export function buildRateLimits(overrides: AgentAuthOptions["rateLimit"]) {
 		},
 		{
 			pathMatcher(path: string) {
+				return path === "/agent/approve-capability";
+			},
+			window:
+				overrides?.["/agent/approve-capability"]?.window ??
+				DEFAULT_WINDOW,
+			max:
+				overrides?.["/agent/approve-capability"]?.max ??
+				SENSITIVE_MAX,
+		},
+		{
+			pathMatcher(path: string) {
 				return path.startsWith("/agent/") || path.startsWith("/capability/");
 			},
 			window: DEFAULT_WINDOW,

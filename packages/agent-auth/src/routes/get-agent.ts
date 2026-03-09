@@ -6,6 +6,7 @@ import type {
 	Agent,
 	AgentCapabilityGrant,
 	AgentMetadata,
+	ResolvedAgentAuthOptions,
 } from "../types";
 import { sessionMiddleware } from "better-auth/api";
 import { formatGrantsResponse } from "./_helpers";
@@ -29,7 +30,7 @@ function parseMetadata(
  *
  * Get details for a single agent. Auth: user session.
  */
-export function getAgent() {
+export function getAgent(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/get",
 		{
@@ -73,7 +74,7 @@ export function getAgent() {
 				mode: agent.mode,
 				host_id: agent.hostId,
 				user_id: agent.userId,
-				agent_capability_grants: formatGrantsResponse(grants),
+				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
 				metadata: parseMetadata(agent.metadata),
 				created_at: agent.createdAt,
 				activated_at: agent.activatedAt,

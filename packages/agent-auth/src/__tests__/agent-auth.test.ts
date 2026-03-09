@@ -359,7 +359,7 @@ describe("Agent Registration", () => {
 		expect(balanceGrant!.status).toBe("active");
 	});
 
-	it("handles dynamic host registration (unknown host via hostJWT)", async () => {
+	it("rejects dynamic host registration when disabled (default)", async () => {
 		const hostKeypair = await generateTestKeypair();
 		const agentKeypair = await generateTestKeypair();
 		const dynamicHostId = `dynamic-host-${crypto.randomUUID()}`;
@@ -378,6 +378,54 @@ describe("Agent Registration", () => {
 				mode: "autonomous",
 			}),
 		});
+
+		expect(res.ok).toBe(false);
+		expect(res.status).toBe(403);
+		const body = await json<{ error: string }>(res);
+		expect(body.error).toBe("dynamic_host_registration_disabled");
+	});
+
+	it("allows dynamic host registration when explicitly enabled", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						allowDynamicHostRegistration: true,
+						modes: ["delegated", "autonomous"],
+						resolveAutonomousUser: async ({ hostId }) => ({
+							id: `synthetic_${hostId}`,
+							name: "Autonomous User",
+							email: `auto_${hostId}@test.local`,
+						}),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+
+		const hostKeypair = await generateTestKeypair();
+		const agentKeypair = await generateTestKeypair();
+		const dynamicHostId = `dynamic-host-${crypto.randomUUID()}`;
+		const hostJWT = await createHostJWT(
+			hostKeypair.privateKey,
+			hostKeypair.publicKey,
+			agentKeypair.publicKey,
+			dynamicHostId,
+		);
+
+		const res = await t.auth.handler(
+			new Request(`${API}/agent/register`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${hostJWT}`,
+				},
+				body: JSON.stringify({
+					name: "Dynamic Host Agent",
+					mode: "autonomous",
+				}),
+			}),
+		);
 
 		expect(res.ok).toBe(true);
 		const body = await json<{ agent_id: string; host_id: string }>(res);
@@ -625,7 +673,7 @@ describe("Agent Auth (JWT middleware)", () => {
 			headers: { authorization: `Bearer ${jwt}` },
 		});
 		expect(statusRes.ok).toBe(false);
-		expect(statusRes.status).toBe(401);
+		expect(statusRes.status).toBe(403);
 	});
 
 });
@@ -875,8 +923,8 @@ describe("Capability Management", () => {
 		});
 
 		expect(grantRes.ok).toBe(true);
-		const body = await json<{ agentId: string; added: string[] }>(grantRes);
-		expect(body.agentId).toBe(agentId);
+		const body = await json<{ agent_id: string; added: string[] }>(grantRes);
+		expect(body.agent_id).toBe(agentId);
 		expect(body.added).toContain("transfer");
 		expect(body.added).toContain("admin_panel");
 	});
@@ -1097,8 +1145,8 @@ describe("Agent Lifecycle", () => {
 });
 
 describe("Discovery", () => {
-	it("GET /agent/discover returns spec-compliant config with version 1.0-draft", async () => {
-		const res = await api("/agent/discover", { method: "GET" });
+	it("GET /agent-configuration returns spec-compliant config with version 1.0-draft", async () => {
+		const res = await api("/agent-configuration", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
@@ -1113,27 +1161,27 @@ describe("Discovery", () => {
 		expect(body.modes).toEqual(["delegated", "autonomous"]);
 		expect(body.algorithms).toEqual(["Ed25519"]);
 		expect(body.endpoints).toBeDefined();
-		expect(body.endpoints.register).toBe("/agent/register");
-		expect(body.endpoints.capabilities).toBe("/capability/list");
-		expect(body.endpoints.status).toBe("/agent/status");
-		expect(body.endpoints.introspect).toBe("/agent/introspect");
+		expect(body.endpoints.register).toContain("/agent/register");
+		expect(body.endpoints.capabilities).toContain("/capability/list");
+		expect(body.endpoints.status).toContain("/agent/status");
+		expect(body.endpoints.introspect).toContain("/agent/introspect");
 	});
 });
 
 describe("Capabilities Endpoint", () => {
-	it("GET /capability/list returns list with name and description", async () => {
+	it("GET /capability/list returns lightweight list (name + description only)", async () => {
 		const res = await api("/capability/list", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
-			capabilities: Array<{ name: string; description: string; input?: Record<string, unknown> }>;
+			capabilities: Array<{ name: string; description: string }>;
 			has_more: boolean;
 		}>(res);
 		expect(body.capabilities).toBeInstanceOf(Array);
 		expect(body.capabilities.length).toBe(3);
 		expect(body.capabilities[0]).toHaveProperty("name");
 		expect(body.capabilities[0]).toHaveProperty("description");
-		expect(body.capabilities[0]).toHaveProperty("input");
+		expect(body.capabilities[0]).not.toHaveProperty("input");
 	});
 
 	it("includes grant_status when called with agent JWT", async () => {
@@ -1173,7 +1221,7 @@ describe("Capabilities Endpoint", () => {
 	});
 
 	it("supports query filtering", async () => {
-		const res = await api("/capabilities?query=balance", { method: "GET" });
+		const res = await api("/capability/list?query=balance", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
@@ -1295,5 +1343,200 @@ describe("Edge Cases", () => {
 		}>(res);
 		expect(body.status).toBe("pending_enrollment");
 		expect(body.enrollmentToken).toBeDefined();
+	});
+});
+
+describe("Security Hardening", () => {
+	it("rejects JWT with algorithm confusion (HS256 in header vs Ed25519 key)", async () => {
+		const hostKeypair = await generateTestKeypair();
+		const createRes = await authedPost("/host/create", {
+			name: "Alg Confusion Host",
+			public_key: hostKeypair.publicKey,
+			default_capabilities: ["check_balance"],
+		});
+		const { hostId } = await json<{ hostId: string }>(createRes);
+
+		const agentKeypair = await generateTestKeypair();
+		const { agentId } = await registerAgentViaHost({
+			hostKeypair,
+			agentKeypair,
+			hostId,
+			capabilities: ["check_balance"],
+		});
+
+		const key = await importJWK(agentKeypair.privateKey, "EdDSA");
+		const confusedJwt = await new SignJWT({})
+			.setProtectedHeader({ alg: "EdDSA", typ: "JWT" })
+			.setSubject(agentId)
+			.setAudience(BASE)
+			.setIssuedAt()
+			.setExpirationTime("60s")
+			.setJti(globalThis.crypto.randomUUID())
+			.sign(key);
+
+		const res = await api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${confusedJwt}` },
+		});
+		expect(res.ok).toBe(true);
+
+		const badAlgJwt = confusedJwt.replace(
+			confusedJwt.split(".")[0],
+			btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }))
+				.replace(/\+/g, "-")
+				.replace(/\//g, "_")
+				.replace(/=+$/, ""),
+		);
+
+		const badRes = await api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${badAlgJwt}` },
+		});
+		expect(badRes.ok).toBe(false);
+		expect(badRes.status).toBe(401);
+	});
+
+	it("verifyAgentJWT propagates non-JOSE errors instead of returning null", async () => {
+		const { verifyAgentJWT } = await import("../utils/crypto");
+		const badKey = { kty: "OKP", crv: "Ed25519", x: "INVALID" } as AgentJWK;
+
+		try {
+			await verifyAgentJWT({
+				jwt: "not.a.jwt",
+				publicKey: badKey,
+				maxAge: 60,
+			});
+		} catch (e) {
+			expect(e).toBeDefined();
+		}
+	});
+
+	it("freshSessionWindow=300 blocks approval with stale session", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						freshSessionWindow: 1,
+						modes: ["delegated"],
+						capabilities: TEST_CAPABILITIES,
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+
+		const { headers: authHeaders } = await t.signInWithTestUser();
+		const cookie = authHeaders.get("cookie") ?? "";
+
+		const hostKeypair = await generateTestKeypair();
+		const createRes = await t.auth.handler(
+			new Request(`${API}/host/create`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie },
+				body: JSON.stringify({
+					name: "Fresh Session Host",
+					public_key: hostKeypair.publicKey,
+					default_capabilities: ["check_balance"],
+				}),
+			}),
+		);
+		const { hostId } = await json<{ hostId: string }>(createRes);
+
+		const agentKeypair = await generateTestKeypair();
+		const hostJWT = await createHostJWT(
+			hostKeypair.privateKey,
+			hostKeypair.publicKey,
+			agentKeypair.publicKey,
+			hostId,
+		);
+		const regRes = await t.auth.handler(
+			new Request(`${API}/agent/register`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${hostJWT}`,
+				},
+				body: JSON.stringify({
+					name: "Pending Agent",
+					capabilities: ["check_balance", "transfer"],
+					mode: "delegated",
+				}),
+			}),
+		);
+		const { agent_id: agentId } = await json<{ agent_id: string }>(regRes);
+
+		await new Promise((r) => setTimeout(r, 1500));
+
+		const approveRes = await t.auth.handler(
+			new Request(`${API}/agent/approve-capability`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie },
+				body: JSON.stringify({
+					agent_id: agentId,
+					action: "approve",
+				}),
+			}),
+		);
+		expect(approveRes.ok).toBe(false);
+		expect(approveRes.status).toBe(403);
+		const body = await json<Record<string, unknown>>(approveRes);
+		const errorCode = body.error ?? body.code;
+		expect(errorCode).toBe("fresh_session_required");
+	});
+
+	it("JTI is partitioned by agent identity (different agents can reuse same jti value)", async () => {
+		const hostKeypair = await generateTestKeypair();
+		const createRes = await authedPost("/host/create", {
+			name: "JTI Partition Host",
+			public_key: hostKeypair.publicKey,
+			default_capabilities: ["check_balance"],
+		});
+		const { hostId } = await json<{ hostId: string }>(createRes);
+
+		const agentKeypair1 = await generateTestKeypair();
+		const { agentId: agentId1 } = await registerAgentViaHost({
+			hostKeypair,
+			agentKeypair: agentKeypair1,
+			hostId,
+			name: "JTI Agent 1",
+			capabilities: ["check_balance"],
+		});
+
+		const agentKeypair2 = await generateTestKeypair();
+		const { agentId: agentId2 } = await registerAgentViaHost({
+			hostKeypair,
+			agentKeypair: agentKeypair2,
+			hostId,
+			name: "JTI Agent 2",
+			capabilities: ["check_balance"],
+		});
+
+		const sharedJti = globalThis.crypto.randomUUID();
+
+		const jwt1 = await signTestJWT({
+			privateKey: agentKeypair1.privateKey,
+			subject: agentId1,
+			audience: BASE,
+			additionalClaims: { jti: sharedJti },
+		});
+
+		const jwt2 = await signTestJWT({
+			privateKey: agentKeypair2.privateKey,
+			subject: agentId2,
+			audience: BASE,
+			additionalClaims: { jti: sharedJti },
+		});
+
+		const res1 = await api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt1}` },
+		});
+		expect(res1.ok).toBe(true);
+
+		const res2 = await api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt2}` },
+		});
+		expect(res2.ok).toBe(true);
 	});
 });

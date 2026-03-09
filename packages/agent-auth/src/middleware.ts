@@ -4,11 +4,26 @@ import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { getAgentAuthAdapter } from "./adapter";
 import { TABLE } from "./constants";
+import { emit } from "./emit";
 import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES } from "./errors";
 import { parseCapabilityIds } from "./utils/capabilities";
-import { verifyAgentJWT } from "./utils/crypto";
+import { verifyAgentJWT, hashRequestBody } from "./utils/crypto";
 import type { JtiCacheStore } from "./utils/jti-cache";
 import type { JwksCacheStore } from "./utils/jwks-cache";
+
+function logBackgroundError(label: string) {
+	return (err: unknown) => {
+		console.error(`[agent-auth] background ${label} failed:`, err);
+	};
+}
+
+function isKeyAlgorithmAllowed(
+	key: AgentJWK,
+	allowedAlgorithms: string[],
+): boolean {
+	const keyAlg = key.crv ?? key.kty;
+	return !!keyAlg && allowedAlgorithms.includes(keyAlg);
+}
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -84,30 +99,35 @@ export function createAgentAuthBeforeHook(
 				}
 				agentId = decoded.sub;
 
-				if (decoded.aud) {
-					const configuredOrigin = new URL(
-						ctx.context.baseURL,
-					).origin;
-					const acceptedOrigins = new Set([configuredOrigin]);
-					const reqHost = ctx.headers?.get("host");
-					const reqProto =
-						ctx.headers?.get("x-forwarded-proto") ?? "http";
-					if (reqHost) {
-						acceptedOrigins.add(`${reqProto}://${reqHost}`);
-					}
-					const audValues = Array.isArray(decoded.aud)
-						? decoded.aud
-						: [decoded.aud];
-					if (
-						!audValues.some((a) =>
-							acceptedOrigins.has(String(a)),
-						)
-					) {
-						throw agentError(
-							"UNAUTHORIZED",
-							AGENT_AUTH_ERROR_CODES.INVALID_JWT,
-						);
-					}
+				if (!decoded.aud) {
+					throw agentError(
+						"UNAUTHORIZED",
+						AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+					);
+				}
+				const configuredOrigin = new URL(
+					ctx.context.baseURL,
+				).origin;
+				const acceptedOrigins = new Set([configuredOrigin]);
+				const reqHost = ctx.headers?.get("host");
+				if (reqHost) {
+					const proto = opts.trustProxy
+						? (ctx.headers?.get("x-forwarded-proto") ?? new URL(ctx.context.baseURL).protocol.replace(":", ""))
+						: new URL(ctx.context.baseURL).protocol.replace(":", "");
+					acceptedOrigins.add(`${proto}://${reqHost}`);
+				}
+				const audValues = Array.isArray(decoded.aud)
+					? decoded.aud
+					: [decoded.aud];
+				if (
+					!audValues.some((a) =>
+						acceptedOrigins.has(String(a)),
+					)
+				) {
+					throw agentError(
+						"UNAUTHORIZED",
+						AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+					);
 				}
 			} catch (e) {
 				if (e instanceof APIError) throw e;
@@ -155,6 +175,12 @@ export function createAgentAuthBeforeHook(
 							AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
 						);
 					}
+					if (!isKeyAlgorithmAllowed(hostPubKey, opts.allowedKeyAlgorithms)) {
+						throw agentError(
+							"UNAUTHORIZED",
+							AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
+						);
+					}
 					const hostPayload = await verifyAgentJWT({
 						jwt: bearer,
 						publicKey: hostPubKey,
@@ -193,7 +219,7 @@ export function createAgentAuthBeforeHook(
 
 			if (agent.status === "revoked") {
 				throw agentError(
-					"UNAUTHORIZED",
+					"FORBIDDEN",
 					AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
 				);
 			}
@@ -205,8 +231,8 @@ export function createAgentAuthBeforeHook(
 			}
 			if (agent.status === "rejected") {
 				throw agentError(
-					"UNAUTHORIZED",
-					AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
+					"FORBIDDEN",
+					AGENT_AUTH_ERROR_CODES.AGENT_REJECTED,
 				);
 			}
 
@@ -224,11 +250,11 @@ export function createAgentAuthBeforeHook(
 								kid: null,
 								updatedAt: new Date(),
 							})
-							.catch(() => {}),
+							.catch(logBackgroundError("revoke-expired-agent")),
 					);
 					throw agentError(
-						"UNAUTHORIZED",
-						AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
+						"FORBIDDEN",
+						AGENT_AUTH_ERROR_CODES.ABSOLUTE_LIFETIME_EXCEEDED,
 					);
 				}
 			}
@@ -280,6 +306,12 @@ export function createAgentAuthBeforeHook(
 					AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
 				);
 			}
+			if (!isKeyAlgorithmAllowed(publicKey, opts.allowedKeyAlgorithms)) {
+				throw agentError(
+					"UNAUTHORIZED",
+					AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
+				);
+			}
 			const payload = await verifyAgentJWT({
 				jwt: bearer,
 				publicKey,
@@ -288,10 +320,10 @@ export function createAgentAuthBeforeHook(
 
 			if (!payload) {
 				if (needsReactivation && agent.status === "active") {
-					db.updateAgent(agent.id, {
-						status: "expired",
-						updatedAt: new Date(),
-					}).catch(() => {});
+				db.updateAgent(agent.id, {
+					status: "expired",
+					updatedAt: new Date(),
+				}).catch(logBackgroundError("mark-agent-expired"));
 				}
 				throw agentError(
 					"UNAUTHORIZED",
@@ -299,20 +331,56 @@ export function createAgentAuthBeforeHook(
 				);
 			}
 
-			// JTI replay (§5.6)
+			// JTI replay (§3.5) — partitioned by identity
 			if (!payload.jti) {
 				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 				);
 			}
-			if (await jtiCache.has(String(payload.jti))) {
+			const jtiKey = `${agentId}:${payload.jti}`;
+			if (await jtiCache.has(jtiKey)) {
 				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
 				);
 			}
-			await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
+			await jtiCache.add(jtiKey, opts.jwtMaxAge);
+
+			// Request binding verification (§3.3)
+			if (payload.htm || payload.htu || payload.ath) {
+				if (payload.htm) {
+					const method = ctx.request?.method ?? ctx.headers?.get("x-http-method") ?? "";
+					if (String(payload.htm).toUpperCase() !== method.toUpperCase()) {
+						throw agentError(
+							"UNAUTHORIZED",
+							AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
+						);
+					}
+				}
+				if (payload.htu) {
+					const reqUrl = new URL(ctx.request?.url ?? ctx.context.baseURL);
+					const expectedUrl = `${reqUrl.protocol}//${reqUrl.host}${reqUrl.pathname}`;
+					if (String(payload.htu) !== expectedUrl) {
+						throw agentError(
+							"UNAUTHORIZED",
+							AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
+						);
+					}
+				}
+				if (payload.ath && ctx.body) {
+					const bodyStr = typeof ctx.body === "string"
+						? ctx.body
+						: JSON.stringify(ctx.body);
+					const bodyHash = await hashRequestBody(bodyStr);
+					if (String(payload.ath) !== bodyHash) {
+						throw agentError(
+							"UNAUTHORIZED",
+							AGENT_AUTH_ERROR_CODES.REQUEST_BINDING_MISMATCH,
+						);
+					}
+				}
+			}
 
 			if (needsReactivation) {
 				const reactivated =
@@ -324,6 +392,13 @@ export function createAgentAuthBeforeHook(
 					);
 				}
 				agent = reactivated;
+				emit(opts, {
+					type: "agent.reactivated",
+					actorType: "system",
+					agentId: agent.id,
+					hostId: agent.hostId ?? undefined,
+					metadata: { transparent: true },
+				}, ctx);
 			}
 
 			const host = agent.hostId
@@ -439,20 +514,20 @@ export function createAgentAuthBeforeHook(
 					}
 					heartbeat.expiresAt = new Date(newExpiry);
 				}
-				ctx.context.runInBackground(
-					ctx.context.adapter
-						.update({
-							model: TABLE.agent,
-							where: [
-								{
-									field: "id",
-									value: agent.id,
-								},
-							],
-							update: heartbeat,
-						})
-						.catch(() => {}),
-				);
+			ctx.context.runInBackground(
+				ctx.context.adapter
+					.update({
+						model: TABLE.agent,
+						where: [
+							{
+								field: "id",
+								value: agent.id,
+							},
+						],
+						update: heartbeat,
+					})
+					.catch(logBackgroundError("agent-heartbeat")),
+			);
 			}
 
 			if (ctx.path === "/agent/session") {

@@ -7,6 +7,7 @@ import type {
 	AgentCapabilityGrant,
 	AgentSession,
 	HostSession,
+	ResolvedAgentAuthOptions,
 } from "../types";
 import { formatGrantsResponse } from "./_helpers";
 
@@ -16,7 +17,7 @@ import { formatGrantsResponse } from "./_helpers";
  * Returns the current status of an agent and its capability grants (§6.5).
  * Supports agent JWT (self-query) or host JWT (requires ?agentId=...).
  */
-export function agentStatus() {
+export function agentStatus(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/status",
 		{
@@ -79,7 +80,7 @@ export function agentStatus() {
 				agent_id: agent.id,
 				host_id: agent.hostId,
 				status: agent.status,
-				agent_capability_grants: formatGrantsResponse(grants),
+				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
 				mode: agent.mode,
 				user_id: agent.userId,
 				created_at: agent.createdAt,

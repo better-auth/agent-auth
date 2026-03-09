@@ -5,6 +5,7 @@ import {
 	SignJWT,
 	importJWK,
 	decodeProtectedHeader,
+	errors as joseErrors,
 } from "jose";
 import type { AgentJWK } from "../types";
 
@@ -40,21 +41,30 @@ export async function generateAgentKeypair(): Promise<{
 	};
 }
 
+/** Base64url-encode a Uint8Array without padding. */
+function base64url(bytes: Uint8Array): string {
+	const lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	let result = "";
+	const len = bytes.length;
+	for (let i = 0; i < len; i += 3) {
+		const b0 = bytes[i];
+		const b1 = i + 1 < len ? bytes[i + 1] : 0;
+		const b2 = i + 2 < len ? bytes[i + 2] : 0;
+		result += lookup[b0 >> 2];
+		result += lookup[((b0 & 0x03) << 4) | (b1 >> 4)];
+		if (i + 1 < len) result += lookup[((b1 & 0x0f) << 2) | (b2 >> 6)];
+		if (i + 2 < len) result += lookup[b2 & 0x3f];
+	}
+	return result;
+}
+
 /** SHA-256 hash of a request body, base64url-encoded (for DPoP `ath`). */
 export async function hashRequestBody(body: string): Promise<string> {
 	const digest = await globalThis.crypto.subtle.digest(
 		"SHA-256",
 		new TextEncoder().encode(body),
 	);
-	const bytes = new Uint8Array(digest);
-	let binary = "";
-	for (const byte of bytes) {
-		binary += String.fromCharCode(byte);
-	}
-	return btoa(binary)
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "");
+	return base64url(new Uint8Array(digest));
 }
 
 export interface SignAgentJWTOptions {
@@ -88,7 +98,7 @@ export async function signAgentJWT(
 		...(opts.ath ? { ath: opts.ath } : {}),
 		...opts.additionalClaims,
 	})
-		.setProtectedHeader({ alg })
+		.setProtectedHeader({ alg, typ: "JWT" })
 		.setSubject(opts.subject)
 		.setAudience(opts.audience)
 		.setIssuedAt()
@@ -107,23 +117,24 @@ export interface VerifyAgentJWTOptions {
 
 /**
  * Verify a JWT against a public key and return the payload,
- * or `null` if verification fails.
+ * or `null` if verification fails for a legitimate JOSE reason.
+ *
+ * The algorithm is always derived from the key, never from the
+ * JWT header, to prevent algorithm confusion attacks (§5.1).
  */
 export async function verifyAgentJWT(
 	opts: VerifyAgentJWTOptions,
 ): Promise<Record<string, unknown> | null> {
 	try {
-		let alg = resolveAlgorithm(opts.publicKey);
-		try {
-			const header = decodeProtectedHeader(opts.jwt);
-			if (header.alg) alg = header.alg;
-		} catch {}
+		const alg = resolveAlgorithm(opts.publicKey);
 		const key = await importJWK(opts.publicKey, alg);
 		const { payload } = await jwtVerify(opts.jwt, key, {
 			maxTokenAge: `${opts.maxAge}s`,
+			algorithms: [alg],
 		});
 		return payload as Record<string, unknown>;
-	} catch {
-		return null;
+	} catch (err) {
+		if (err instanceof joseErrors.JOSEError) return null;
+		throw err;
 	}
 }

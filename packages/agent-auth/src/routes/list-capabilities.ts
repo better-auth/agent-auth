@@ -94,22 +94,18 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const isSearch = !!query;
-
 			return ctx.json({
 				capabilities: page.map((c) => {
-					const { input, ...summary } = c;
-					const base = isSearch ? summary : c;
-					return {
-						...base,
-						...(grantedCapabilityIds
-							? {
-									grant_status: grantedCapabilityIds.has(c.name)
-										? ("granted" as const)
-										: ("not_granted" as const),
-								}
-							: {}),
+					const result: Record<string, unknown> = {
+						name: c.name,
+						description: c.description,
 					};
+					if (grantedCapabilityIds) {
+						result.grant_status = grantedCapabilityIds.has(c.name)
+							? "granted"
+							: "not_granted";
+					}
+					return result;
 				}),
 				has_more: hasMore,
 				...(hasMore

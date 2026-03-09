@@ -156,7 +156,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 				metadata: { capabilities: added },
 			}, ctx);
 
-			return ctx.json({ agentId, grantIds, added });
+			return ctx.json({ agent_id: agentId, grant_ids: grantIds, added });
 		},
 	);
 }

@@ -103,7 +103,13 @@ export interface Agent {
 	updatedAt: Date;
 }
 
-/** Arbitrary key-value metadata attached to an agent. */
+/**
+ * Arbitrary key-value metadata attached to an agent.
+ *
+ * **Security**: values originate from untrusted agent input.
+ * Always sanitize before rendering in HTML or passing to
+ * `dangerouslySetInnerHTML` / DOM `.innerHTML` to prevent XSS.
+ */
 export type AgentMetadata = Record<string, string | number | boolean | null>;
 
 /** Agent capability grant — §8.3. */
@@ -336,7 +342,7 @@ export interface AgentAuthOptions {
 	 * When a function, receives the endpoint context and the list of
 	 * capability IDs being approved so you can vary the requirement
 	 * per-capability.
-	 * @default 0 (disabled)
+	 * @default 300 (5 minutes)
 	 */
 	freshSessionWindow?:
 		| number
@@ -346,7 +352,14 @@ export interface AgentAuthOptions {
 		  }) => number | Promise<number>);
 	/**
 	 * Whether to allow unknown hosts to register dynamically (§3.2).
-	 * @default true
+	 *
+	 * When `true`, any bearer presenting a valid JWT with an inline
+	 * public key can register itself as a host — this is a
+	 * **significant trust decision**. Only enable when you have
+	 * additional controls (e.g. network-level ACLs, custom
+	 * callback validation).
+	 *
+	 * @default false
 	 */
 	allowDynamicHostRegistration?:
 		| boolean
@@ -444,6 +457,16 @@ export interface AgentAuthOptions {
 		Record<AgentAuthPath, { window?: number; max?: number }>
 	>;
 	/**
+	 * Whether to trust the `X-Forwarded-Proto` header for audience
+	 * validation (§5.4).
+	 *
+	 * Enable when running behind a reverse proxy that sets this header.
+	 * When `false`, the protocol from `baseURL` is used instead.
+	 *
+	 * @default false
+	 */
+	trustProxy?: boolean;
+	/**
 	 * Custom schema overrides for the agent tables.
 	 */
 	schema?: InferOptionSchema<ReturnType<typeof agentSchema>>;
@@ -523,6 +546,7 @@ export type ResolvedAgentAuthOptions = Required<
 		| "jtiCacheStorage"
 		| "jwksCacheStorage"
 		| "dangerouslySkipJtiCheck"
+		| "trustProxy"
 	>
 > &
 	AgentAuthOptions;

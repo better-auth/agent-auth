@@ -1,0 +1,86 @@
+import { createAuthEndpoint } from "@better-auth/core/api";
+import * as z from "zod";
+import { TABLE } from "../constants";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import type {
+	AgentCapabilityGrant,
+	AgentSession,
+	HostSession,
+	ResolvedAgentAuthOptions,
+} from "../types";
+
+/**
+ * GET /capability/describe (§6.2.1).
+ *
+ * Returns the full detail for a single capability including `input`
+ * schema and any execution metadata. Supports the same three auth
+ * modes as `/capability/list`:
+ * - No auth: public capability detail
+ * - Host JWT: capability for host's linked user
+ * - Agent JWT: capability with grant_status
+ */
+export function describeCapability(opts: ResolvedAgentAuthOptions) {
+	return createAuthEndpoint(
+		"/capability/describe",
+		{
+			method: "GET",
+			query: z.object({
+				name: z.string(),
+			}),
+			metadata: {
+				openapi: {
+					description:
+						"Returns full detail for a single capability (§6.2.1).",
+				},
+			},
+		},
+		async (ctx) => {
+			const capabilityName = ctx.query.name;
+			const allCapabilities = opts.capabilities ?? [];
+			const capability = allCapabilities.find(
+				(c) => c.name === capabilityName,
+			);
+
+			if (!capability) {
+				throw agentError("NOT_FOUND", ERR.CAPABILITY_NOT_FOUND);
+			}
+
+			const agentSession = (ctx.context as Record<string, unknown>)
+				.agentSession as AgentSession | undefined;
+			const hostSession = (ctx.context as Record<string, unknown>)
+				.hostSession as HostSession | undefined;
+
+			const { grant_status: _gs, ...capabilityFields } = capability;
+			const response: Record<string, unknown> = { ...capabilityFields };
+
+			if (agentSession) {
+				const grants =
+					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+						model: TABLE.grant,
+						where: [
+							{ field: "agentId", value: agentSession.agent.id },
+							{ field: "capability", value: capabilityName },
+						],
+					});
+
+				const now = new Date();
+				const hasActiveGrant = grants.some(
+					(g) =>
+						g.status === "active" &&
+						(!g.expiresAt || new Date(g.expiresAt) > now),
+				);
+
+				response.grant_status = hasActiveGrant
+					? "granted"
+					: "not_granted";
+			} else if (hostSession) {
+				const hostDefaults = hostSession.host.defaultCapabilities ?? [];
+				response.grant_status = hostDefaults.includes(capabilityName)
+					? "granted"
+					: "not_granted";
+			}
+
+			return ctx.json(response);
+		},
+	);
+}

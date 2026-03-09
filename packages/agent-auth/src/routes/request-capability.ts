@@ -152,9 +152,9 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						agent_id: agentSession.agent.id,
 						status: "pending",
 						agent_capability_grants:
-							formatGrantsResponse(existingGrants),
-						approval: {
-							method: existingApproval.method,
+						formatGrantsResponse(existingGrants, opts.capabilities),
+					approval: {
+						method: existingApproval.method,
 							expires_in: Math.floor(
 								(new Date(
 									existingApproval.expiresAt,
@@ -186,7 +186,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					agent_id: agentSession.agent.id,
 					status: "pending",
 					agent_capability_grants:
-						formatGrantsResponse(existingGrants),
+						formatGrantsResponse(existingGrants, opts.capabilities),
 					approval,
 				});
 			}
@@ -293,7 +293,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					agent_id: agentSession.agent.id,
 					status: "granted",
 					agent_capability_grants:
-						formatGrantsResponse(updatedGrants),
+						formatGrantsResponse(updatedGrants, opts.capabilities),
 				});
 			}
 
@@ -353,7 +353,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 			return ctx.json({
 				agent_id: agentSession.agent.id,
 				status: "pending",
-				agent_capability_grants: formatGrantsResponse(allGrants),
+				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),
 				approval,
 			});
 		},

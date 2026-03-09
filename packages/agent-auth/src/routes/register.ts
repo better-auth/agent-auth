@@ -206,6 +206,7 @@ export function register(
 							payload.aud,
 							ctx.context.baseURL,
 							ctx.headers,
+							opts.trustProxy,
 						)
 					) {
 						throw agentError(
@@ -215,7 +216,7 @@ export function register(
 					}
 				}
 
-				// JTI replay (§5.6)
+				// JTI replay (§5.6) — partitioned by host identity
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
 						throw agentError(
@@ -223,14 +224,15 @@ export function register(
 							ERR.INVALID_JWT,
 						);
 					}
-					if (jtiCache && (await jtiCache.has(String(payload.jti)))) {
+					const jtiKey = `host:${hostRecord.id}:${payload.jti}`;
+					if (jtiCache && (await jtiCache.has(jtiKey))) {
 						throw agentError(
 							"UNAUTHORIZED",
 							ERR.JWT_REPLAY,
 						);
 					}
 					if (jtiCache) {
-						await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
+						await jtiCache.add(jtiKey, opts.jwtMaxAge);
 					}
 				}
 
@@ -262,7 +264,9 @@ export function register(
 								],
 								update: bgUpdates,
 							})
-							.catch(() => {}),
+							.catch((err) => {
+								console.error("[agent-auth] background host-update failed:", err);
+							}),
 					);
 				}
 
@@ -283,7 +287,9 @@ export function register(
 							],
 							update: heartbeat,
 						})
-						.catch(() => {}),
+						.catch((err) => {
+							console.error("[agent-auth] background host-heartbeat failed:", err);
+						}),
 				);
 			} else {
 				// ---- Unknown host — dynamic registration ----
@@ -331,6 +337,7 @@ export function register(
 							payload.aud,
 							ctx.context.baseURL,
 							ctx.headers,
+							opts.trustProxy,
 						)
 					) {
 						throw agentError(
@@ -340,7 +347,7 @@ export function register(
 					}
 				}
 
-				// JTI replay (§5.6)
+				// JTI replay (§5.6) — partitioned by sub (host identity)
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
 						throw agentError(
@@ -348,14 +355,15 @@ export function register(
 							ERR.INVALID_JWT,
 						);
 					}
-					if (jtiCache && (await jtiCache.has(String(payload.jti)))) {
+					const jtiKey = `host:${payload.sub ?? "dynamic"}:${payload.jti}`;
+					if (jtiCache && (await jtiCache.has(jtiKey))) {
 						throw agentError(
 							"UNAUTHORIZED",
 							ERR.JWT_REPLAY,
 						);
 					}
 					if (jtiCache) {
-						await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
+						await jtiCache.add(jtiKey, opts.jwtMaxAge);
 					}
 				}
 
@@ -572,7 +580,7 @@ export function register(
 				host_name: hostRecord?.name ?? null,
 				mode: agent.mode,
 				status: agentStatus,
-				agent_capability_grants: formatGrantsResponse(allGrants),
+				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),
 			};
 
 			if (pendingCaps.length > 0 || isHostPending) {

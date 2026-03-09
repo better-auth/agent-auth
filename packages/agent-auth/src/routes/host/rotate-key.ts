@@ -102,11 +102,17 @@ export function rotateHostKey(
 				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 
-			if (jtiCache && payload.jti) {
-				if (await jtiCache.has(String(payload.jti))) {
+			if (!opts.dangerouslySkipJtiCheck) {
+				if (!payload.jti) {
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
+				}
+				const jtiKey = `host:${hostId}:${payload.jti}`;
+				if (jtiCache && (await jtiCache.has(jtiKey))) {
 					throw agentError("UNAUTHORIZED", ERR.JWT_REPLAY);
 				}
-				await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
+				if (jtiCache) {
+					await jtiCache.add(jtiKey, opts.jwtMaxAge);
+				}
 			}
 
 			if (!publicKey.kty || !publicKey.x) {

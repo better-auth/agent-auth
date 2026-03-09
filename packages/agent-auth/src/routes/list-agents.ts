@@ -2,7 +2,7 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import type { Agent, AgentCapabilityGrant } from "../types";
+import type { Agent, AgentCapabilityGrant, ResolvedAgentAuthOptions } from "../types";
 import { formatGrantsResponse } from "./_helpers";
 
 /**
@@ -10,7 +10,7 @@ import { formatGrantsResponse } from "./_helpers";
  *
  * List agents for the current user.
  */
-export function listAgents() {
+export function listAgents(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
 		"/agent/list",
 		{
@@ -83,7 +83,7 @@ export function listAgents() {
 						status: agent.status,
 						mode: agent.mode,
 						host_id: agent.hostId,
-						agent_capability_grants: formatGrantsResponse(grants),
+						agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
 						created_at: agent.createdAt,
 						last_used_at: agent.lastUsedAt,
 						expires_at: agent.expiresAt,
