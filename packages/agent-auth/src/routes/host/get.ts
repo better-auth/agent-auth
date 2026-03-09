@@ -41,7 +41,7 @@ export function getHost() {
 			return ctx.json({
 				id: host.id,
 				name: host.name ?? null,
-				default_capability_ids: parseCapabilityIds(host.defaultCapabilityIds),
+				default_capabilities: parseCapabilityIds(host.defaultCapabilities),
 				status: host.status,
 				activated_at: host.activatedAt,
 				expires_at: host.expiresAt,

@@ -21,7 +21,7 @@ import type {
  * POST /agent/approve-capability
  *
  * Browser-based (device authorization) approval path (§9.1).
- * Requires a fresh session.
+ * Optionally requires a fresh session (configurable via `freshSessionWindow`).
  */
 export function approveCapability(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -31,7 +31,7 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 			body: z.object({
 				agent_id: z.string(),
 				action: z.enum(["approve", "deny"]),
-				capability_ids: z.array(z.string()).optional(),
+				capabilities: z.array(z.string()).optional(),
 				ttl: z.number().positive().optional(),
 			}),
 			use: [sessionMiddleware],
@@ -45,29 +45,10 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const session = ctx.context.session;
 
-			// Fresh session enforcement (§10.11)
-			const freshWindow =
-				typeof opts.freshSessionWindow === "function"
-					? await opts.freshSessionWindow(ctx)
-					: opts.freshSessionWindow;
-
-			if (freshWindow > 0) {
-				const sessionCreated = session.session?.createdAt
-					? new Date(session.session.createdAt).getTime()
-					: 0;
-				const age = (Date.now() - sessionCreated) / 1000;
-				if (age > freshWindow) {
-					throw APIError.from(
-						"FORBIDDEN",
-						ERR.FRESH_SESSION_REQUIRED,
-					);
-				}
-			}
-
 			const {
 				agent_id: agentId,
 				action,
-				capability_ids: userCapIds,
+				capabilities: userCapIds,
 				ttl: explicitTTL,
 			} = ctx.body;
 
@@ -100,7 +81,9 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 				(g) => g.status === "pending",
 			);
 
-			if (pendingGrants.length === 0) {
+			const agentIsPending = agent.status === "pending";
+
+			if (pendingGrants.length === 0 && !agentIsPending) {
 				throw APIError.from(
 					"PRECONDITION_FAILED",
 					ERR.CAPABILITY_REQUEST_ALREADY_RESOLVED,
@@ -118,6 +101,14 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 					});
 				}
 
+				if (agentIsPending) {
+					await ctx.context.adapter.update({
+						model: TABLE.agent,
+						where: [{ field: "id", value: agentId }],
+						update: { status: "rejected", updatedAt: now },
+					});
+				}
+
 				await resolvePendingCibaRequests(ctx.context.adapter, {
 					agentId,
 					status: "denied",
@@ -128,8 +119,8 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 					actorId: session.user.id,
 					agentId,
 					metadata: {
-						capabilityIds: pendingGrants.map(
-							(g) => g.capabilityId,
+						capabilities: pendingGrants.map(
+							(g) => g.capability,
 						),
 					},
 				}, ctx);
@@ -140,12 +131,32 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 			// Approve
 			const approvedCapIds = userCapIds
 				? new Set(userCapIds)
-				: new Set(pendingGrants.map((g) => g.capabilityId));
+				: new Set(pendingGrants.map((g) => g.capability));
 
-			if (opts.blockedCapabilityIds.length > 0) {
+			// Fresh session enforcement (§10.11)
+			const capabilities = [...approvedCapIds];
+			const freshWindow =
+				typeof opts.freshSessionWindow === "function"
+					? await opts.freshSessionWindow({ ctx, capabilities })
+					: opts.freshSessionWindow;
+
+			if (freshWindow > 0) {
+				const sessionCreated = session.session?.createdAt
+					? new Date(session.session.createdAt).getTime()
+					: 0;
+				const age = (Date.now() - sessionCreated) / 1000;
+				if (age > freshWindow) {
+					throw APIError.from(
+						"FORBIDDEN",
+						ERR.FRESH_SESSION_REQUIRED,
+					);
+				}
+			}
+
+			if (opts.blockedCapabilities.length > 0) {
 				const blocked = findBlockedCapabilities(
 					[...approvedCapIds],
-					opts.blockedCapabilityIds,
+					opts.blockedCapabilities,
 				);
 				if (blocked.length > 0) {
 					throw new APIError("BAD_REQUEST", {
@@ -157,13 +168,13 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 			const alreadyActive = new Set(
 				allGrants
 					.filter((g) => g.status === "active")
-					.map((g) => g.capabilityId),
+					.map((g) => g.capability),
 			);
 			const added: string[] = [];
 
 			for (const grant of pendingGrants) {
-				if (approvedCapIds.has(grant.capabilityId)) {
-					if (alreadyActive.has(grant.capabilityId)) {
+				if (approvedCapIds.has(grant.capability)) {
+					if (alreadyActive.has(grant.capability)) {
 						await ctx.context.adapter.delete({
 							model: TABLE.grant,
 							where: [{ field: "id", value: grant.id }],
@@ -171,7 +182,7 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 					} else {
 						const expiresAt = await resolveGrantExpiresAt(
 							opts,
-							grant.capabilityId,
+							grant.capability,
 							{
 								agentId,
 								hostId: agent.hostId,
@@ -189,8 +200,8 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 								updatedAt: now,
 							},
 						});
-						alreadyActive.add(grant.capabilityId);
-						added.push(grant.capabilityId);
+						alreadyActive.add(grant.capability);
+						added.push(grant.capability);
 					}
 				} else {
 					await ctx.context.adapter.update({
@@ -221,7 +232,7 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 				type: "capability.approved",
 				actorId: session.user.id,
 				agentId,
-				metadata: { capabilityIds: added },
+				metadata: { capabilities: added },
 			}, ctx);
 
 			return ctx.json({

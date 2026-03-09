@@ -65,8 +65,8 @@ export interface SignAgentJWTOptions {
 	audience: string;
 	/** Expiry in seconds from now. @default 60 */
 	expiresInSeconds?: number;
-	/** Optional capability IDs to restrict this JWT to (§5.3). */
-	capabilityIds?: string[];
+	/** Optional capabilities to restrict this JWT to (§5.3). */
+	capabilities?: string[];
 	/** Optional DPoP-style claims. */
 	htm?: string;
 	htu?: string;
@@ -82,7 +82,7 @@ export async function signAgentJWT(
 	const alg = resolveAlgorithm(opts.privateKey);
 	const key = await importJWK(opts.privateKey, alg);
 	const builder = new SignJWT({
-		...(opts.capabilityIds ? { capability_ids: opts.capabilityIds } : {}),
+		...(opts.capabilities ? { capabilities: opts.capabilities } : {}),
 		...(opts.htm ? { htm: opts.htm } : {}),
 		...(opts.htu ? { htu: opts.htu } : {}),
 		...(opts.ath ? { ath: opts.ath } : {}),

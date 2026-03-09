@@ -192,10 +192,10 @@ export function getAgentAuthAdapter(
 
 		const status = grantOpts?.status ?? "active";
 		const now = new Date();
-		for (const capabilityId of capabilityIds) {
+		for (const cap of capabilityIds) {
 			const expiresAt =
 				status === "active" && ttlContext
-					? await resolveGrantExpiresAt(opts, capabilityId, {
+					? await resolveGrantExpiresAt(opts, cap, {
 							agentId,
 							hostId: ttlContext.hostId,
 							userId: ttlContext.userId,
@@ -205,7 +205,7 @@ export function getAgentAuthAdapter(
 				model: TABLE.grant,
 				data: {
 					agentId,
-					capabilityId,
+					capability: cap,
 					grantedBy,
 					expiresAt,
 					status,
@@ -307,7 +307,7 @@ export function getAgentAuthAdapter(
 			const host = await findHostById(agent.hostId);
 			if (!host || host.status === "revoked") return null;
 
-			const baseCaps = parseCapabilityIds(host.defaultCapabilityIds);
+			const baseCaps = parseCapabilityIds(host.defaultCapabilities);
 			await createGrantRows(
 				agent.id,
 				baseCaps,

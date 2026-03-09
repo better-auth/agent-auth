@@ -40,9 +40,9 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 					description:
 						"JWKS URL for remote key discovery. If provided, public_key is optional.",
 				}),
-				default_capability_ids: z.array(z.string()).optional().meta({
+				default_capabilities: z.array(z.string()).optional().meta({
 					description:
-						"Default capability IDs agents inherit. Reactivated agents reset to these.",
+						"Default capabilities agents inherit. Reactivated agents reset to these.",
 				}),
 			}),
 			use: [sessionMiddleware],
@@ -60,7 +60,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				name: hostName,
 				public_key: publicKey,
 				jwks_url: jwksUrl,
-				default_capability_ids: bodyCapIds,
+				default_capabilities: bodyCapIds,
 			} = ctx.body;
 			const isEnrollmentFlow = !publicKey && !jwksUrl;
 
@@ -103,7 +103,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 						});
 					}
 					const reactivateUpdate: Record<string, unknown> = {
-						defaultCapabilityIds,
+						defaultCapabilities: defaultCapabilityIds,
 						publicKey: JSON.stringify(publicKey),
 						jwksUrl: jwksUrl ?? null,
 						userId: session.user.id,
@@ -125,12 +125,12 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 						type: "host.reactivated",
 						actorId: session.user.id,
 						hostId: existing.id,
-						metadata: { defaultCapabilityIds },
+						metadata: { defaultCapabilities: defaultCapabilityIds },
 					}, ctx);
 
 					return ctx.json({
 						hostId: existing.id,
-						default_capability_ids: defaultCapabilityIds,
+						default_capabilities: defaultCapabilityIds,
 						status: "active",
 					});
 				}
@@ -157,7 +157,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				data: {
 					name: hostName ?? null,
 					userId: session.user.id,
-					defaultCapabilityIds,
+					defaultCapabilities: defaultCapabilityIds,
 					publicKey: publicKey ? JSON.stringify(publicKey) : "",
 					kid,
 					jwksUrl: jwksUrl ?? null,
@@ -177,7 +177,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				actorId: session.user.id,
 				hostId: host.id,
 				metadata: {
-					defaultCapabilityIds,
+					defaultCapabilities: defaultCapabilityIds,
 					status: isEnrollmentFlow ? "pending_enrollment" : "active",
 				},
 			}, ctx);
@@ -185,7 +185,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 			if (isEnrollmentFlow) {
 				return ctx.json({
 					hostId: host.id,
-					default_capability_ids: defaultCapabilityIds,
+					default_capabilities: defaultCapabilityIds,
 					status: "pending_enrollment",
 					enrollmentToken: enrollmentTokenPlaintext,
 					enrollmentTokenExpiresAt,
@@ -194,7 +194,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 
 			return ctx.json({
 				hostId: host.id,
-				default_capability_ids: defaultCapabilityIds,
+				default_capabilities: defaultCapabilityIds,
 				status: "active",
 			});
 		},

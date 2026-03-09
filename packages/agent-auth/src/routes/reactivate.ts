@@ -122,7 +122,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const baseCapabilityIds = parseCapabilityIds(
-				host.defaultCapabilityIds,
+				host.defaultCapabilities,
 			);
 
 			// Revoke all existing grants and re-grant host defaults
@@ -191,9 +191,9 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				agentId: agent.id,
 				hostId: agent.hostId ?? undefined,
 				metadata: {
-					capabilityIds: grants
+					capabilities: grants
 						.filter((g) => g.status === "active")
-						.map((g) => g.capabilityId),
+						.map((g) => g.capability),
 				},
 			}, ctx);
 
@@ -217,7 +217,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 						userId: agent.userId,
 						agentName: agent.name,
 						hostId: agent.hostId,
-						capabilityIds: baseCapabilityIds,
+						capabilities: baseCapabilityIds,
 					},
 				);
 			}

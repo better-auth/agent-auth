@@ -37,10 +37,10 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 					.url()
 					.optional()
 					.meta({ description: "New JWKS URL for remote key discovery" }),
-				default_capability_ids: z
+				default_capabilities: z
 					.array(z.string())
 					.optional()
-					.meta({ description: "Update default capability IDs" }),
+					.meta({ description: "Update default capabilities" }),
 			}),
 			use: [sessionMiddleware],
 			metadata: {
@@ -57,7 +57,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 				name,
 				public_key: publicKey,
 				jwks_url: jwksUrl,
-				default_capability_ids: defaultCapabilityIds,
+				default_capabilities: defaultCapabilityIds,
 			} = ctx.body;
 
 			const host = await ctx.context.adapter.findOne<AgentHost>({
@@ -108,7 +108,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 			if (defaultCapabilityIds !== undefined) {
 				validateCapabilityIds(defaultCapabilityIds, opts);
 				await validateCapabilitiesExist(defaultCapabilityIds, opts);
-				update.defaultCapabilityIds = defaultCapabilityIds;
+				update.defaultCapabilities = defaultCapabilityIds;
 			}
 
 			await ctx.context.adapter.update({
@@ -126,13 +126,13 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 				type: "host.updated",
 				actorId: session.user.id,
 				hostId: host.id,
-				metadata: { name, defaultCapabilityIds, jwksUrl },
+				metadata: { name, defaultCapabilities: defaultCapabilityIds, jwksUrl },
 			}, ctx);
 
 			return ctx.json({
 				id: updated!.id,
-				default_capability_ids: parseCapabilityIds(
-					updated!.defaultCapabilityIds,
+				default_capabilities: parseCapabilityIds(
+					updated!.defaultCapabilities,
 				),
 				jwks_url: updated!.jwksUrl,
 				status: updated!.status,

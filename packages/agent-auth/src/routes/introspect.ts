@@ -114,15 +114,15 @@ export function introspect(
 
 			let relevantGrants = activeGrants(grants);
 
-			const capabilityIdsClaim = payload.capability_ids;
-			if (Array.isArray(capabilityIdsClaim)) {
-				const jwtCapIds = new Set<string>();
-				for (const v of capabilityIdsClaim) {
-					if (typeof v === "string") jwtCapIds.add(v);
+			const capabilitiesClaim = payload.capabilities;
+			if (Array.isArray(capabilitiesClaim)) {
+				const jwtCaps = new Set<string>();
+				for (const v of capabilitiesClaim) {
+					if (typeof v === "string") jwtCaps.add(v);
 				}
-				if (jwtCapIds.size > 0) {
+				if (jwtCaps.size > 0) {
 					relevantGrants = relevantGrants.filter((g) =>
-						jwtCapIds.has(g.capabilityId),
+						jwtCaps.has(g.capability),
 					);
 				}
 			}

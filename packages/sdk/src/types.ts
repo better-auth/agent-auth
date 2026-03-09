@@ -43,8 +43,7 @@ export interface HttpDescriptor {
 
 /** Capability definition — §4. */
 export interface Capability {
-	id: string;
-	title?: string;
+	name: string;
 	description: string;
 	/**
 	 * JSON Schema describing the `arguments` accepted by
@@ -82,7 +81,7 @@ export type AgentStatus =
 	| "claimed";
 
 export interface CapabilityGrant {
-	capability_id: string;
+	capability: string;
 	status: "active" | "pending" | "denied";
 	granted_by?: string | null;
 }
@@ -163,7 +162,7 @@ export interface AgentSessionResponse {
 		name: string;
 		mode: AgentMode;
 		capabilityGrants: Array<{
-			capabilityId: string;
+			capability: string;
 			grantedBy: string | null;
 			status: string;
 		}>;
@@ -189,7 +188,7 @@ export interface AgentSessionResponse {
 export interface EnrollHostResponse {
 	hostId: string;
 	name: string;
-	default_capability_ids: string[];
+	default_capabilities: string[];
 	status: string;
 }
 

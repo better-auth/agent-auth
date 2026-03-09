@@ -5,7 +5,7 @@ import { getClientConfig } from "./client.js";
 const args = process.argv.slice(2);
 
 function mcpConfig() {
-	return { ...getClientConfig(), noBrowser: true };
+	return getClientConfig();
 }
 
 if (args[0] === "mcp") {

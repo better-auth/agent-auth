@@ -27,12 +27,12 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 		agentMaxLifetime: options?.agentMaxLifetime ?? 86400,
 		maxAgentsPerUser: options?.maxAgentsPerUser ?? 25,
 		absoluteLifetime: options?.absoluteLifetime ?? 0,
-		freshSessionWindow: options?.freshSessionWindow ?? 300,
-		blockedCapabilityIds: options?.blockedCapabilityIds ?? [],
+		freshSessionWindow: options?.freshSessionWindow ?? 0,
+		blockedCapabilities: options?.blockedCapabilities ?? [],
 		allowDynamicHostRegistration:
 			options?.allowDynamicHostRegistration ?? true,
-		dynamicHostDefaultCapabilityIds:
-			options?.dynamicHostDefaultCapabilityIds ?? [],
+		dynamicHostDefaultCapabilities:
+			options?.dynamicHostDefaultCapabilities ?? [],
 		modes: options?.modes ?? ["delegated", "autonomous"],
 		approvalMethods: options?.approvalMethods ?? [
 			"ciba",

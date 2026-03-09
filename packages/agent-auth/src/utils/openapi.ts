@@ -126,7 +126,7 @@ function buildOperationMap(
  * Convert an OpenAPI 3.x spec into `Capability[]`.
  *
  * Each operation with an `operationId` becomes a capability whose
- * `id` is the `operationId` and whose `input` is a JSON Schema
+ * `name` is the `operationId` and whose `input` is a JSON Schema
  * derived from the operation's parameters and request body.
  */
 export function fromOpenAPI(spec: OpenAPISpec): Capability[] {
@@ -152,8 +152,7 @@ export function fromOpenAPI(spec: OpenAPISpec): Capability[] {
 			const input = buildInputSchema(op);
 
 			capabilities.push({
-				id: op.operationId,
-				title: op.summary ?? op.operationId,
+				name: op.operationId,
 				description:
 					op.description ?? op.summary ?? op.operationId,
 				...(input ? { input } : {}),
@@ -168,7 +167,7 @@ export function fromOpenAPI(spec: OpenAPISpec): Capability[] {
  * Create an `onExecute` handler that proxies capability calls to an
  * HTTP API described by an OpenAPI spec.
  *
- * The handler maps `capabilityId` to the matching OpenAPI operation,
+ * The handler maps `capability` to the matching OpenAPI operation,
  * substitutes path/query/header parameters from `arguments`, sends
  * remaining arguments as a JSON body, and returns the response.
  *
@@ -194,7 +193,7 @@ export function createOpenAPIHandler(
 		baseUrl: string;
 		resolveHeaders?: (context: {
 			ctx: Parameters<NonNullable<AgentAuthOptions["onExecute"]>>[0]["ctx"];
-			capabilityId: string;
+			capability: string;
 			agentSession: Parameters<NonNullable<AgentAuthOptions["onExecute"]>>[0]["agentSession"];
 		}) => Record<string, string> | Promise<Record<string, string>>;
 		fetch?: typeof globalThis.fetch;
@@ -203,11 +202,11 @@ export function createOpenAPIHandler(
 	const opMap = buildOperationMap(spec, opts.baseUrl);
 	const fetchFn = opts.fetch ?? globalThis.fetch;
 
-	return async ({ ctx, capabilityId, arguments: args, agentSession }) => {
-		const op = opMap.get(capabilityId);
+	return async ({ ctx, capability, arguments: args, agentSession }) => {
+		const op = opMap.get(capability);
 		if (!op) {
 			throw new Error(
-				`No OpenAPI operation found for capability "${capabilityId}".`,
+				`No OpenAPI operation found for capability "${capability}".`,
 			);
 		}
 
@@ -220,7 +219,7 @@ export function createOpenAPIHandler(
 		if (opts.resolveHeaders) {
 			const extra = await opts.resolveHeaders({
 				ctx,
-				capabilityId,
+				capability,
 				agentSession,
 			});
 			Object.assign(headers, extra);

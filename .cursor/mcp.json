@@ -9,9 +9,6 @@
       "env": {
         "AGENT_AUTH_PROVIDERS_FILE": "/Users/bekacru/Desktop/development/agent-auth-ba/providers.json"
       }
-    },
-    "vercel": {
-      "url": "https://mcp.vercel.com"
     }
   }
 }

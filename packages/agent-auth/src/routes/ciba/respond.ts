@@ -109,7 +109,7 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 			});
 
 			const requestedCapabilities = new Set(
-				(request.capabilityIds ?? "").split(/\s+/).filter(Boolean),
+				(request.capabilities ?? "").split(/\s+/).filter(Boolean),
 			);
 
 			const pendingGrants =
@@ -124,14 +124,14 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 			const matched =
 				requestedCapabilities.size > 0
 					? pendingGrants.filter((g) =>
-							requestedCapabilities.has(g.capabilityId),
+							requestedCapabilities.has(g.capability),
 						)
 					: pendingGrants;
 
 			for (const grant of matched) {
 				const expiresAt = await resolveGrantExpiresAt(
 					opts,
-					grant.capabilityId,
+					grant.capability,
 					{
 						agentId,
 						hostId: agent?.hostId ?? null,
@@ -179,7 +179,7 @@ export function cibaApprove(opts: ResolvedAgentAuthOptions) {
 				agentId: agentId ?? undefined,
 				targetId: request.id,
 				targetType: "cibaAuthRequest",
-				metadata: { capabilityIds: request.capabilityIds },
+				metadata: { capabilities: request.capabilities },
 			}, ctx);
 
 			return ctx.json({
@@ -247,7 +247,7 @@ export function cibaDeny(opts: ResolvedAgentAuthOptions) {
 
 			if (request.agentId) {
 				const requestedCapabilities = new Set(
-					(request.capabilityIds ?? "").split(/\s+/).filter(Boolean),
+					(request.capabilities ?? "").split(/\s+/).filter(Boolean),
 				);
 
 				const pendingGrants =
@@ -262,7 +262,7 @@ export function cibaDeny(opts: ResolvedAgentAuthOptions) {
 				const matched =
 					requestedCapabilities.size > 0
 						? pendingGrants.filter((g) =>
-								requestedCapabilities.has(g.capabilityId),
+								requestedCapabilities.has(g.capability),
 							)
 						: pendingGrants;
 
@@ -293,7 +293,7 @@ export function cibaDeny(opts: ResolvedAgentAuthOptions) {
 				agentId: request.agentId ?? undefined,
 				targetId: request.id,
 				targetType: "cibaAuthRequest",
-				metadata: { capabilityIds: request.capabilityIds },
+				metadata: { capabilities: request.capabilities },
 			}, ctx);
 
 			return ctx.json({

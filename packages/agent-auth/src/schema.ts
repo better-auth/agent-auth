@@ -24,7 +24,7 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-			defaultCapabilityIds: {
+			defaultCapabilities: {
 					type: "string",
 					required: false,
 					input: false,
@@ -198,7 +198,7 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-				capabilityId: {
+				capability: {
 					type: "string",
 					required: true,
 					input: false,
@@ -273,7 +273,7 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-				capabilityIds: {
+				capabilities: {
 					type: "string",
 					required: false,
 					input: false,

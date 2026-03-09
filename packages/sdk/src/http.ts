@@ -24,7 +24,7 @@ export async function executeHttpCapability(opts: {
 	if (!http) {
 		throw new AgentAuthSDKError(
 			"no_http_profile",
-			`Capability "${opts.capability.id}" has no http execution profile.`,
+			`Capability "${opts.capability.name}" has no http execution profile.`,
 		);
 	}
 
@@ -45,7 +45,7 @@ export async function executeHttpCapability(opts: {
 				if (param.required) {
 					throw new AgentAuthSDKError(
 						"missing_parameter",
-						`Required parameter "${param.name}" not provided for capability "${opts.capability.id}".`,
+						`Required parameter "${param.name}" not provided for capability "${opts.capability.name}".`,
 					);
 				}
 				continue;

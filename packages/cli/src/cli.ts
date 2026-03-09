@@ -99,7 +99,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().connectAgent({
 					provider: opts.provider,
-					capabilityIds: opts.capabilities,
+					capabilities: opts.capabilities,
 					mode: opts.mode,
 					name: opts.name,
 					reason: opts.reason,
@@ -126,7 +126,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().signJwt({
 					agentId,
-					capabilityIds: opts.capabilities,
+					capabilities: opts.capabilities,
 				});
 				json(result);
 			}),
@@ -141,7 +141,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().requestCapability({
 					agentId,
-					capabilityIds: opts.capabilities,
+					capabilities: opts.capabilities,
 					reason: opts.reason,
 				});
 				json(result);
@@ -172,12 +172,12 @@ export function buildCli(): Command {
 		.command("execute <agent-id> <capability-id>")
 		.description("Execute a capability through the server's execute endpoint")
 		.option("--args <json>", "arguments as JSON string")
-		.action((agentId: string, capabilityId: string, opts) =>
+		.action((agentId: string, capability: string, opts) =>
 			run(async () => {
 				const args = opts.args ? JSON.parse(opts.args) : undefined;
 				const result = await client().executeCapability({
 					agentId,
-					capabilityId,
+					capability,
 					arguments: args,
 				});
 				json(result);

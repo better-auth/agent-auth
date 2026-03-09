@@ -47,8 +47,8 @@ export function cibaPending() {
 						agent_id: r.agentId ?? null,
 						agent_name: agentName,
 						binding_message: r.bindingMessage,
-						capability_ids: r.capabilityIds
-							? r.capabilityIds.split(/\s+/).filter(Boolean)
+						capabilities: r.capabilities
+							? r.capabilities.split(/\s+/).filter(Boolean)
 							: [],
 						delivery_mode: r.deliveryMode,
 						expires_in: Math.max(

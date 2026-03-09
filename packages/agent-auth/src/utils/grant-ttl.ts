@@ -7,7 +7,7 @@ import type { ResolvedAgentAuthOptions } from "../types";
  */
 export async function resolveGrantExpiresAt(
 	opts: ResolvedAgentAuthOptions,
-	capabilityId: string,
+	capability: string,
 	context: {
 		agentId: string;
 		hostId: string | null;
@@ -21,7 +21,7 @@ export async function resolveGrantExpiresAt(
 
 	if (opts.resolveGrantTTL) {
 		const ttl = await opts.resolveGrantTTL({
-			capabilityId,
+			capability,
 			agentId: context.agentId,
 			hostId: context.hostId,
 			userId: context.userId,

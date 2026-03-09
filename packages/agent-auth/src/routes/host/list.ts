@@ -50,7 +50,7 @@ export function listHosts() {
 				hosts: hosts.map((h) => ({
 					id: h.id,
 					name: h.name ?? null,
-					default_capability_ids: parseCapabilityIds(h.defaultCapabilityIds),
+					default_capabilities: parseCapabilityIds(h.defaultCapabilities),
 					status: h.status,
 					activated_at: h.activatedAt,
 					expires_at: h.expiresAt,

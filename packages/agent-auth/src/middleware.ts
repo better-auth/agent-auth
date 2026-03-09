@@ -120,7 +120,13 @@ export function createAgentAuthBeforeHook(
 			if (!agent) {
 				const host = await db.findHostById(agentId);
 
-				if (host && host.status === "active" && (host.publicKey || host.jwksUrl)) {
+				const hostAllowed =
+					host &&
+					(host.publicKey || host.jwksUrl) &&
+					(host.status === "active" ||
+						(host.status === "pending" && ctx.path === "/agent/status"));
+
+				if (hostAllowed) {
 					let hostPubKey: AgentJWK | null = null;
 					if (host.jwksUrl && jwksCache) {
 						try {
@@ -158,13 +164,13 @@ export function createAgentAuthBeforeHook(
 						);
 					}
 					const hostCaps = parseCapabilityIds(
-						host.defaultCapabilityIds,
+						host.defaultCapabilities,
 					);
 					const hostSession: HostSession = {
 						host: {
 							id: host.id,
 							userId: host.userId,
-							defaultCapabilityIds: hostCaps,
+							defaultCapabilities: hostCaps,
 							status: host.status,
 						},
 					};
@@ -359,14 +365,13 @@ export function createAgentAuthBeforeHook(
 					(!g.expiresAt || new Date(g.expiresAt) > now),
 			);
 
-			// Intersect with JWT's capability_ids claim (§5.3)
+			// Intersect with JWT's capabilities claim (§5.3)
 			let effectiveGrants = activeGrants;
-			const jwtCapIds =
-				payload.capability_ids ?? payload.capabilityIds;
-			if (jwtCapIds && Array.isArray(jwtCapIds)) {
-				const jwtCapSet = new Set(jwtCapIds as string[]);
+			const jwtCaps = payload.capabilities;
+			if (jwtCaps && Array.isArray(jwtCaps)) {
+				const jwtCapSet = new Set(jwtCaps as string[]);
 				effectiveGrants = activeGrants.filter((g) =>
-					jwtCapSet.has(g.capabilityId),
+					jwtCapSet.has(g.capability),
 				);
 			}
 
@@ -377,7 +382,7 @@ export function createAgentAuthBeforeHook(
 					name: agent.name,
 					mode: agent.mode,
 					capabilityGrants: effectiveGrants.map((g) => ({
-						capabilityId: g.capabilityId,
+						capability: g.capability,
 						grantedBy: g.grantedBy,
 						status: g.status,
 					})),

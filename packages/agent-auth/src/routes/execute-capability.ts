@@ -24,7 +24,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				capability_id: z.string(),
+				capability: z.string(),
 				arguments: z.record(z.string(), z.unknown()).optional(),
 			}),
 			requireHeaders: true,
@@ -46,17 +46,17 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { capability_id: capabilityId, arguments: args } = ctx.body;
+			const { capability: capabilityName, arguments: args } = ctx.body;
 
 			const allCapabilities = opts.capabilities ?? [];
-			const capability = allCapabilities.find(
-				(c) => c.id === capabilityId,
+			const capabilityDef = allCapabilities.find(
+				(c) => c.name === capabilityName,
 			);
-			if (!capability) {
+			if (!capabilityDef) {
 				throw new APIError("NOT_FOUND", {
 					body: {
 						code: ERR.CAPABILITY_NOT_FOUND.code,
-						message: `Capability "${capabilityId}" does not exist.`,
+						message: `Capability "${capabilityName}" does not exist.`,
 					},
 				});
 			}
@@ -66,7 +66,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					model: TABLE.grant,
 					where: [
 						{ field: "agentId", value: agentSession.agent.id },
-						{ field: "capabilityId", value: capabilityId },
+						{ field: "capability", value: capabilityName },
 					],
 				});
 
@@ -81,7 +81,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 				throw new APIError("FORBIDDEN", {
 					body: {
 						code: ERR.CAPABILITY_NOT_GRANTED.code,
-						message: `Agent does not have an active grant for capability "${capabilityId}".`,
+						message: `Agent does not have an active grant for capability "${capabilityName}".`,
 					},
 				});
 			}
@@ -104,8 +104,8 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 			try {
 				result = await opts.onExecute({
 					ctx,
-					capabilityId,
-					capability,
+					capability: capabilityName,
+					capabilityDef,
 					arguments: args,
 					agentSession,
 				});
@@ -118,7 +118,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					opts,
 					{
 						type: "tool.executed",
-						tool: capabilityId,
+						tool: capabilityName,
 						agentId: agentSession.agent.id,
 						hostId: agentSession.agent.hostId,
 						userId: agentSession.host?.userId ?? undefined,
@@ -146,7 +146,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 				opts,
 				{
 					type: "tool.executed",
-					tool: capabilityId,
+					tool: capabilityName,
 					agentId: agentSession.agent.id,
 					hostId: agentSession.agent.hostId,
 					userId: agentSession.host?.userId ?? undefined,

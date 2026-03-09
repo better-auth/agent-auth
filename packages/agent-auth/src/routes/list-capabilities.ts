@@ -7,6 +7,7 @@ import type {
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../types";
+import { matchIntent } from "../utils/intent";
 
 /**
  * GET /agent/capabilities
@@ -48,15 +49,18 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 				return ctx.json({ capabilities: [], has_more: false });
 			}
 
-			const intent = ctx.query?.intent?.toLowerCase();
+			const intent = ctx.query?.intent;
 			let filtered = allCapabilities;
 
 			if (intent) {
-				filtered = allCapabilities.filter(
-					(c) =>
-						c.id.toLowerCase().includes(intent) ||
-						c.description.toLowerCase().includes(intent),
-				);
+				if (opts.resolveIntent) {
+					filtered = await opts.resolveIntent({
+						intent,
+						capabilities: allCapabilities,
+					});
+				} else {
+					filtered = matchIntent(intent, allCapabilities);
+				}
 			}
 
 			const limit = ctx.query?.limit ?? 100;
@@ -82,11 +86,11 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 								g.status === "active" &&
 								(!g.expiresAt || new Date(g.expiresAt) > new Date()),
 						)
-						.map((g) => g.capabilityId),
+						.map((g) => g.capability),
 				);
 			} else if (hostSession) {
 				grantedCapabilityIds = new Set(
-					hostSession.host.defaultCapabilityIds,
+					hostSession.host.defaultCapabilities,
 				);
 			}
 
@@ -95,7 +99,7 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 					...c,
 					...(grantedCapabilityIds
 						? {
-								grant_status: grantedCapabilityIds.has(c.id)
+								grant_status: grantedCapabilityIds.has(c.name)
 									? ("granted" as const)
 									: ("not_granted" as const),
 							}

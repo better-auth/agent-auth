@@ -5,7 +5,7 @@ import type { agentSchema } from "./schema";
 /**
  * Capability definition — §4.
  *
- * Core fields are `id`, `description`, and optionally `input`
+ * Core fields are `name`, `description`, and optionally `input`
  * (a JSON Schema describing arguments for `POST /capability/execute`).
  *
  * Capabilities are executed through the server's execute endpoint.
@@ -13,14 +13,14 @@ import type { agentSchema } from "./schema";
  * can be included via the index signature.
  */
 export interface Capability {
-	id: string;
-	title?: string;
+	name: string;
 	description: string;
 	/**
 	 * JSON Schema describing the `arguments` accepted by
 	 * `POST /capability/execute` (§6.11).
 	 */
 	input?: Record<string, unknown>;
+	grant_status?: "granted" | "not_granted";
 	[key: string]: unknown;
 }
 
@@ -48,7 +48,7 @@ export interface AgentHost {
 	id: string;
 	name: string | null;
 	userId: string | null;
-	defaultCapabilityIds: string[];
+	defaultCapabilities: string[];
 	publicKey: string | null;
 	kid: string | null;
 	jwksUrl: string | null;
@@ -88,7 +88,7 @@ export type AgentMetadata = Record<string, string | number | boolean | null>;
 export interface AgentCapabilityGrant {
 	id: string;
 	agentId: string;
-	capabilityId: string;
+	capability: string;
 	grantedBy: string | null;
 	reason: string | null;
 	expiresAt: Date | null;
@@ -104,7 +104,7 @@ export interface CibaAuthRequest {
 	loginHint: string;
 	userId: string | null;
 	agentId: string | null;
-	capabilityIds: string | null;
+	capabilities: string | null;
 	bindingMessage: string | null;
 	clientNotificationToken: string | null;
 	clientNotificationEndpoint: string | null;
@@ -136,7 +136,7 @@ export interface AgentSession {
 		name: string;
 		mode: AgentMode;
 		capabilityGrants: Array<{
-			capabilityId: string;
+			capability: string;
 			grantedBy: string | null;
 			status: string;
 		}>;
@@ -161,7 +161,7 @@ export interface HostSession {
 	host: {
 		id: string;
 		userId: string | null;
-		defaultCapabilityIds: string[];
+		defaultCapabilities: string[];
 		status: string;
 	};
 }
@@ -198,7 +198,7 @@ export type AgentAuthPath =
 	| "/agent/ciba/deny"
 	| "/agent/ciba/pending";
 
-export interface DynamicHostDefaultCapabilityIdsContext {
+export interface DynamicHostDefaultCapabilitiesContext {
 	ctx: GenericEndpointContext;
 	mode: AgentMode;
 	userId: string | null;
@@ -235,7 +235,7 @@ export interface AgentAuthOptions {
 		userId: string | null;
 		agentName: string;
 		hostId: string | null;
-		capabilityIds: string[];
+		capabilities: string[];
 		preferredMethod?: string;
 	}) => string | Promise<string>;
 	/**
@@ -254,7 +254,7 @@ export interface AgentAuthOptions {
 	allowedKeyAlgorithms?: string[];
 	/**
 	 * JWT claim format for keypair auth.
-	 * - `"simple"` — flat claims: `sub`, `capabilityIds`, etc.
+	 * - `"simple"` — flat claims: `sub`, `capabilities`, etc.
 	 * - `"aap"` — structured AAP-compatible claims
 	 * @default "simple"
 	 */
@@ -272,11 +272,11 @@ export interface AgentAuthOptions {
 	 */
 	agentSessionTTL?: number;
 	/**
-	 * Validate that requested capability IDs exist (§10.6).
+	 * Validate that requested capabilities exist (§10.6).
 	 * When omitted, any string is accepted.
 	 */
 	validateCapabilities?: (
-		capabilityIds: string[],
+		capabilities: string[],
 	) => boolean | Promise<boolean>;
 	/**
 	 * Maximum number of active agents a single user can have (§10.13).
@@ -300,11 +300,19 @@ export interface AgentAuthOptions {
 	absoluteLifetime?: number;
 	/**
 	 * Fresh session window in seconds for device-auth approval (§10.11).
-	 * @default 300 (5 minutes)
+	 * Set to `0` to disable.
+	 *
+	 * When a function, receives the endpoint context and the list of
+	 * capability IDs being approved so you can vary the requirement
+	 * per-capability.
+	 * @default 0 (disabled)
 	 */
 	freshSessionWindow?:
 		| number
-		| ((ctx: GenericEndpointContext) => number | Promise<number>);
+		| ((context: {
+				ctx: GenericEndpointContext;
+				capabilities: string[];
+		  }) => number | Promise<number>);
 	/**
 	 * Whether to allow unknown hosts to register dynamically (§3.2).
 	 * @default true
@@ -313,13 +321,13 @@ export interface AgentAuthOptions {
 		| boolean
 		| ((ctx: GenericEndpointContext) => boolean | Promise<boolean>);
 	/**
-	 * Default capability IDs for dynamically created hosts (§3.2).
+	 * Default capabilities for dynamically created hosts (§3.2).
 	 * @default []
 	 */
-	dynamicHostDefaultCapabilityIds?:
+	dynamicHostDefaultCapabilities?:
 		| string[]
 		| ((
-				context: DynamicHostDefaultCapabilityIdsContext,
+				context: DynamicHostDefaultCapabilitiesContext,
 		  ) => string[] | Promise<string[]>);
 	/**
 	 * Resolve a virtual user for an autonomous agent session.
@@ -346,16 +354,16 @@ export interface AgentAuthOptions {
 	 * Resolve a TTL (in seconds) for a newly granted capability (§8.3).
 	 */
 	resolveGrantTTL?: (context: {
-		capabilityId: string;
+		capability: string;
 		agentId: string;
 		hostId: string | null;
 		userId: string | null;
 	}) => number | null | undefined | Promise<number | null | undefined>;
 	/**
-	 * Capability IDs that are always blocked from being granted (§10.6).
+	 * Capabilities that are always blocked from being granted (§10.6).
 	 * @default []
 	 */
-	blockedCapabilityIds?: string[];
+	blockedCapabilities?: string[];
 	/**
 	 * Where to store seen JWT `jti` values for replay protection (§5.6).
 	 *
@@ -413,6 +421,20 @@ export interface AgentAuthOptions {
 	 */
 	onEvent?: (event: AgentAuthEvent) => void | Promise<void>;
 	/**
+	 * Custom intent resolver for capability search (§6.2).
+	 *
+	 * When provided, completely replaces the built-in BM25-based
+	 * intent matching. Use this to plug in your own logic — e.g.
+	 * embedding-based semantic search, an external API, or a
+	 * custom classifier.
+	 *
+	 * Return the filtered/ranked capabilities that match the intent.
+	 */
+	resolveIntent?: (context: {
+		intent: string;
+		capabilities: Capability[];
+	}) => Capability[] | Promise<Capability[]>;
+	/**
 	 * Execute a capability on behalf of the agent (§6.11).
 	 *
 	 * Called by `POST /capabilities/execute`. The server validates the
@@ -423,8 +445,8 @@ export interface AgentAuthOptions {
 	 */
 	onExecute?: (context: {
 		ctx: GenericEndpointContext;
-		capabilityId: string;
-		capability: Capability;
+		capability: string;
+		capabilityDef: Capability;
 		arguments?: Record<string, unknown>;
 		agentSession: AgentSession;
 	}) => unknown | Promise<unknown>;
@@ -441,12 +463,12 @@ export type ResolvedAgentAuthOptions = Required<
 		| "maxAgentsPerUser"
 		| "absoluteLifetime"
 		| "freshSessionWindow"
-		| "blockedCapabilityIds"
+		| "blockedCapabilities"
 		| "modes"
 		| "approvalMethods"
 		| "resolveApprovalMethod"
 		| "allowDynamicHostRegistration"
-		| "dynamicHostDefaultCapabilityIds"
+		| "dynamicHostDefaultCapabilities"
 		| "jtiCacheStorage"
 		| "jwksCacheStorage"
 		| "dangerouslySkipJtiCheck"

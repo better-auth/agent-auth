@@ -17,7 +17,7 @@ import type {
 	AgentCapabilityGrant,
 	AgentHost,
 	CibaAuthRequest,
-	DynamicHostDefaultCapabilityIdsContext,
+	DynamicHostDefaultCapabilitiesContext,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
@@ -106,12 +106,12 @@ export async function createGrantRows(
 
 	const status = grantOpts?.status ?? "active";
 	const now = new Date();
-	for (const capabilityId of capabilityIds) {
+	for (const cap of capabilityIds) {
 		const expiresAt =
 			status === "active" && ttlContext
 				? await resolveGrantExpiresAt(
 						ttlContext.pluginOpts,
-						capabilityId,
+						cap,
 						{
 							agentId,
 							hostId: ttlContext.hostId,
@@ -123,7 +123,7 @@ export async function createGrantRows(
 			model: TABLE.grant,
 			data: {
 				agentId,
-				capabilityId,
+				capability: cap,
 				grantedBy,
 				expiresAt,
 				status,
@@ -139,13 +139,13 @@ export async function createGrantRows(
 export function formatGrantsResponse(
 	grants: AgentCapabilityGrant[],
 ): Array<{
-	capability_id: string;
+	capability: string;
 	status: string;
 	granted_by?: string | null;
 	expires_at?: string | null;
 }> {
 	return grants.map((g) => ({
-		capability_id: g.capabilityId,
+		capability: g.capability,
 		status: g.status,
 		...(g.grantedBy ? { granted_by: g.grantedBy } : {}),
 		...(g.expiresAt
@@ -180,7 +180,7 @@ export async function buildApprovalInfo(
 		userId: string | null;
 		agentName: string;
 		hostId: string | null;
-		capabilityIds: string[];
+		capabilities: string[];
 		preferredMethod?: string;
 	},
 ): Promise<Record<string, unknown>> {
@@ -188,7 +188,7 @@ export async function buildApprovalInfo(
 		userId: context.userId,
 		agentName: context.agentName,
 		hostId: context.hostId,
-		capabilityIds: context.capabilityIds,
+		capabilities: context.capabilities,
 		preferredMethod: context.preferredMethod,
 	});
 
@@ -209,7 +209,7 @@ export async function buildApprovalInfo(
 					loginHint: user.email,
 					userId: context.userId,
 					agentId: context.agentId,
-					capabilityIds: context.capabilityIds.join(" "),
+					capabilities: context.capabilities.join(" "),
 					bindingMessage: `Agent "${context.agentName}" requesting approval`,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,
@@ -250,11 +250,11 @@ export async function isDynamicHostAllowed(
 	return flag;
 }
 
-export async function resolveDynamicHostDefaultCapabilityIds(
+export async function resolveDynamicHostDefaultCapabilities(
 	opts: ResolvedAgentAuthOptions,
-	context: DynamicHostDefaultCapabilityIdsContext,
+	context: DynamicHostDefaultCapabilitiesContext,
 ): Promise<string[]> {
-	const val = opts.dynamicHostDefaultCapabilityIds;
+	const val = opts.dynamicHostDefaultCapabilities;
 	if (typeof val === "function") return val(context);
 	return val;
 }
@@ -277,10 +277,10 @@ export function validateCapabilityIds(
 	capabilityIds: string[],
 	opts: ResolvedAgentAuthOptions,
 ): void {
-	if (capabilityIds.length > 0 && opts.blockedCapabilityIds.length > 0) {
+	if (capabilityIds.length > 0 && opts.blockedCapabilities.length > 0) {
 		const blocked = findBlockedCapabilities(
 			capabilityIds,
-			opts.blockedCapabilityIds,
+			opts.blockedCapabilities,
 		);
 		if (blocked.length > 0) {
 			throw new APIError("BAD_REQUEST", {

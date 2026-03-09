@@ -36,7 +36,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				capability_ids: z.array(z.string()).min(1),
+				capabilities: z.array(z.string()).min(1),
 				reason: z.string().optional(),
 				preferred_method: z
 					.enum(["device_authorization", "ciba"])
@@ -61,13 +61,13 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { capability_ids: capabilityIds, reason, preferred_method: preferredMethod } = ctx.body;
+			const { capabilities: capabilityIds, reason, preferred_method: preferredMethod } = ctx.body;
 
 			// Validate blocked (§10.6)
-			if (opts.blockedCapabilityIds.length > 0) {
+			if (opts.blockedCapabilities.length > 0) {
 				const blocked = findBlockedCapabilities(
 					capabilityIds,
-					opts.blockedCapabilityIds,
+					opts.blockedCapabilities,
 				);
 				if (blocked.length > 0) {
 					throw APIError.from(
@@ -97,7 +97,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						g.status === "active" &&
 						(!g.expiresAt || new Date(g.expiresAt) > now),
 				)
-				.map((g) => g.capabilityId);
+				.map((g) => g.capability);
 
 			const pendingCapIds = existingGrants
 				.filter(
@@ -105,7 +105,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						g.status === "pending" &&
 						(!g.grantedBy || g.grantedBy === ownerId),
 				)
-				.map((g) => g.capabilityId);
+				.map((g) => g.capability);
 
 			const alreadyActive = new Set(activeCapIds);
 			const alreadyPending = new Set(pendingCapIds);
@@ -178,7 +178,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						agentName: agentSession.agent.name,
 						userId: agentSession.host?.userId ?? null,
 						hostId: agentSession.agent.hostId,
-						capabilityIds: stillPending,
+						capabilities: stillPending,
 						preferredMethod,
 					},
 				);
@@ -209,7 +209,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					});
 				if (host) {
 					hostBudget = parseCapabilityIds(
-						host.defaultCapabilityIds,
+						host.defaultCapabilities,
 					);
 					hostIsActive = host.status === "active";
 					hostUserId = host.userId ?? null;
@@ -256,7 +256,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					model: TABLE.grant,
 					data: {
 						agentId: agentSession.agent.id,
-						capabilityId: capId,
+						capability: capId,
 						grantedBy: agentSession.host?.userId ?? null,
 						expiresAt,
 						status: "active",
@@ -275,7 +275,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						agentId: agentSession.agent.id,
 						hostId: agentSession.agent.hostId,
 						metadata: {
-							capabilityIds: autoApprove,
+							capabilities: autoApprove,
 							auto: true,
 						},
 					}, ctx);
@@ -306,7 +306,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					model: TABLE.grant,
 					data: {
 						agentId: agentSession.agent.id,
-						capabilityId: capId,
+						capability: capId,
 						grantedBy: agentSession.host?.userId ?? null,
 						expiresAt: null,
 						status: "pending",
@@ -327,7 +327,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					agentName: agentSession.agent.name,
 					userId: agentSession.host?.userId ?? null,
 					hostId: agentSession.agent.hostId,
-					capabilityIds: needsApproval,
+					capabilities: needsApproval,
 					preferredMethod,
 				},
 			);

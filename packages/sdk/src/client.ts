@@ -24,8 +24,22 @@ import type {
 } from "./types";
 import { AgentAuthSDKError } from "./types";
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+			return;
+		}
+		const timer = setTimeout(resolve, ms);
+		signal?.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timer);
+				reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+			},
+			{ once: true },
+		);
+	});
 }
 
 /**
@@ -47,6 +61,7 @@ export class AgentAuthClient {
 		| ((status: AgentStatus) => void | Promise<void>)
 		| null;
 	private readonly approvalTimeoutMs: number;
+	private readonly abortController: AbortController;
 
 	constructor(opts: AgentAuthClientOptions = {}) {
 		this.storage = opts.storage ?? new MemoryStorage();
@@ -57,12 +72,24 @@ export class AgentAuthClient {
 		this.onApprovalRequired = opts.onApprovalRequired ?? null;
 		this.onApprovalStatusChange = opts.onApprovalStatusChange ?? null;
 		this.approvalTimeoutMs = opts.approvalTimeoutMs ?? 300_000;
+		this.abortController = new AbortController();
 
 		if (opts.providers) {
 			for (const p of opts.providers) {
 				void this.storage.setProviderConfig(p.issuer, p);
 			}
 		}
+	}
+
+	/**
+	 * Cancel all in-flight polling loops (approval, async execution)
+	 * and prevent new ones from starting. Call this when tearing down
+	 * the client (e.g. MCP server shutdown, process exit).
+	 */
+	destroy(): void {
+		this.abortController.abort(
+			new AgentAuthSDKError("client_destroyed", "Client was destroyed."),
+		);
 	}
 
 	// ─── Discovery (§7.1) ───────────────────────────────────────
@@ -148,16 +175,23 @@ export class AgentAuthClient {
 	 */
 	async connectAgent(opts: {
 		provider: string;
-		capabilityIds?: string[];
+		capabilities?: string[];
 		mode?: AgentMode;
 		reason?: string;
 		preferredMethod?: string;
 		name?: string;
+		/**
+		 * Per-call abort signal. When aborted, the approval polling
+		 * loop exits immediately. Combined with the client-level
+		 * abort controller.
+		 */
+		signal?: AbortSignal;
 	}): Promise<{
 		agentId: string;
 		hostId: string;
 		status: AgentStatus;
 		capabilityGrants: CapabilityGrant[];
+		approval?: ApprovalInfo;
 	}> {
 		const config = await this.resolveConfig(opts.provider);
 		const host = await this.resolveHost(config);
@@ -177,7 +211,7 @@ export class AgentAuthClient {
 			name: opts.name ?? `agent-${Date.now()}`,
 			mode: opts.mode ?? "delegated",
 		};
-		if (opts.capabilityIds) body.capability_ids = opts.capabilityIds;
+		if (opts.capabilities) body.capabilities = opts.capabilities;
 		if (opts.reason) body.reason = opts.reason;
 		if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
 
@@ -220,6 +254,7 @@ export class AgentAuthClient {
 				host,
 				regBody.agent_id,
 				regBody.approval,
+				{ signal: opts.signal },
 			);
 
 			connection.capabilityGrants = finalStatus.agent_capability_grants;
@@ -249,7 +284,7 @@ export class AgentAuthClient {
 	 */
 	async signJwt(opts: {
 		agentId: string;
-		capabilityIds?: string[];
+		capabilities?: string[];
 	}): Promise<{ token: string; expiresAt: number }> {
 		const conn = await this.storage.getAgentConnection(opts.agentId);
 		if (!conn) {
@@ -259,13 +294,13 @@ export class AgentAuthClient {
 			);
 		}
 
-		if (opts.capabilityIds) {
+		if (opts.capabilities) {
 			const granted = new Set(
 				conn.capabilityGrants
 					.filter((g) => g.status === "active")
-					.map((g) => g.capability_id),
+					.map((g) => g.capability),
 			);
-			for (const id of opts.capabilityIds) {
+			for (const id of opts.capabilities) {
 				if (!granted.has(id)) {
 					throw new AgentAuthSDKError(
 						"capability_not_granted",
@@ -279,7 +314,7 @@ export class AgentAuthClient {
 			agentKeypair: conn.agentKeypair,
 			agentId: conn.agentId,
 			audience: conn.issuer,
-			capabilityIds: opts.capabilityIds,
+			capabilities: opts.capabilities,
 			expiresInSeconds: this.jwtExpirySeconds,
 		});
 
@@ -296,9 +331,10 @@ export class AgentAuthClient {
 	 */
 	async requestCapability(opts: {
 		agentId: string;
-		capabilityIds: string[];
+		capabilities: string[];
 		reason?: string;
 		preferredMethod?: string;
+		signal?: AbortSignal;
 	}): Promise<{
 		granted: string[];
 		pending: string[];
@@ -315,7 +351,7 @@ export class AgentAuthClient {
 		);
 
 		const body: Record<string, unknown> = {
-			capability_ids: opts.capabilityIds,
+			capabilities: opts.capabilities,
 		};
 		if (opts.reason) body.reason = opts.reason;
 		if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
@@ -343,6 +379,7 @@ export class AgentAuthClient {
 					host,
 					opts.agentId,
 					resBody.approval,
+					{ signal: opts.signal },
 				);
 				conn.capabilityGrants = finalStatus.agent_capability_grants;
 				await this.storage.setAgentConnection(opts.agentId, conn);
@@ -356,9 +393,9 @@ export class AgentAuthClient {
 		const grants = finalConn?.capabilityGrants ?? resBody.agent_capability_grants;
 
 		return {
-			granted: grants.filter((g) => g.status === "active").map((g) => g.capability_id),
-			pending: grants.filter((g) => g.status === "pending").map((g) => g.capability_id),
-			denied: grants.filter((g) => g.status === "denied").map((g) => g.capability_id),
+			granted: grants.filter((g) => g.status === "active").map((g) => g.capability),
+			pending: grants.filter((g) => g.status === "pending").map((g) => g.capability),
+			denied: grants.filter((g) => g.status === "denied").map((g) => g.capability),
 		};
 	}
 
@@ -404,7 +441,7 @@ export class AgentAuthClient {
 	/**
 	 * Reactivate an expired agent — §7.7.
 	 */
-	async reactivateAgent(agentId: string): Promise<{
+	async reactivateAgent(agentId: string, opts?: { signal?: AbortSignal }): Promise<{
 		agentId: string;
 		status: AgentStatus;
 		capabilityGrants: CapabilityGrant[];
@@ -442,6 +479,7 @@ export class AgentAuthClient {
 				host,
 				agentId,
 				body.approval,
+				{ signal: opts?.signal },
 			);
 
 			conn.capabilityGrants = finalStatus.agent_capability_grants;
@@ -509,7 +547,7 @@ export class AgentAuthClient {
 	/**
 	 * Execute a capability through the server's execute endpoint — §7.9.
 	 *
-	 * Signs a scoped agent JWT and sends `capability_id` + `arguments`
+	 * Signs a scoped agent JWT and sends `capability` + `arguments`
 	 * to `POST /capabilities/execute`. The server validates the JWT,
 	 * checks grants, executes the capability, and returns the result.
 	 *
@@ -517,7 +555,7 @@ export class AgentAuthClient {
 	 */
 	async executeCapability(opts: {
 		agentId: string;
-		capabilityId: string;
+		capability: string;
 		arguments?: Record<string, unknown>;
 	}): Promise<ExecuteCapabilityResponse> {
 		const conn = await this.requireConnection(opts.agentId);
@@ -525,7 +563,7 @@ export class AgentAuthClient {
 
 		const token = await this.signJwt({
 			agentId: opts.agentId,
-			capabilityIds: [opts.capabilityId],
+			capabilities: [opts.capability],
 		});
 
 		const url = this.resolveEndpoint(
@@ -541,7 +579,7 @@ export class AgentAuthClient {
 				authorization: `Bearer ${token.token}`,
 			},
 			body: JSON.stringify({
-				capability_id: opts.capabilityId,
+				capability: opts.capability,
 				...(opts.arguments ? { arguments: opts.arguments } : {}),
 			}),
 		});
@@ -574,7 +612,7 @@ export class AgentAuthClient {
 	 */
 	async httpRequest(opts: {
 		agentId: string;
-		capabilityId: string;
+		capability: string;
 		arguments?: Record<string, unknown>;
 	}): Promise<{
 		status: number;
@@ -589,29 +627,29 @@ export class AgentAuthClient {
 			agentId: opts.agentId,
 		});
 
-		const capability = capRes.capabilities.find(
-			(c) => c.id === opts.capabilityId,
+		const capabilityDef = capRes.capabilities.find(
+			(c) => c.name === opts.capability,
 		);
-		if (!capability) {
+		if (!capabilityDef) {
 			throw new AgentAuthSDKError(
 				"capability_not_found",
-				`Capability "${opts.capabilityId}" not found on ${config.provider_name}.`,
+				`Capability "${opts.capability}" not found on ${config.provider_name}.`,
 			);
 		}
-		if (!capability.http) {
+		if (!capabilityDef.http) {
 			throw new AgentAuthSDKError(
 				"no_http_profile",
-				`Capability "${opts.capabilityId}" does not have an http execution profile.`,
+				`Capability "${opts.capability}" does not have an http execution profile.`,
 			);
 		}
 
 		const token = await this.signJwt({
 			agentId: opts.agentId,
-			capabilityIds: [opts.capabilityId],
+			capabilities: [opts.capability],
 		});
 
 		return executeHttpCapability({
-			capability,
+			capability: capabilityDef,
 			token: token.token,
 			arguments: opts.arguments,
 			fetchFn: this.fetchFn,
@@ -860,10 +898,17 @@ export class AgentAuthClient {
 		host: HostIdentity,
 		agentId: string,
 		approval: ApprovalInfo,
+		opts?: { signal?: AbortSignal },
 	): Promise<StatusResponse> {
 		if (this.onApprovalRequired) {
 			await this.onApprovalRequired(approval);
 		}
+
+		const signals = [this.abortController.signal];
+		if (opts?.signal) signals.push(opts.signal);
+		const signal = signals.length === 1
+			? signals[0]
+			: AbortSignal.any(signals);
 
 		const interval = (approval.interval ?? 5) * 1000;
 		const deadline = Date.now() + Math.min(
@@ -872,7 +917,7 @@ export class AgentAuthClient {
 		);
 
 		while (Date.now() < deadline) {
-			await sleep(interval);
+			await sleep(interval, signal);
 
 			try {
 				const hostJWT = await signHostJWT({
@@ -891,6 +936,7 @@ export class AgentAuthClient {
 						accept: "application/json",
 						authorization: `Bearer ${hostJWT}`,
 					},
+					signal,
 				});
 
 				if (!res.ok) continue;
@@ -910,6 +956,7 @@ export class AgentAuthClient {
 				}
 			} catch (err) {
 				if (err instanceof AgentAuthSDKError) throw err;
+				if (signal.aborted) throw err;
 			}
 		}
 
@@ -923,11 +970,12 @@ export class AgentAuthClient {
 		statusUrl: string,
 		token: string,
 	): Promise<ExecuteCapabilityResponse> {
+		const signal = this.abortController.signal;
 		const maxAttempts = 60;
 		let interval = 2000;
 
 		for (let i = 0; i < maxAttempts; i++) {
-			await sleep(interval);
+			await sleep(interval, signal);
 
 			const res = await this.fetchFn(statusUrl, {
 				method: "GET",
@@ -935,6 +983,7 @@ export class AgentAuthClient {
 					accept: "application/json",
 					authorization: `Bearer ${token}`,
 				},
+				signal,
 			});
 
 			if (!res.ok) {

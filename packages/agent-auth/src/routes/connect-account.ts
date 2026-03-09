@@ -88,7 +88,7 @@ export function connectAccount() {
 					loginHint: "connect-account",
 					userId: null,
 					agentId: agent.id,
-					capabilityIds: null,
+					capabilities: null,
 					bindingMessage: `Host "${host.name ?? host.id}" requesting account link`,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,

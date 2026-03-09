@@ -140,8 +140,8 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 				return ctx.json({
 					hostId: existing.id,
 					name: name ?? host.name ?? existing.name,
-					default_capability_ids: parseCapabilityIds(
-						existing.defaultCapabilityIds,
+					default_capabilities: parseCapabilityIds(
+						existing.defaultCapabilities,
 					),
 					status: "active",
 				});
@@ -178,7 +178,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 			return ctx.json({
 				hostId: host.id,
 				name: name ?? host.name,
-				default_capability_ids: parseCapabilityIds(host.defaultCapabilityIds),
+				default_capabilities: parseCapabilityIds(host.defaultCapabilities),
 				status: "active",
 			});
 		},

@@ -23,7 +23,7 @@ import {
 	findHostByKey,
 	formatGrantsResponse,
 	isDynamicHostAllowed,
-	resolveDynamicHostDefaultCapabilityIds,
+	resolveDynamicHostDefaultCapabilities,
 	validateCapabilityIds,
 	validateCapabilitiesExist,
 	validateKeyAlgorithm,
@@ -32,7 +32,7 @@ import {
 
 const registerBodySchema = z.object({
 	name: z.string().min(1),
-	capability_ids: z.array(z.string()).optional(),
+	capabilities: z.array(z.string()).optional(),
 	reason: z.string().optional(),
 	mode: z.enum(["delegated", "autonomous"]).optional(),
 	preferred_method: z.enum(["device_authorization", "ciba"]).optional(),
@@ -57,13 +57,13 @@ export function register(
 			},
 		},
 		async (ctx) => {
-			const {
-				name,
-				capability_ids: requestedCapIds,
-				reason,
-				mode: rawMode,
-				preferred_method: preferredMethod,
-			} = ctx.body;
+		const {
+			name,
+			capabilities: requestedCapIds,
+			reason,
+			mode: rawMode,
+			preferred_method: preferredMethod,
+		} = ctx.body;
 
 			// ---------- Require host JWT ----------
 			const authHeader = ctx.headers?.get("authorization");
@@ -236,7 +236,7 @@ export function register(
 				userId = hostRecord.userId ?? null;
 				hostId = hostRecord.id;
 				hostDefaultCaps = parseCapabilityIds(
-					hostRecord.defaultCapabilityIds,
+					hostRecord.defaultCapabilities,
 				);
 
 				const bgUpdates: Record<string, unknown> = {};
@@ -372,7 +372,7 @@ export function register(
 					hostId = existingHost.id;
 					userId = existingHost.userId ?? null;
 					hostDefaultCaps = parseCapabilityIds(
-						existingHost.defaultCapabilityIds,
+						existingHost.defaultCapabilities,
 					);
 				} else {
 					const isAutonomous = mode === "autonomous";
@@ -383,7 +383,7 @@ export function register(
 							? decoded.host_name
 							: null;
 					const dynCaps =
-						await resolveDynamicHostDefaultCapabilityIds(
+						await resolveDynamicHostDefaultCapabilities(
 							opts,
 							{
 								ctx,
@@ -406,7 +406,7 @@ export function register(
 							jwksUrl: hostJwksUrl,
 							enrollmentTokenHash: null,
 							enrollmentTokenExpiresAt: null,
-							defaultCapabilityIds: dynCaps,
+							defaultCapabilities: dynCaps,
 							status: isAutonomous ? "active" : "pending",
 							activatedAt: isAutonomous ? hostNow : null,
 							expiresAt: null,
@@ -586,7 +586,7 @@ export function register(
 						userId,
 						agentName: name,
 						hostId,
-						capabilityIds: [...resolvedCaps, ...pendingCaps],
+						capabilities: [...resolvedCaps, ...pendingCaps],
 						preferredMethod,
 					},
 				);
@@ -600,8 +600,8 @@ export function register(
 				metadata: {
 					name,
 					mode,
-					capabilityIds: resolvedCaps,
-					pendingCapabilityIds: pendingCaps,
+					capabilities: resolvedCaps,
+					pendingCapabilities: pendingCaps,
 				},
 			}, ctx);
 

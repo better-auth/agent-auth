@@ -26,10 +26,10 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 				agent_id: z
 					.string()
 					.meta({ description: "Agent to grant capabilities to" }),
-				capability_ids: z
+				capabilities: z
 					.array(z.string())
 					.min(1)
-					.meta({ description: "Capability IDs to grant" }),
+					.meta({ description: "Capability names to grant" }),
 				ttl: z.number().positive().optional().meta({
 					description:
 						"Grant TTL in seconds. Overrides the plugin-level resolveGrantTTL.",
@@ -48,7 +48,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 
 			const {
 				agent_id: agentId,
-				capability_ids: capabilityIds,
+				capabilities: capabilityIds,
 				ttl: explicitTTL,
 			} = ctx.body;
 
@@ -95,7 +95,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 			for (const capabilityId of capabilityIds) {
 				const pendingGrant = existing.find(
 					(g) =>
-						g.capabilityId === capabilityId && g.status === "pending",
+						g.capability === capabilityId && g.status === "pending",
 				);
 
 				const expiresAt = await resolveGrantExpiresAt(
@@ -124,7 +124,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 				} else {
 					const alreadyActive = existing.find(
 						(g) =>
-							g.capabilityId === capabilityId &&
+							g.capability === capabilityId &&
 							g.status === "active",
 					);
 					if (alreadyActive) continue;
@@ -136,7 +136,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 						model: TABLE.grant,
 						data: {
 							agentId,
-							capabilityId,
+							capability: capabilityId,
 							grantedBy: session.user.id,
 							expiresAt,
 							status: "active",
@@ -154,7 +154,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 				type: "capability.granted",
 				actorId: session.user.id,
 				agentId,
-				metadata: { capabilityIds: added },
+				metadata: { capabilities: added },
 			}, ctx);
 
 			return ctx.json({ agentId, grantIds, added });

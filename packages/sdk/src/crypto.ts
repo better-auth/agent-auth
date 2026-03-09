@@ -84,7 +84,7 @@ export interface SignAgentJWTOptions {
 	/** JWT `aud` claim — the server's issuer URL. */
 	audience: string;
 	/** Restrict this JWT to specific capabilities. */
-	capabilityIds?: string[];
+	capabilities?: string[];
 	/** Expiry in seconds. @default 60 */
 	expiresInSeconds?: number;
 }
@@ -98,8 +98,8 @@ export async function signAgentJWT(opts: SignAgentJWTOptions): Promise<string> {
 	const key = await importJWK(opts.agentKeypair.privateKey, alg);
 
 	const claims: Record<string, unknown> = {};
-	if (opts.capabilityIds && opts.capabilityIds.length > 0) {
-		claims.capability_ids = opts.capabilityIds;
+	if (opts.capabilities && opts.capabilities.length > 0) {
+		claims.capabilities = opts.capabilities;
 	}
 
 	return new SignJWT(claims)

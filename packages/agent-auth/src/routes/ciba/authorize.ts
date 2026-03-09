@@ -20,8 +20,8 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 					description:
 						"User identifier (email) to send the authentication request to.",
 				}),
-				capability_ids: z.array(z.string()).optional().meta({
-					description: "Capability IDs the client is requesting.",
+				capabilities: z.array(z.string()).optional().meta({
+					description: "Capabilities the client is requesting.",
 				}),
 				binding_message: z.string().optional().meta({
 					description:
@@ -52,7 +52,7 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 
 			const {
 				login_hint: loginHint,
-				capability_ids: capabilityIds,
+				capabilities: capabilityIds,
 				binding_message: bindingMessage,
 				agent_id: agentId,
 			} = ctx.body;
@@ -68,7 +68,7 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 				now.getTime() + DEFAULTS.cibaExpiresIn * 1000,
 			);
 
-			const capabilityIdsStr = capabilityIds
+			const capabilitiesStr = capabilityIds
 				? capabilityIds.join(" ")
 				: null;
 
@@ -82,7 +82,7 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 					loginHint,
 					userId: user.user.id,
 					agentId: agentId ?? null,
-					capabilityIds: capabilityIdsStr,
+					capabilities: capabilitiesStr,
 					bindingMessage: bindingMessage ?? null,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,
@@ -103,7 +103,7 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 				targetId: request.id,
 				targetType: "cibaAuthRequest",
 				metadata: {
-					capabilityIds,
+					capabilities: capabilityIds,
 					bindingMessage,
 					agentId,
 				},
