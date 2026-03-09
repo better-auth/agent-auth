@@ -423,7 +423,10 @@ export function register(
 				}
 			}
 
-			// ---------- Agent key validation ----------
+			if (mode === "autonomous" && userId) {
+				throw APIError.from("BAD_REQUEST", ERR.UNSUPPORTED_MODE);
+			}
+
 			const publicKey = agentPublicKey;
 			if (agentJwksUrl && !publicKey) {
 				// Key resolved from JWKS at verification time
@@ -507,9 +510,10 @@ export function register(
 			const kid = publicKey
 				? ((publicKey.kid as string | undefined) ?? null)
 				: null;
-			const agentStatus = isHostPending ? "pending" : "active";
+			const needsApproval = isHostPending || pendingCaps.length > 0;
+			const agentStatus = needsApproval ? "pending" : "active";
 			const expiresAt =
-				!isHostPending && opts.agentSessionTTL > 0
+				!needsApproval && opts.agentSessionTTL > 0
 					? new Date(now.getTime() + opts.agentSessionTTL * 1000)
 					: null;
 
@@ -528,7 +532,7 @@ export function register(
 					kid,
 					jwksUrl: agentJwksUrl,
 					lastUsedAt: null,
-					activatedAt: isHostPending ? null : now,
+					activatedAt: needsApproval ? null : now,
 					expiresAt,
 					metadata: null,
 					createdAt: now,
