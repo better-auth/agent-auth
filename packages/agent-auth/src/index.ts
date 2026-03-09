@@ -40,8 +40,10 @@ export const agentAuth = (options?: AgentAuthOptions): BetterAuthPlugin => {
 		],
 		resolveApprovalMethod:
 			options?.resolveApprovalMethod ??
-			(({ userId }) =>
-				userId ? "ciba" : "device_authorization"),
+			(({ preferredMethod, supportedMethods }) =>
+				preferredMethod && supportedMethods.includes(preferredMethod)
+					? preferredMethod
+					: "device_authorization"),
 		jtiCacheStorage: options?.jtiCacheStorage ?? "memory",
 		jwksCacheStorage: options?.jwksCacheStorage ?? "memory",
 		dangerouslySkipJtiCheck: options?.dangerouslySkipJtiCheck ?? false,

@@ -231,7 +231,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				needsApproval = newOnly;
 			}
 
-			if (needsApproval.length > 0 && !hostUserId) {
+			if (needsApproval.length > 0 && !hostUserId && agentSession.agent.mode === "autonomous") {
 				throw new APIError("FORBIDDEN", {
 					body: {
 						code: ERR.CAPABILITY_DENIED,

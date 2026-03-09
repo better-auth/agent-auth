@@ -114,22 +114,22 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					err instanceof Error ? err.message : String(err);
 				const durationMs = Date.now() - startTime;
 
-				emit(
-					opts,
-					{
-						type: "tool.executed",
-						tool: capabilityName,
-						agentId: agentSession.agent.id,
-						hostId: agentSession.agent.hostId,
-						userId: agentSession.host?.userId ?? undefined,
-						agentName: agentSession.agent.name,
-						toolArgs: args,
-						status: "error",
-						error: execError,
-						durationMs,
-					},
-					ctx,
-				);
+			emit(
+				opts,
+				{
+					type: "capability.executed",
+					capability: capabilityName,
+					agentId: agentSession.agent.id,
+					hostId: agentSession.agent.hostId,
+					userId: agentSession.host?.userId ?? undefined,
+					agentName: agentSession.agent.name,
+					arguments: args,
+					status: "error",
+					error: execError,
+					durationMs,
+				},
+				ctx,
+			);
 
 				if (err instanceof APIError) throw err;
 				throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -145,14 +145,14 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 			emit(
 				opts,
 				{
-					type: "tool.executed",
-					tool: capabilityName,
+					type: "capability.executed",
+					capability: capabilityName,
 					agentId: agentSession.agent.id,
 					hostId: agentSession.agent.hostId,
 					userId: agentSession.host?.userId ?? undefined,
 					agentName: agentSession.agent.name,
-					toolArgs: args,
-					toolOutput: result,
+					arguments: args,
+					output: result,
 					status: "success",
 					durationMs,
 				},

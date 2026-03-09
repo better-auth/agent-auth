@@ -184,13 +184,18 @@ export async function buildApprovalInfo(
 		preferredMethod?: string;
 	},
 ): Promise<Record<string, unknown>> {
-	const method = await opts.resolveApprovalMethod({
+	const resolved = await opts.resolveApprovalMethod({
 		userId: context.userId,
 		agentName: context.agentName,
 		hostId: context.hostId,
 		capabilities: context.capabilities,
 		preferredMethod: context.preferredMethod,
+		supportedMethods: opts.approvalMethods,
 	});
+
+	const method = opts.approvalMethods.includes(resolved)
+		? resolved
+		: "device_authorization";
 
 	if (method === "ciba" && context.userId) {
 		const user = await internalAdapter.findUserById(context.userId);

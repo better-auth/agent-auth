@@ -489,7 +489,7 @@ export function register(
 				resolvedCaps = [];
 			}
 
-			if (pendingCaps.length > 0 && !userId) {
+			if (pendingCaps.length > 0 && !userId && mode === "autonomous") {
 				throw new APIError("FORBIDDEN", {
 					body: {
 						code: ERR.CAPABILITY_DENIED,

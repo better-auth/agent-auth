@@ -48,7 +48,7 @@ export function createAgentRoutes(
 		revokeAgent: revokeAgent(opts), // §6.6
 		rotateKey: rotateKey(opts), // §6.7
 		introspect: introspect(opts, jtiCache, jwksCache), // §6.10
-		reactivateAgent: reactivateAgent(opts), // §6.6
+		reactivateAgent: reactivateAgent(opts), // §6.12
 		cleanupAgents: cleanupAgents(opts), // not in spec
 		approveCapability: approveCapability(opts), // §9.1
 		grantCapability: grantCapability(opts), // §4

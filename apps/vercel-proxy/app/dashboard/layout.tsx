@@ -22,6 +22,7 @@ const navItems = [
 	{ label: "Overview", href: "/dashboard" },
 	{ label: "Agents", href: "/dashboard/agents" },
 	{ label: "Hosts", href: "/dashboard/hosts" },
+	{ label: "Approvals", href: "/dashboard/approvals" },
 	{ label: "Logs", href: "/dashboard/logs" },
 	{ label: "Settings", href: "/dashboard/settings" },
 ];

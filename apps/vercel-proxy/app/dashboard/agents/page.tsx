@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 function StatusBadge({ status }: { status: string }) {
 	const styles: Record<string, string> = {
@@ -93,11 +93,121 @@ function timeAgo(date: string | null) {
 	return `${days}d ago`;
 }
 
+function EventTypeBadge({ type }: { type: string }) {
+	const category = type.split(".")[0];
+	const styles: Record<string, string> = {
+		agent: "bg-blue-500/10 text-blue-400",
+		host: "bg-purple-500/10 text-purple-400",
+		capability: "bg-amber-500/10 text-amber-400",
+		ciba: "bg-cyan-500/10 text-cyan-400",
+	};
+	return (
+		<span
+			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-zinc-500/10 text-zinc-400"}`}
+		>
+			{type}
+		</span>
+	);
+}
+
+interface LogEntry {
+	id: number;
+	type: string;
+	actorId: string | null;
+	actorType: string | null;
+	agentId: string | null;
+	hostId: string | null;
+	data: Record<string, unknown> | null;
+	createdAt: string;
+}
+
+function AgentActivityLog({ agentId }: { agentId: string }) {
+	const [logs, setLogs] = useState<LogEntry[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [expandedLog, setExpandedLog] = useState<number | null>(null);
+
+	const fetchLogs = useCallback(async () => {
+		try {
+			const params = new URLSearchParams({
+				agent_id: agentId,
+				limit: "50",
+			});
+			const res = await fetch(`/api/logs?${params}`);
+			if (res.ok) {
+				const data = await res.json();
+				setLogs(data.logs ?? []);
+			}
+		} catch {
+			/* ignore */
+		} finally {
+			setLoading(false);
+		}
+	}, [agentId]);
+
+	useEffect(() => {
+		fetchLogs();
+	}, [fetchLogs]);
+
+	if (loading) {
+		return (
+			<div className="flex items-center justify-center py-10">
+				<Spinner />
+			</div>
+		);
+	}
+
+	if (logs.length === 0) {
+		return (
+			<div className="flex flex-col items-center justify-center py-10">
+				<p className="text-xs text-muted">No activity yet</p>
+			</div>
+		);
+	}
+
+	return (
+		<div className="flex flex-col gap-1">
+			{logs.map((log) => {
+				const isExpanded = expandedLog === log.id;
+				return (
+					<button
+						key={log.id}
+						onClick={() =>
+							setExpandedLog(isExpanded ? null : log.id)
+						}
+						className="cursor-pointer flex flex-col w-full rounded-md border border-border/50 bg-background text-left transition-colors hover:bg-surface-hover"
+					>
+						<div className="flex items-center gap-2 px-3 py-2">
+							<EventTypeBadge type={log.type} />
+							<span className="flex-1 text-[11px] text-muted truncate">
+								{log.data &&
+								"capability" in log.data
+									? String(log.data.capability)
+									: ""}
+							</span>
+							<span className="text-[11px] text-muted/60 shrink-0">
+								{timeAgo(log.createdAt)}
+							</span>
+						</div>
+						{isExpanded && log.data && (
+							<div className="border-t border-border/50 px-3 py-2">
+								<pre className="text-[11px] font-mono text-foreground/70 whitespace-pre-wrap break-all">
+									{JSON.stringify(log.data, null, 2)}
+								</pre>
+							</div>
+						)}
+					</button>
+				);
+			})}
+		</div>
+	);
+}
+
 export default function AgentsPage() {
 	const [agents, setAgents] = useState<AgentData[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [filter, setFilter] = useState("all");
 	const [expanded, setExpanded] = useState<string | null>(null);
+	const [activeTab, setActiveTab] = useState<Record<string, "details" | "activity">>({});
 	const [revoking, setRevoking] = useState<string | null>(null);
 
 	useEffect(() => {

@@ -7,10 +7,10 @@ import type {
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../types";
-import { matchIntent } from "../utils/intent";
+import { matchQuery } from "../utils/intent";
 
 /**
- * GET /agent/capabilities
+ * GET /capability/list
  *
  * Returns capabilities the server offers (§6.2).
  * Supports three auth modes:
@@ -25,7 +25,7 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 			method: "GET",
 			query: z
 				.object({
-					intent: z.string().optional(),
+					query: z.string().optional(),
 					cursor: z.string().optional(),
 					limit: z.coerce.number().optional(),
 				})
@@ -49,17 +49,17 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 				return ctx.json({ capabilities: [], has_more: false });
 			}
 
-			const intent = ctx.query?.intent;
+			const query = ctx.query?.query;
 			let filtered = allCapabilities;
 
-			if (intent) {
-				if (opts.resolveIntent) {
-					filtered = await opts.resolveIntent({
-						intent,
+			if (query) {
+				if (opts.resolveQuery) {
+					filtered = await opts.resolveQuery({
+						query,
 						capabilities: allCapabilities,
 					});
 				} else {
-					filtered = matchIntent(intent, allCapabilities);
+					filtered = matchQuery(query, allCapabilities);
 				}
 			}
 

@@ -55,6 +55,7 @@ export interface SignHostJWTOptions {
 export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 	const alg = resolveAlgorithm(opts.hostKeypair.privateKey);
 	const key = await importJWK(opts.hostKeypair.privateKey, alg);
+	const kid = opts.hostKeypair.publicKey.kid;
 
 	const claims: Record<string, unknown> = {
 		host_public_key: opts.hostKeypair.publicKey,
@@ -68,7 +69,7 @@ export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 	}
 
 	return new SignJWT(claims)
-		.setProtectedHeader({ alg })
+		.setProtectedHeader({ alg, ...(kid ? { kid } : {}) })
 		.setSubject(opts.subject)
 		.setAudience(opts.audience)
 		.setIssuedAt()
@@ -85,6 +86,12 @@ export interface SignAgentJWTOptions {
 	audience: string;
 	/** Restrict this JWT to specific capabilities. */
 	capabilities?: string[];
+	/** HTTP method for DPoP request binding (§5.3). */
+	htm?: string;
+	/** HTTP target URI for DPoP request binding (§5.3). */
+	htu?: string;
+	/** Access token hash for DPoP request binding (§5.3). */
+	ath?: string;
 	/** Expiry in seconds. @default 60 */
 	expiresInSeconds?: number;
 }
@@ -96,14 +103,18 @@ export interface SignAgentJWTOptions {
 export async function signAgentJWT(opts: SignAgentJWTOptions): Promise<string> {
 	const alg = resolveAlgorithm(opts.agentKeypair.privateKey);
 	const key = await importJWK(opts.agentKeypair.privateKey, alg);
+	const kid = opts.agentKeypair.publicKey.kid;
 
 	const claims: Record<string, unknown> = {};
 	if (opts.capabilities && opts.capabilities.length > 0) {
 		claims.capabilities = opts.capabilities;
 	}
+	if (opts.htm) claims.htm = opts.htm;
+	if (opts.htu) claims.htu = opts.htu;
+	if (opts.ath) claims.ath = opts.ath;
 
 	return new SignJWT(claims)
-		.setProtectedHeader({ alg })
+		.setProtectedHeader({ alg, ...(kid ? { kid } : {}) })
 		.setSubject(opts.agentId)
 		.setAudience(opts.audience)
 		.setIssuedAt()

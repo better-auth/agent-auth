@@ -18,19 +18,30 @@ export async function GET(req: Request) {
 	);
 	const offset = parseInt(url.searchParams.get("offset") ?? "0");
 	const type = url.searchParams.get("type");
+	const agentId = url.searchParams.get("agent_id");
 
 	let query = "SELECT * FROM event_log";
 	const params: (string | number)[] = [];
+	const conditions: string[] = [];
 
 	const isPrefix = type?.endsWith(".");
 	if (type) {
 		if (isPrefix) {
-			query += " WHERE type LIKE ?";
+			conditions.push("type LIKE ?");
 			params.push(`${type}%`);
 		} else {
-			query += " WHERE type = ?";
+			conditions.push("type = ?");
 			params.push(type);
 		}
+	}
+
+	if (agentId) {
+		conditions.push("agentId = ?");
+		params.push(agentId);
+	}
+
+	if (conditions.length > 0) {
+		query += ` WHERE ${conditions.join(" AND ")}`;
 	}
 
 	query += " ORDER BY id DESC LIMIT ? OFFSET ?";
@@ -40,14 +51,22 @@ export async function GET(req: Request) {
 
 	const countParams: (string | number)[] = [];
 	let countQuery = "SELECT COUNT(*) as count FROM event_log";
+	const countConditions: string[] = [];
 	if (type) {
 		if (isPrefix) {
-			countQuery += " WHERE type LIKE ?";
+			countConditions.push("type LIKE ?");
 			countParams.push(`${type}%`);
 		} else {
-			countQuery += " WHERE type = ?";
+			countConditions.push("type = ?");
 			countParams.push(type);
 		}
+	}
+	if (agentId) {
+		countConditions.push("agentId = ?");
+		countParams.push(agentId);
+	}
+	if (countConditions.length > 0) {
+		countQuery += ` WHERE ${countConditions.join(" AND ")}`;
 	}
 	const total = db
 		.prepare(countQuery)

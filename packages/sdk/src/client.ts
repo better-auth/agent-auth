@@ -139,14 +139,14 @@ export class AgentAuthClient {
 	 */
 	async listCapabilities(opts: {
 		provider: string;
-		intent?: string;
+		query?: string;
 		agentId?: string;
 		cursor?: string;
 	}): Promise<CapabilitiesResponse> {
 		const config = await this.resolveConfig(opts.provider);
 		const capPath = config.endpoints.capabilities ?? "/capability/list";
 		const url = new URL(capPath, config.issuer);
-		if (opts.intent) url.searchParams.set("intent", opts.intent);
+		if (opts.query) url.searchParams.set("query", opts.query);
 		if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
 
 		const headers: Record<string, string> = {
@@ -285,6 +285,12 @@ export class AgentAuthClient {
 	async signJwt(opts: {
 		agentId: string;
 		capabilities?: string[];
+		/** HTTP method for DPoP request binding (§5.3). */
+		htm?: string;
+		/** HTTP target URI for DPoP request binding (§5.3). */
+		htu?: string;
+		/** Access token hash for DPoP request binding (§5.3). */
+		ath?: string;
 	}): Promise<{ token: string; expiresAt: number }> {
 		const conn = await this.storage.getAgentConnection(opts.agentId);
 		if (!conn) {
@@ -315,6 +321,9 @@ export class AgentAuthClient {
 			agentId: conn.agentId,
 			audience: conn.issuer,
 			capabilities: opts.capabilities,
+			htm: opts.htm,
+			htu: opts.htu,
+			ath: opts.ath,
 			expiresInSeconds: this.jwtExpirySeconds,
 		});
 

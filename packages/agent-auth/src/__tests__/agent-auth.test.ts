@@ -1172,8 +1172,8 @@ describe("Capabilities Endpoint", () => {
 		expect(transfer!.grant_status).toBe("not_granted");
 	});
 
-	it("supports intent filtering", async () => {
-		const res = await api("/capabilities?intent=balance", { method: "GET" });
+	it("supports query filtering", async () => {
+		const res = await api("/capabilities?query=balance", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{

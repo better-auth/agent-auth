@@ -72,14 +72,14 @@ export function buildCli(): Command {
 		.command("capabilities")
 		.description("List capabilities for a provider")
 		.requiredOption("--provider <url>", "provider URL or name")
-		.option("--intent <intent>", "filter by intent")
+		.option("--query <query>", "search query to filter by name or description")
 		.option("--agent-id <id>", "scope to agent (includes grant status)")
 		.option("--cursor <cursor>", "pagination cursor")
 		.action((opts) =>
 			run(async () => {
 				const result = await client().listCapabilities({
 					provider: opts.provider,
-					intent: opts.intent,
+					query: opts.query,
 					agentId: opts.agentId,
 					cursor: opts.cursor,
 				});

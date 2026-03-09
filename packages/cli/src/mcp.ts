@@ -11,10 +11,12 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		version: "0.1.0",
 	});
 
+	// ── Step 1: Find a provider ──
+
 	server.registerTool(
 		"discover_provider",
 		{
-			description: "Discover a provider's Agent Auth configuration from a service URL. Returns the full discovery document including endpoints, capabilities, and modes.",
+			description: "Step 1a: Discover a provider's Agent Auth configuration from a service URL. Call this first when you know the provider's URL. Returns endpoints, capabilities, and modes.",
 			inputSchema: { url: z.string().describe("Service URL to discover (e.g. https://api.example.com)") },
 		},
 		async ({ url }) => {
@@ -26,7 +28,7 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	server.registerTool(
 		"search_providers",
 		{
-			description: "Search the registry for providers matching an intent. Requires a registry URL to be configured.",
+			description: "Step 1b: Search the registry for providers matching an intent. Use when you don't have a specific provider URL.",
 			inputSchema: { intent: z.string().describe("What you want to do (e.g. 'deploy web apps', 'send emails')") },
 		},
 		async ({ intent }) => {
@@ -38,7 +40,7 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	server.registerTool(
 		"list_providers",
 		{
-			description: "List all providers that have been discovered or pre-configured.",
+			description: "Step 1c: List providers that have already been discovered or pre-configured. Use to see what's available before connecting.",
 		},
 		async () => {
 			const results = await client.listProviders();
@@ -46,32 +48,36 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
+	// ── Step 2: Browse capabilities ──
+
 	server.registerTool(
 		"list_capabilities",
 		{
-			description: "List capabilities offered by a provider. Optionally filter by intent or scope to an agent to see grant status.",
-			inputSchema: {
-				provider: z.string().describe("Provider URL, issuer, or name"),
-				intent: z.string().optional().describe("Filter by intent keyword"),
-				agent_id: z.string().optional().describe("Agent ID to see grant status"),
-				cursor: z.string().optional().describe("Pagination cursor"),
-			},
+			description: "Step 2: List capabilities offered by a provider. Call after discovering a provider to see what it offers before connecting an agent.",
+		inputSchema: {
+			provider: z.string().describe("Provider URL, issuer, or name"),
+			query: z.string().optional().describe("Search query to filter capabilities by name or description"),
+			agent_id: z.string().optional().describe("Agent ID to see grant status (only after connect_agent)"),
+			cursor: z.string().optional().describe("Pagination cursor"),
 		},
-		async ({ provider, intent, agent_id, cursor }) => {
-			const result = await client.listCapabilities({
-				provider,
-				intent,
-				agentId: agent_id,
-				cursor,
-			});
+	},
+	async ({ provider, query, agent_id, cursor }) => {
+		const result = await client.listCapabilities({
+			provider,
+			query,
+			agentId: agent_id,
+			cursor,
+		});
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 
+	// ── Step 3: Connect an agent ──
+
 	server.registerTool(
 		"connect_agent",
 		{
-			description: "Connect a new agent to a provider. Creates a keypair, registers the agent, and handles approval flow if needed. Returns agent ID, host ID, status, and granted capabilities.",
+			description: "Step 3: Connect a new agent to a provider. YOU MUST CALL THIS before using any tool that requires an agent_id. Creates a keypair, registers the agent, and handles approval flow. Returns the agent_id you'll need for all subsequent operations (execute_capability, agent_status, sign_jwt, etc.).",
 			inputSchema: {
 				provider: z.string().describe("Provider URL, issuer, or name"),
 				capabilities: z.array(z.string()).optional().describe("Capabilities to request"),
@@ -93,11 +99,33 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 		},
 	);
 
+	// ── Step 4: Use the agent (all require agent_id from connect_agent) ──
+
+	server.registerTool(
+		"execute_capability",
+		{
+			description: "Step 4: Execute a capability on behalf of an agent. Requires an agent_id from connect_agent. Signs a scoped JWT and sends the request to the provider.",
+			inputSchema: {
+				agent_id: z.string().describe("Agent ID returned by connect_agent"),
+				capability: z.string().describe("Capability to execute"),
+				arguments: z.record(z.string(), z.unknown()).optional().describe("Arguments for the capability, conforming to its input schema"),
+			},
+		},
+		async ({ agent_id, capability, arguments: args }) => {
+			const result = await client.executeCapability({
+				agentId: agent_id,
+				capability,
+				arguments: args,
+			});
+			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+		},
+	);
+
 	server.registerTool(
 		"agent_status",
 		{
-			description: "Check the current status of an agent (active, pending, expired, revoked, etc.) and its capability grants.",
-			inputSchema: { agent_id: z.string().describe("Agent ID") },
+			description: "Check the status of an agent (active, pending, expired, revoked) and its capability grants. Requires an agent_id from connect_agent.",
+			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
 		},
 		async ({ agent_id }) => {
 			const result = await client.agentStatus(agent_id);
@@ -108,9 +136,9 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	server.registerTool(
 		"sign_jwt",
 		{
-			description: "Sign an agent JWT for authenticating capability execution. Returns a short-lived token.",
+			description: "Sign an agent JWT for manual authentication. Requires an agent_id from connect_agent. Usually not needed — execute_capability handles signing automatically.",
 			inputSchema: {
-				agent_id: z.string().describe("Agent ID"),
+				agent_id: z.string().describe("Agent ID returned by connect_agent"),
 				capabilities: z.array(z.string()).optional().describe("Scope to specific capabilities"),
 			},
 		},
@@ -126,9 +154,9 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	server.registerTool(
 		"request_capability",
 		{
-			description: "Request additional capabilities for an existing agent. Returns which capabilities were granted, are pending, or were denied.",
+			description: "Request additional capabilities for an existing agent. Requires an agent_id from connect_agent.",
 			inputSchema: {
-				agent_id: z.string().describe("Agent ID"),
+				agent_id: z.string().describe("Agent ID returned by connect_agent"),
 				capabilities: z.array(z.string()).describe("Capabilities to request"),
 				reason: z.string().optional().describe("Reason for request"),
 			},
@@ -147,8 +175,8 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	server.registerTool(
 		"disconnect_agent",
 		{
-			description: "Disconnect (revoke) an agent. Removes it from the server and deletes the local connection.",
-			inputSchema: { agent_id: z.string().describe("Agent ID") },
+			description: "Disconnect and revoke an agent. Requires an agent_id from connect_agent.",
+			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
 		},
 		async ({ agent_id }) => {
 			await client.disconnectAgent(agent_id);
@@ -159,8 +187,8 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	server.registerTool(
 		"reactivate_agent",
 		{
-			description: "Reactivate an expired agent.",
-			inputSchema: { agent_id: z.string().describe("Agent ID") },
+			description: "Reactivate an expired agent. Requires an agent_id from connect_agent.",
+			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
 		},
 		async ({ agent_id }, extra) => {
 			const result = await client.reactivateAgent(agent_id, { signal: extra.signal });
@@ -169,53 +197,23 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	);
 
 	server.registerTool(
-		"execute_capability",
+		"connect_account",
 		{
-			description: "Execute a capability on behalf of an agent. Signs a scoped JWT and sends the capability ID and arguments to the server's execute endpoint. The server validates the JWT, checks grants, executes the capability, and returns the result.",
-			inputSchema: {
-				agent_id: z.string().describe("Agent ID"),
-				capability: z.string().describe("Capability to execute"),
-				arguments: z.record(z.string(), z.unknown()).optional().describe("Arguments for the capability, conforming to its input schema"),
-			},
-		},
-		async ({ agent_id, capability, arguments: args }) => {
-			const result = await client.executeCapability({
-				agentId: agent_id,
-				capability,
-				arguments: args,
-			});
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
-
-	server.registerTool(
-		"rotate_agent_key",
-		{
-			description: "Rotate an agent's keypair. Generates a new key and registers it with the server.",
-			inputSchema: { agent_id: z.string().describe("Agent ID") },
+			description: "Initiate account linking for an autonomous agent. Requires an agent_id from connect_agent.",
+			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
 		},
 		async ({ agent_id }) => {
-			const result = await client.rotateAgentKey(agent_id);
+			const result = await client.connectAccount(agent_id);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);
 
-	server.registerTool(
-		"rotate_host_key",
-		{
-			description: "Rotate the host keypair for a provider.",
-			inputSchema: { issuer: z.string().describe("Provider issuer URL") },
-		},
-		async ({ issuer }) => {
-			const result = await client.rotateHostKey(issuer);
-			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-		},
-	);
+	// ── Host management ──
 
 	server.registerTool(
 		"enroll_host",
 		{
-			description: "Enroll a host using a one-time enrollment token. Used when the host was pre-registered without a public key.",
+			description: "Enroll a host using a one-time enrollment token. Only needed when the host was pre-registered without a public key.",
 			inputSchema: {
 				provider: z.string().describe("Provider URL, issuer, or name"),
 				enrollment_token: z.string().describe("One-time enrollment token"),
@@ -233,13 +231,25 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
 	);
 
 	server.registerTool(
-		"connect_account",
+		"rotate_agent_key",
 		{
-			description: "Initiate account linking for an autonomous agent. Creates a CIBA-style request for user approval.",
-			inputSchema: { agent_id: z.string().describe("Agent ID") },
+			description: "Rotate an agent's keypair. Requires an agent_id from connect_agent.",
+			inputSchema: { agent_id: z.string().describe("Agent ID returned by connect_agent") },
 		},
 		async ({ agent_id }) => {
-			const result = await client.connectAccount(agent_id);
+			const result = await client.rotateAgentKey(agent_id);
+			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+		},
+	);
+
+	server.registerTool(
+		"rotate_host_key",
+		{
+			description: "Rotate the host keypair for a provider.",
+			inputSchema: { issuer: z.string().describe("Provider issuer URL") },
+		},
+		async ({ issuer }) => {
+			const result = await client.rotateHostKey(issuer);
 			return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 		},
 	);

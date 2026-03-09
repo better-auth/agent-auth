@@ -193,20 +193,20 @@ interface ScoredCapability {
 }
 
 /**
- * BM25-based intent matching against a list of capabilities.
+ * BM25-based query matching against capability name and description.
  *
- * Tokenizes the intent and each capability's text (name + description),
+ * Tokenizes the query and each capability's text (name + description),
  * applies stemming and synonym expansion on the query side, then
  * ranks using BM25 scoring. Returns capabilities with score > 0,
  * sorted by relevance.
  */
-export function matchIntent(
-	intent: string,
+export function matchQuery(
+	query: string,
 	capabilities: Capability[],
 ): Capability[] {
 	if (capabilities.length === 0) return [];
 
-	const queryTokens = tokenize(intent);
+	const queryTokens = tokenize(query);
 	if (queryTokens.length === 0) return capabilities;
 	const expandedQuery = expandWithSynonyms(queryTokens);
 

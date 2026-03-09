@@ -229,7 +229,13 @@ export interface AgentAuthOptions {
 	/**
 	 * Resolve the approval method for a given context (§9.5).
 	 *
-	 * @default ({ userId }) => userId ? "ciba" : "device_authorization"
+	 * The `supportedMethods` array reflects the server's configured
+	 * `approvalMethods`. The returned method **must** be one of them;
+	 * if it isn't, `buildApprovalInfo` falls back to `device_authorization`.
+	 *
+	 * @default Prefers `device_authorization`; uses `ciba` only when
+	 *          the agent explicitly passes `preferredMethod: "ciba"`
+	 *          and the server supports it.
 	 */
 	resolveApprovalMethod?: (context: {
 		userId: string | null;
@@ -237,6 +243,7 @@ export interface AgentAuthOptions {
 		hostId: string | null;
 		capabilities: string[];
 		preferredMethod?: string;
+		supportedMethods: string[];
 	}) => string | Promise<string>;
 	/**
 	 * Server JWKS URI for clients to verify server-signed responses (§6.1).
@@ -421,17 +428,17 @@ export interface AgentAuthOptions {
 	 */
 	onEvent?: (event: AgentAuthEvent) => void | Promise<void>;
 	/**
-	 * Custom intent resolver for capability search (§6.2).
+	 * Custom query resolver for capability search (§6.2).
 	 *
 	 * When provided, completely replaces the built-in BM25-based
-	 * intent matching. Use this to plug in your own logic — e.g.
-	 * embedding-based semantic search, an external API, or a
-	 * custom classifier.
+	 * matching against capability name and description. Use this to
+	 * plug in your own logic — e.g. embedding-based semantic search,
+	 * an external API, or a custom classifier.
 	 *
-	 * Return the filtered/ranked capabilities that match the intent.
+	 * Return the filtered/ranked capabilities that match the query.
 	 */
-	resolveIntent?: (context: {
-		intent: string;
+	resolveQuery?: (context: {
+		query: string;
 		capabilities: Capability[];
 	}) => Capability[] | Promise<Capability[]>;
 	/**
@@ -513,20 +520,20 @@ export interface AgentAuthAuditEvent extends AgentAuthEventBase {
 	type: AgentAuthAuditEventType;
 }
 
-export interface AgentAuthToolEvent extends AgentAuthEventBase {
-	type: "tool.executed";
-	tool: string;
+export interface AgentAuthCapabilityExecutionEvent extends AgentAuthEventBase {
+	type: "capability.executed";
+	capability: string;
 	provider?: string;
 	agentName?: string;
 	userId?: string;
-	toolArgs?: Record<string, unknown>;
-	toolOutput?: unknown;
+	arguments?: Record<string, unknown>;
+	output?: unknown;
 	status: "success" | "error";
 	durationMs?: number;
 	error?: string;
 }
 
-export type AgentAuthEvent = AgentAuthAuditEvent | AgentAuthToolEvent;
+export type AgentAuthEvent = AgentAuthAuditEvent | AgentAuthCapabilityExecutionEvent;
 
 /** Ed25519 JWK (or other supported key types). */
 export interface AgentJWK {

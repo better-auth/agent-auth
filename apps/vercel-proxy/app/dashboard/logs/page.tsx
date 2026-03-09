@@ -32,7 +32,6 @@ function EventTypeBadge({ type }: { type: string }) {
 		agent: "bg-blue-500/10 text-blue-400",
 		host: "bg-purple-500/10 text-purple-400",
 		capability: "bg-amber-500/10 text-amber-400",
-		tool: "bg-emerald-500/10 text-emerald-400",
 		ciba: "bg-cyan-500/10 text-cyan-400",
 	};
 	return (
@@ -60,7 +59,6 @@ const EVENT_CATEGORIES = [
 	{ label: "Agent", prefix: "agent." },
 	{ label: "Host", prefix: "host." },
 	{ label: "Capability", prefix: "capability." },
-	{ label: "Tool", prefix: "tool." },
 	{ label: "CIBA", prefix: "ciba." },
 ];
 
