@@ -224,6 +224,11 @@ export const AGENT_AUTH_ERROR_CODES = {
 		code: "capability_not_found",
 		message: "Capability does not exist",
 	},
+	AUTH_REQUIRED_FOR_CAPABILITIES: {
+		code: "authentication_required",
+		message:
+			"This server requires authentication to list capabilities. Connect an agent first, then retry with the agent JWT.",
+	},
 	EXECUTE_NOT_CONFIGURED: {
 		code: "execute_not_configured",
 		message: "Server has not configured a capability execution handler",

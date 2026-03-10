@@ -22,6 +22,22 @@ import type {
 	ResolvedAgentAuthOptions,
 } from "../types";
 
+/**
+ * Resolve the device authorization page base URL from the configured
+ * `deviceAuthorizationPage` option. Returns a full URL.
+ */
+export function resolveDeviceAuthPage(
+	opts: ResolvedAgentAuthOptions,
+	origin: string,
+): string {
+	const page = opts.deviceAuthorizationPage;
+	if (page.startsWith("http://") || page.startsWith("https://")) {
+		return page.replace(/\/+$/, "");
+	}
+	const path = page.startsWith("/") ? page : `/${page}`;
+	return `${origin}${path}`;
+}
+
 export async function findHostByKey(
 	adapter: AdapterFindOne,
 	publicKey: Record<string, unknown>,
@@ -282,11 +298,13 @@ export async function buildApprovalInfo(
 		},
 	});
 
+	const pageBase = resolveDeviceAuthPage(opts, context.origin);
+
 	return {
 		method: "device_authorization",
 		device_code: context.agentId,
-		verification_uri: `${context.origin}/device/capabilities`,
-		verification_uri_complete: `${context.origin}/device/capabilities?agent_id=${context.agentId}&code=${userCode}`,
+		verification_uri: pageBase,
+		verification_uri_complete: `${pageBase}?agent_id=${context.agentId}&code=${userCode}`,
 		user_code: userCode,
 		expires_in: expiresIn,
 		interval,

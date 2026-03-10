@@ -1,7 +1,11 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
-import type { ResolvedAgentAuthOptions } from "../types";
+import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import type {
+	AgentSession,
+	HostSession,
+	ResolvedAgentAuthOptions,
+} from "../types";
 
 /**
  * GET /capability/describe
@@ -27,7 +31,36 @@ export function describeCapability(opts: ResolvedAgentAuthOptions) {
 		},
 		async (ctx) => {
 			const { name } = ctx.query;
-			const allCapabilities = opts.capabilities ?? [];
+
+			const agentSession = (ctx.context as Record<string, unknown>)
+				.agentSession as AgentSession | undefined;
+			const hostSession = (ctx.context as Record<string, unknown>)
+				.hostSession as HostSession | undefined;
+
+			if (
+				opts.requireAuthForCapabilities &&
+				!agentSession &&
+				!hostSession
+			) {
+				throw agentError(
+					"UNAUTHORIZED",
+					ERR.AUTH_REQUIRED_FOR_CAPABILITIES,
+					undefined,
+					agentAuthChallenge(ctx.context.baseURL),
+				);
+			}
+
+			let allCapabilities = opts.capabilities ?? [];
+
+			if (opts.resolveCapabilities) {
+				allCapabilities = await opts.resolveCapabilities({
+					capabilities: allCapabilities,
+					query: null,
+					agentSession: agentSession ?? null,
+					hostSession: hostSession ?? null,
+				});
+			}
+
 			const cap = allCapabilities.find((c) => c.name === name);
 
 			if (!cap) {

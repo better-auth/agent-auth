@@ -50,6 +50,20 @@ function jsonSchemaToZod(params: ToolParameters): ZodRawShape | undefined {
 
 export async function startMcpServer(config: ClientConfig): Promise<void> {
 	const client = createClient(config);
+
+	if (config.urls?.length) {
+		await Promise.all(
+			config.urls.map(async (url) => {
+				try {
+					await client.discoverProvider(url);
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					console.error(`Warning: could not discover ${url}: ${msg}`);
+				}
+			}),
+		);
+	}
+
 	const tools = getAgentAuthTools(client);
 
 	const server = new McpServer({

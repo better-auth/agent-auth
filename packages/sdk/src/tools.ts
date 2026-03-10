@@ -89,7 +89,7 @@ export function getAgentAuthTools(
 		{
 			name: "list_capabilities",
 			description:
-				"Step 2: List capabilities offered by a provider. Call after discovering a provider to see what it offers before connecting an agent.",
+				"Step 2: List capabilities offered by a provider. Call after discovering a provider to see what it offers before connecting an agent. Some providers require authentication — if you get an 'authentication_required' error, call connect_agent first, then retry with the agent_id.",
 			parameters: {
 				type: "object",
 				properties: {

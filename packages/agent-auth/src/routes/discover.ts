@@ -56,6 +56,9 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				approval_methods: opts.approvalMethods,
 				endpoints,
 				...(opts.jwksUri ? { jwks_uri: opts.jwksUri } : {}),
+				...(opts.requireAuthForCapabilities
+					? { capabilities_require_auth: true }
+					: {}),
 			});
 		},
 	);

@@ -34,6 +34,8 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		defaultHostCapabilities:
 			options?.defaultHostCapabilities ?? [],
 		modes: options?.modes ?? ["delegated", "autonomous"],
+		deviceAuthorizationPage:
+			options?.deviceAuthorizationPage ?? "/device/capabilities",
 		approvalMethods: options?.approvalMethods ?? [
 			"ciba",
 			"device_authorization",

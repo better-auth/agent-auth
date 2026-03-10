@@ -4,6 +4,7 @@ import * as z from "zod";
 import { TABLE } from "../../constants";
 import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { generateUserCode, hashToken } from "../../utils/approval";
+import { resolveDeviceAuthPage } from "../_helpers";
 import type {
 	Agent,
 	ApprovalRequest,
@@ -113,12 +114,13 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 			});
 
 			const origin = new URL(ctx.context.baseURL).origin;
+			const pageBase = resolveDeviceAuthPage(opts, origin);
 
 			return ctx.json({
 				device_code: agent.id,
 				user_code: userCode,
-				verification_uri: `${origin}/device/capabilities`,
-				verification_uri_complete: `${origin}/device/capabilities?agent_id=${agent.id}&code=${userCode}`,
+				verification_uri: pageBase,
+				verification_uri_complete: `${pageBase}?agent_id=${agent.id}&code=${userCode}`,
 				expires_in: expiresIn,
 				interval,
 			});

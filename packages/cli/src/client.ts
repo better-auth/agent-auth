@@ -9,6 +9,7 @@ export interface ClientConfig {
 	hostName?: string;
 	noBrowser?: boolean;
 	providers?: Array<Record<string, unknown>>;
+	urls?: string[];
 }
 
 function openBrowser(url: string): void {
@@ -81,6 +82,12 @@ function loadProviders(): Array<Record<string, unknown>> | undefined {
 	return undefined;
 }
 
+function loadUrls(): string[] | undefined {
+	const raw = process.env.AGENT_AUTH_URLS;
+	if (!raw) return undefined;
+	return raw.split(",").map((u) => u.trim()).filter(Boolean);
+}
+
 export function getClientConfig(): ClientConfig {
 	return {
 		storageDir: process.env.AGENT_AUTH_STORAGE_DIR,
@@ -88,5 +95,6 @@ export function getClientConfig(): ClientConfig {
 		hostName: process.env.AGENT_AUTH_HOST_NAME,
 		noBrowser: process.env.AGENT_AUTH_NO_BROWSER === "1",
 		providers: loadProviders(),
+		urls: loadUrls(),
 	};
 }
