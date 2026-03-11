@@ -7,7 +7,6 @@ type ApprovalMethod = "device_authorization" | "ciba";
 interface Settings {
 	freshSessionEnabled: boolean;
 	freshSessionWindow: number;
-	allowDynamicHostRegistration: boolean;
 	preferredApprovalMethod: ApprovalMethod;
 }
 
@@ -145,54 +144,6 @@ export default function SettingsPage() {
 								</div>
 							</div>
 						)}
-					</div>
-				</div>
-
-				<div className="flex flex-col gap-3">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
-						Host Registration
-					</h2>
-					<div className="rounded-lg border border-border bg-surface">
-						<div className="flex items-center justify-between px-4 py-4">
-							<div className="flex-1 pr-4">
-								<p className="text-sm font-medium text-white">
-									Allow dynamic host registration
-								</p>
-								<p className="mt-1 text-xs text-muted">
-									When enabled, any client presenting a
-									valid JWT with an inline public key can
-									register itself as a host. Keep disabled
-									unless you have additional controls
-									(e.g.&nbsp;network ACLs).
-								</p>
-							</div>
-							<button
-								type="button"
-								role="switch"
-								aria-checked={
-									settings.allowDynamicHostRegistration
-								}
-								onClick={() =>
-									save({
-										allowDynamicHostRegistration:
-											!settings.allowDynamicHostRegistration,
-									})
-								}
-								className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-									settings.allowDynamicHostRegistration
-										? "bg-white"
-										: "bg-zinc-700"
-								}`}
-							>
-								<span
-									className={`pointer-events-none inline-block h-5 w-5 rounded-full shadow-lg transition-transform ${
-										settings.allowDynamicHostRegistration
-											? "translate-x-5 bg-black"
-											: "translate-x-0 bg-zinc-400"
-									}`}
-								/>
-							</button>
-						</div>
 					</div>
 				</div>
 

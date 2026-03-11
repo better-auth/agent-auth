@@ -42,7 +42,11 @@ export function describeCapability(opts: ResolvedAgentAuthOptions) {
 			);
 
 			if (!capability) {
-				throw agentError("NOT_FOUND", ERR.CAPABILITY_NOT_FOUND);
+				throw agentError(
+					"NOT_FOUND",
+					ERR.CAPABILITY_NOT_FOUND,
+					`Capability "${capabilityName}" does not exist.`,
+				);
 			}
 
 			const agentSession = (ctx.context as Record<string, unknown>)

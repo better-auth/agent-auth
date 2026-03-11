@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 const ALLOWED_KEYS = [
 	"freshSessionEnabled",
 	"freshSessionWindow",
-	"allowDynamicHostRegistration",
 	"preferredApprovalMethod",
 ] as const;
 
@@ -24,8 +23,6 @@ export async function GET() {
 			getSetting("freshSessionWindow") ?? "300",
 			10,
 		),
-		allowDynamicHostRegistration:
-			getSetting("allowDynamicHostRegistration") === "true",
 		preferredApprovalMethod:
 			getSetting("preferredApprovalMethod") ?? "device_authorization",
 	});

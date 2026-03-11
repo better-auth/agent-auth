@@ -123,8 +123,6 @@ export const auth = betterAuth({
 				return parseInt(getSetting("freshSessionWindow") ?? "300", 10);
 			},
 			...openapi,
-			allowDynamicHostRegistration: () =>
-				getSetting("allowDynamicHostRegistration") === "true",
 			trustProxy: process.env.TRUST_PROXY === "true",
 			providerName: "Vercel",
 			providerDescription:
