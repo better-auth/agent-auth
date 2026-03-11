@@ -224,17 +224,16 @@ export type AgentAuthPath =
 	| "/host/update"
 	| "/host/rotate-key"
 	| "/agent/ciba/authorize"
-	| "/agent/ciba/approve"
-	| "/agent/ciba/deny"
 	| "/agent/ciba/pending";
 
-export interface DynamicHostDefaultCapabilitiesContext {
+export interface DefaultHostCapabilitiesContext {
 	ctx: GenericEndpointContext;
 	mode: AgentMode;
 	userId: string | null;
 	hostId: string | null;
 	hostName: string | null;
 }
+
 
 export interface AgentAuthOptions {
 	/**
@@ -365,13 +364,18 @@ export interface AgentAuthOptions {
 		| boolean
 		| ((ctx: GenericEndpointContext) => boolean | Promise<boolean>);
 	/**
-	 * Default capabilities for dynamically created hosts (§3.2).
+	 * Default capabilities applied to newly created hosts (§3.2).
+	 *
+	 * Used as the fallback when a host is created without explicit
+	 * `default_capabilities`, whether via dynamic registration or
+	 * the `POST /host/create` endpoint.
+	 *
 	 * @default []
 	 */
-	dynamicHostDefaultCapabilities?:
+	defaultHostCapabilities?:
 		| string[]
 		| ((
-				context: DynamicHostDefaultCapabilitiesContext,
+				context: DefaultHostCapabilitiesContext,
 		  ) => string[] | Promise<string[]>);
 	/**
 	 * Resolve a virtual user for an autonomous agent session.
@@ -542,7 +546,7 @@ export type ResolvedAgentAuthOptions = Required<
 		| "approvalMethods"
 		| "resolveApprovalMethod"
 		| "allowDynamicHostRegistration"
-		| "dynamicHostDefaultCapabilities"
+		| "defaultHostCapabilities"
 		| "jtiCacheStorage"
 		| "jwksCacheStorage"
 		| "dangerouslySkipJtiCheck"

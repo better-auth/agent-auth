@@ -22,7 +22,7 @@ import {
 	findHostByKey,
 	formatGrantsResponse,
 	isDynamicHostAllowed,
-	resolveDynamicHostDefaultCapabilities,
+	resolveDefaultHostCapabilities,
 	validateCapabilityIds,
 	validateCapabilitiesExist,
 	validateKeyAlgorithm,
@@ -388,7 +388,7 @@ export function register(
 							: null;
 					const resolvedDynHostName = jwtHostName ?? bodyHostName ?? null;
 					const dynCaps =
-						await resolveDynamicHostDefaultCapabilities(
+						await resolveDefaultHostCapabilities(
 							opts,
 							{
 								ctx,
@@ -549,8 +549,11 @@ export function register(
 				agent.id,
 				resolvedCaps,
 				userId,
-				{ reason: reason ?? null },
-				{ pluginOpts: opts, hostId, userId },
+				{
+					reason: reason ?? null,
+					...(isHostPending ? { status: "pending" } : {}),
+				},
+				isHostPending ? undefined : { pluginOpts: opts, hostId, userId },
 			);
 
 			if (pendingCaps.length > 0) {

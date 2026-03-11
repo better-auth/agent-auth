@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from "react";
 
+type ApprovalMethod = "device_authorization" | "ciba";
+
 interface Settings {
 	freshSessionEnabled: boolean;
 	freshSessionWindow: number;
 	allowDynamicHostRegistration: boolean;
+	preferredApprovalMethod: ApprovalMethod;
 }
 
 export default function SettingsPage() {
@@ -189,6 +192,72 @@ export default function SettingsPage() {
 									}`}
 								/>
 							</button>
+						</div>
+					</div>
+				</div>
+
+				<div className="flex flex-col gap-3">
+					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+						Approval Method
+					</h2>
+					<div className="rounded-lg border border-border bg-surface">
+						<div className="px-4 py-4">
+							<p className="text-sm font-medium text-white">
+								Preferred approval method
+							</p>
+							<p className="mt-1 text-xs text-muted">
+								Choose how agents request user approval for
+								capabilities. The agent can still request a
+								specific method, but this sets the server
+								default.
+							</p>
+							<div className="mt-3 flex gap-3">
+								{(
+									[
+										{
+											value: "device_authorization",
+											label: "Device Authorization",
+											desc: "User enters a code on a verification page",
+										},
+										{
+											value: "ciba",
+											label: "CIBA (Backchannel)",
+											desc: "Server pushes approval request to the user",
+										},
+									] as const
+								).map((opt) => (
+									<button
+										key={opt.value}
+										type="button"
+										onClick={() =>
+											save({
+												preferredApprovalMethod:
+													opt.value,
+											})
+										}
+										className={`flex flex-1 flex-col rounded-lg border px-4 py-3 text-left transition-colors ${
+											settings.preferredApprovalMethod ===
+											opt.value
+												? "border-white bg-white/5"
+												: "border-border hover:border-white/20"
+										}`}
+									>
+										<span
+											className={`text-sm font-medium ${
+												settings.preferredApprovalMethod ===
+												opt.value
+													? "text-white"
+													: "text-zinc-400"
+											}`}
+										>
+											{opt.label}
+										</span>
+										<span className="mt-0.5 text-xs text-muted">
+											{opt.desc}
+										</span>
+									</button>
+								))}
+							</div>
 						</div>
 					</div>
 				</div>

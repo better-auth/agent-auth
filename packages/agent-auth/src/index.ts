@@ -31,8 +31,8 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		blockedCapabilities: options?.blockedCapabilities ?? [],
 		allowDynamicHostRegistration:
 			options?.allowDynamicHostRegistration ?? false,
-		dynamicHostDefaultCapabilities:
-			options?.dynamicHostDefaultCapabilities ?? [],
+		defaultHostCapabilities:
+			options?.defaultHostCapabilities ?? [],
 		modes: options?.modes ?? ["delegated", "autonomous"],
 		approvalMethods: options?.approvalMethods ?? [
 			"ciba",
@@ -113,6 +113,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			requestCapability: routes.requestCapability,
 			approveCapability: routes.approveCapability,
 			listCapabilities: routes.listCapabilities,
+			describeCapability: routes.describeCapability,
 			executeCapability: routes.executeCapability,
 			agentStatus: routes.agentStatus,
 			introspect: routes.introspect,

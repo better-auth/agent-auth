@@ -9,6 +9,7 @@ import type {
 	AgentStatus,
 	ApprovalInfo,
 	CapabilitiesResponse,
+	Capability,
 	CapabilityGrant,
 	EnrollHostResponse,
 	ExecuteCapabilityResponse,
@@ -230,6 +231,32 @@ export class AgentAuthClient {
 			throw await this.toError(res);
 		}
 		return (await res.json()) as CapabilitiesResponse;
+	}
+
+	/**
+	 * Describe a single capability — returns the full definition
+	 * including input schema. Use when the agent needs to look up
+	 * a schema mid-session.
+	 */
+	async describeCapability(opts: {
+		provider: string;
+		name: string;
+	}): Promise<Capability> {
+		const config = await this.resolveConfig(opts.provider);
+		const describePath = config.endpoints.describe_capability ?? "/capability/describe";
+		const url = new URL(describePath, config.issuer);
+		url.searchParams.set("name", opts.name);
+
+		const res = await this.fetchFn(url.toString(), {
+			method: "GET",
+			headers: { accept: "application/json" },
+		});
+
+		if (!res.ok) {
+			throw await this.toError(res);
+		}
+
+		return (await res.json()) as Capability;
 	}
 
 	// ─── Connection (§7.3) ──────────────────────────────────────

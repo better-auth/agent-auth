@@ -4,12 +4,10 @@
       "command": "node",
       "args": [
         "/Users/bekacru/Desktop/development/agent-auth-ba/packages/cli/dist/index.js",
-        "mcp"
-      ],
-      "env": {
-        "AGENT_AUTH_PROVIDERS_FILE": "/Users/bekacru/Desktop/development/agent-auth-ba/providers.json",
-        "AGENT_AUTH_REGISTRY_URL": "http://localhost:4200"
-      }
+        "mcp",
+        "--registry-url",
+        "http://localhost:4200"
+      ]
     }
   }
 }

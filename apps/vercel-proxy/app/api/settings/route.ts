@@ -7,6 +7,7 @@ const ALLOWED_KEYS = [
 	"freshSessionEnabled",
 	"freshSessionWindow",
 	"allowDynamicHostRegistration",
+	"preferredApprovalMethod",
 ] as const;
 
 export async function GET() {
@@ -25,6 +26,8 @@ export async function GET() {
 		),
 		allowDynamicHostRegistration:
 			getSetting("allowDynamicHostRegistration") === "true",
+		preferredApprovalMethod:
+			getSetting("preferredApprovalMethod") ?? "device_authorization",
 	});
 }
 

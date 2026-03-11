@@ -10,6 +10,7 @@ import {
 import type { AgentHost, ResolvedAgentAuthOptions } from "../../types";
 import {
 	findHostByKey,
+	resolveDefaultHostCapabilities,
 	validateKeyAlgorithm,
 	validateCapabilityIds,
 	validateCapabilitiesExist,
@@ -70,7 +71,14 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
 			}
 
-			const defaultCapabilityIds = bodyCapIds ?? [];
+			const defaultCapabilityIds = bodyCapIds ??
+				await resolveDefaultHostCapabilities(opts, {
+					ctx,
+					mode: "delegated",
+					userId: session.user.id,
+					hostId: null,
+					hostName: hostName ?? null,
+				});
 			validateCapabilityIds(defaultCapabilityIds, opts);
 			await validateCapabilitiesExist(defaultCapabilityIds, opts);
 

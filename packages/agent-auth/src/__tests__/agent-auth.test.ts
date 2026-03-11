@@ -103,7 +103,7 @@ beforeAll(async () => {
 						name: "Autonomous User",
 						email: `auto_${hostId}@test.local`,
 					}),
-				dynamicHostDefaultCapabilities: ["check_balance"],
+				defaultHostCapabilities: ["check_balance"],
 				}),
 			],
 		},

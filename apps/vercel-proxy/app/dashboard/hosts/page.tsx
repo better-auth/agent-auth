@@ -4,15 +4,15 @@ import { useState, useEffect } from "react";
 
 function StatusBadge({ status }: { status: string }) {
 	const styles: Record<string, string> = {
-		active: "bg-emerald-500/10 text-emerald-400",
-		pending: "bg-amber-500/10 text-amber-400",
-		pending_enrollment: "bg-amber-500/10 text-amber-400",
-		revoked: "bg-red-500/10 text-red-400",
-		rejected: "bg-red-500/10 text-red-400",
+		active: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30",
+		pending: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+		pending_enrollment: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+		revoked: "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
+		rejected: "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? "bg-zinc-500/10 text-zinc-400"}`}
+			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? "bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/25"}`}
 		>
 			{status.replace("_", " ")}
 		</span>

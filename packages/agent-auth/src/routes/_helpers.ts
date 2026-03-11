@@ -18,7 +18,7 @@ import type {
 	AgentHost,
 	ApprovalRequest,
 	Capability,
-	DynamicHostDefaultCapabilitiesContext,
+	DefaultHostCapabilitiesContext,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
@@ -178,6 +178,11 @@ export function formatGrantsResponse(
 	});
 }
 
+function stripGrantStatus(cap: Capability): Omit<Capability, "grant_status"> {
+	const { grant_status, ...rest } = cap;
+	return rest;
+}
+
 /** Filter grants to only active, non-expired ones. */
 export function activeGrants(
 	grants: AgentCapabilityGrant[],
@@ -306,11 +311,11 @@ export async function isDynamicHostAllowed(
 	return flag;
 }
 
-export async function resolveDynamicHostDefaultCapabilities(
+export async function resolveDefaultHostCapabilities(
 	opts: ResolvedAgentAuthOptions,
-	context: DynamicHostDefaultCapabilitiesContext,
+	context: DefaultHostCapabilitiesContext,
 ): Promise<string[]> {
-	const val = opts.dynamicHostDefaultCapabilities;
+	const val = opts.defaultHostCapabilities;
 	if (typeof val === "function") return val(context);
 	return val;
 }

@@ -4,33 +4,19 @@ import { useState, useEffect, useCallback } from "react";
 
 function StatusBadge({ status }: { status: string }) {
 	const styles: Record<string, string> = {
-		active: "bg-emerald-950/80 text-emerald-300 ring-1 ring-emerald-500/20",
-		pending: "bg-amber-950/80 text-amber-300 ring-1 ring-amber-500/20",
-		expired: "bg-zinc-800/60 text-zinc-400 ring-1 ring-zinc-600/20",
-		revoked: "bg-red-950/80 text-red-300 ring-1 ring-red-500/20",
-		rejected: "bg-red-950/80 text-red-300 ring-1 ring-red-500/20",
-		claimed: "bg-sky-950/80 text-sky-300 ring-1 ring-sky-500/20",
-		denied: "bg-rose-950/80 text-rose-300 ring-1 ring-rose-500/20",
+		active: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30",
+		pending: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+		expired: "bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/25",
+		revoked: "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
+		rejected: "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
+		claimed: "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30",
+		denied: "bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/30",
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? "bg-zinc-800/60 text-zinc-400 ring-1 ring-zinc-600/20"}`}
+			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? "bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/25"}`}
 		>
 			{status}
-		</span>
-	);
-}
-
-function ModeBadge({ mode }: { mode: string }) {
-	return (
-		<span
-			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-				mode === "delegated"
-					? "bg-indigo-950/80 text-indigo-300 ring-1 ring-indigo-500/20"
-					: "bg-violet-950/80 text-violet-300 ring-1 ring-violet-500/20"
-			}`}
-		>
-			{mode}
 		</span>
 	);
 }
@@ -96,14 +82,14 @@ function timeAgo(date: string | null) {
 function EventTypeBadge({ type }: { type: string }) {
 	const category = type.split(".")[0];
 	const styles: Record<string, string> = {
-		agent: "bg-sky-950/80 text-sky-300 ring-1 ring-sky-500/20",
-		host: "bg-violet-950/80 text-violet-300 ring-1 ring-violet-500/20",
-		capability: "bg-amber-950/80 text-amber-300 ring-1 ring-amber-500/20",
-		ciba: "bg-teal-950/80 text-teal-300 ring-1 ring-teal-500/20",
+		agent: "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30",
+		host: "bg-violet-500/15 text-violet-400 ring-1 ring-violet-500/30",
+		capability: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+		ciba: "bg-teal-500/15 text-teal-400 ring-1 ring-teal-500/30",
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-zinc-800/60 text-zinc-400 ring-1 ring-zinc-600/20"}`}
+			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/25"}`}
 		>
 			{type}
 		</span>
@@ -335,9 +321,6 @@ export default function AgentsPage() {
 												</span>
 												<StatusBadge
 													status={agent.status}
-												/>
-												<ModeBadge
-													mode={agent.mode}
 												/>
 											</div>
 											<p className="mt-0.5 text-xs text-muted">

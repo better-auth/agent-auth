@@ -1,1 +1,5 @@
-export { fromOpenAPI, createOpenAPIHandler } from "./utils/openapi";
+export {
+	fromOpenAPI,
+	createOpenAPIHandler,
+	createFromOpenAPI,
+} from "./utils/openapi";

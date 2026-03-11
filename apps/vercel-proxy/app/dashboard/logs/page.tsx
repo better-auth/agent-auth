@@ -29,14 +29,14 @@ function Spinner() {
 function EventTypeBadge({ type }: { type: string }) {
 	const category = type.split(".")[0];
 	const styles: Record<string, string> = {
-		agent: "bg-blue-500/10 text-blue-400",
-		host: "bg-purple-500/10 text-purple-400",
-		capability: "bg-amber-500/10 text-amber-400",
-		ciba: "bg-cyan-500/10 text-cyan-400",
+		agent: "bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30",
+		host: "bg-purple-500/15 text-purple-400 ring-1 ring-purple-500/30",
+		capability: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+		ciba: "bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30",
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-zinc-500/10 text-zinc-400"}`}
+			className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/25"}`}
 		>
 			{type}
 		</span>

@@ -263,7 +263,7 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 				ctx.context.adapter,
 				{
 					agentId,
-					status: added.length > 0 ? "approved" : "denied",
+					status: added.length > 0 || agentIsPending ? "approved" : "denied",
 				},
 			);
 

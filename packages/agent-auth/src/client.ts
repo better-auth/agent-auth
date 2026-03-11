@@ -11,6 +11,7 @@ export const agentAuthClient = () => {
 		pathMethods: {
 			"/agent/agent-configuration": "GET",
 			"/capability/list": "GET",
+			"/capability/describe": "GET",
 			"/capability/execute": "POST",
 			"/agent/list": "GET",
 			"/agent/get": "GET",
