@@ -34,7 +34,7 @@ const registerBodySchema = z.object({
 	capabilities: z.array(z.string()).optional(),
 	reason: z.string().optional(),
 	mode: z.enum(["delegated", "autonomous"]).optional(),
-	preferred_method: z.enum(["device_authorization", "ciba"]).optional(),
+	preferred_method: z.string().optional(),
 	host_name: z.string().optional(),
 });
 
