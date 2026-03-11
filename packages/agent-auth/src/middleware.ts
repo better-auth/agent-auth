@@ -157,7 +157,9 @@ export function createAgentAuthBeforeHook(
 							if (header.kid) {
 								hostPubKey = await jwksCache.getKeyByKid(host.jwksUrl, header.kid);
 							}
-						} catch {}
+						} catch (err) {
+							console.error("[agent-auth] JWKS fetch failed for host %s:", host.id, err);
+						}
 					}
 					if (!hostPubKey && host.publicKey) {
 						try {
@@ -288,7 +290,9 @@ export function createAgentAuthBeforeHook(
 					if (header.kid) {
 						publicKey = await jwksCache.getKeyByKid(agent.jwksUrl, header.kid);
 					}
-				} catch {}
+				} catch (err) {
+					console.error("[agent-auth] JWKS fetch failed for agent %s:", agent.id, err);
+				}
 			}
 			if (!publicKey && agent.publicKey) {
 				try {
