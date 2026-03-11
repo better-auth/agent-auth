@@ -211,6 +211,8 @@ export async function buildApprovalInfo(
 		hostId: string | null;
 		capabilities: string[];
 		preferredMethod?: string;
+		loginHint?: string;
+		bindingMessage?: string;
 	},
 ): Promise<Record<string, unknown>> {
 	const resolved = await opts.resolveApprovalMethod({
@@ -245,8 +247,8 @@ export async function buildApprovalInfo(
 					capabilities: capabilitiesStr,
 					status: "pending",
 					userCodeHash: null,
-					loginHint: user.email,
-					bindingMessage: `Agent "${context.agentName}" requesting approval`,
+					loginHint: context.loginHint ?? user.email,
+					bindingMessage: context.bindingMessage ?? `Agent "${context.agentName}" requesting approval`,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,
 					deliveryMode: "poll",
@@ -278,8 +280,8 @@ export async function buildApprovalInfo(
 			capabilities: capabilitiesStr,
 			status: "pending",
 			userCodeHash: codeHash,
-			loginHint: null,
-			bindingMessage: null,
+			loginHint: context.loginHint ?? null,
+			bindingMessage: context.bindingMessage ?? null,
 			clientNotificationToken: null,
 			clientNotificationEndpoint: null,
 			deliveryMode: null,

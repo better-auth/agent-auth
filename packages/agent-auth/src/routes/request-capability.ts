@@ -38,6 +38,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				capabilities: z.array(z.string()).min(1),
 				reason: z.string().optional(),
 				preferred_method: z.string().optional(),
+				login_hint: z.string().optional(),
+				binding_message: z.string().optional(),
 			}),
 			requireHeaders: true,
 			metadata: {
@@ -58,7 +60,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { capabilities: capabilityIds, reason, preferred_method: preferredMethod } = ctx.body;
+			const { capabilities: capabilityIds, reason, preferred_method: preferredMethod, login_hint: loginHint, binding_message: bindingMessage } = ctx.body;
 
 			// Validate blocked (§10.6)
 			if (opts.blockedCapabilities.length > 0) {
@@ -177,6 +179,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						hostId: agentSession.agent.hostId,
 						capabilities: stillPending,
 						preferredMethod,
+						loginHint,
+						bindingMessage,
 					},
 				);
 
@@ -289,7 +293,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 
 				return ctx.json({
 					agent_id: agentSession.agent.id,
-					status: "granted",
+					status: "active",
 					agent_capability_grants:
 						formatGrantsResponse(updatedGrants, opts.capabilities),
 				});
@@ -324,6 +328,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					hostId: agentSession.agent.hostId,
 					capabilities: needsApproval,
 					preferredMethod,
+					loginHint,
+					bindingMessage,
 				},
 			);
 

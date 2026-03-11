@@ -734,7 +734,7 @@ describe("Capability Management", () => {
 			status: string;
 			agent_capability_grants: GrantRow[];
 		}>(res);
-		expect(body.status).toBe("granted");
+		expect(body.status).toBe("active");
 		expect(
 			body.agent_capability_grants.some(
 				(g) => g.capability === "transfer" && g.status === "active",
@@ -914,13 +914,17 @@ describe("Agent Lifecycle", () => {
 			hostId,
 		});
 
-		const oldJwt = await createAgentJWT(agentKeypair.privateKey, agentId);
 		const newKeypair = await generateTestKeypair();
+		const hostJWT = await signTestJWT({
+			privateKey: hostKeypair.privateKey,
+			subject: hostId,
+			audience: BASE,
+		});
 
 		const rotateRes = await api("/agent/rotate-key", {
 			method: "POST",
-			headers: { authorization: `Bearer ${oldJwt}` },
-			body: JSON.stringify({ public_key: newKeypair.publicKey }),
+			headers: { authorization: `Bearer ${hostJWT}` },
+			body: JSON.stringify({ agent_id: agentId, public_key: newKeypair.publicKey }),
 		});
 
 		expect(rotateRes.ok).toBe(true);
