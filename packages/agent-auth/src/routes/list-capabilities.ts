@@ -1,6 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
+import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	AgentCapabilityGrant,
 	AgentSession,
@@ -14,7 +15,7 @@ import { matchQuery } from "../utils/search";
  *
  * Returns capabilities the server offers (§6.2).
  * Supports three auth modes:
- * - No auth: public capabilities
+ * - No auth: public capabilities (unless `requireAuthForCapabilities` is set)
  * - Host JWT (via ctx.context.hostSession): capabilities for host's user
  * - Agent JWT (via ctx.context.agentSession): all capabilities with grant_status
  */
@@ -43,16 +44,38 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 			const hostSession = (ctx.context as Record<string, unknown>)
 				.hostSession as HostSession | undefined;
 
-			const allCapabilities = opts.capabilities ?? [];
+			if (
+				opts.requireAuthForCapabilities &&
+				!agentSession &&
+				!hostSession
+			) {
+				throw agentError(
+					"UNAUTHORIZED",
+					ERR.AUTH_REQUIRED_FOR_CAPABILITIES,
+					undefined,
+					agentAuthChallenge(ctx.context.baseURL),
+				);
+			}
+
+			let allCapabilities = opts.capabilities ?? [];
+			const query = ctx.query?.query ?? null;
+
+			if (opts.resolveCapabilities) {
+				allCapabilities = await opts.resolveCapabilities({
+					capabilities: allCapabilities,
+					query,
+					agentSession: agentSession ?? null,
+					hostSession: hostSession ?? null,
+				});
+			}
 
 			if (allCapabilities.length === 0) {
 				return ctx.json({ capabilities: [], has_more: false });
 			}
 
-			const query = ctx.query?.query;
 			let filtered = allCapabilities;
 
-			if (query) {
+			if (query && !opts.resolveCapabilities) {
 				if (opts.resolveQuery) {
 					filtered = await opts.resolveQuery({
 						query,

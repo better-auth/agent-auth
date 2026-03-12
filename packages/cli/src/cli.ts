@@ -25,7 +25,8 @@ export function buildCli(): Command {
 		.option("--storage-dir <path>", "storage directory", process.env.AGENT_AUTH_STORAGE_DIR)
 		.option("--registry-url <url>", "registry URL", process.env.AGENT_AUTH_REGISTRY_URL)
 		.option("--host-name <name>", "host name", process.env.AGENT_AUTH_HOST_NAME)
-		.option("--no-browser", "don't auto-open the browser for approval URLs");
+		.option("--no-browser", "don't auto-open the browser for approval URLs")
+		.option("--url <urls...>", "provider URLs to auto-discover at startup");
 
 	function client() {
 		const opts = program.opts();
@@ -35,6 +36,7 @@ export function buildCli(): Command {
 			registryUrl: opts.registryUrl,
 			hostName: opts.hostName,
 			noBrowser: !opts.browser,
+			urls: opts.url,
 		});
 	}
 

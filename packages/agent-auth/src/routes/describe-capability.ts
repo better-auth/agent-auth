@@ -1,7 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	AgentCapabilityGrant,
 	AgentSession,
@@ -36,7 +36,36 @@ export function describeCapability(opts: ResolvedAgentAuthOptions) {
 		},
 		async (ctx) => {
 			const capabilityName = ctx.query.name;
-			const allCapabilities = opts.capabilities ?? [];
+
+			const agentSession = (ctx.context as Record<string, unknown>)
+				.agentSession as AgentSession | undefined;
+			const hostSession = (ctx.context as Record<string, unknown>)
+				.hostSession as HostSession | undefined;
+
+			if (
+				opts.requireAuthForCapabilities &&
+				!agentSession &&
+				!hostSession
+			) {
+				throw agentError(
+					"UNAUTHORIZED",
+					ERR.AUTH_REQUIRED_FOR_CAPABILITIES,
+					undefined,
+					agentAuthChallenge(ctx.context.baseURL),
+				);
+			}
+
+			let allCapabilities = opts.capabilities ?? [];
+
+			if (opts.resolveCapabilities) {
+				allCapabilities = await opts.resolveCapabilities({
+					capabilities: allCapabilities,
+					query: null,
+					agentSession: agentSession ?? null,
+					hostSession: hostSession ?? null,
+				});
+			}
+
 			const capability = allCapabilities.find(
 				(c) => c.name === capabilityName,
 			);
@@ -48,11 +77,6 @@ export function describeCapability(opts: ResolvedAgentAuthOptions) {
 					`Capability "${capabilityName}" does not exist.`,
 				);
 			}
-
-			const agentSession = (ctx.context as Record<string, unknown>)
-				.agentSession as AgentSession | undefined;
-			const hostSession = (ctx.context as Record<string, unknown>)
-				.hostSession as HostSession | undefined;
 
 			const { grant_status: _gs, ...capabilityFields } = capability;
 			const response: Record<string, unknown> = { ...capabilityFields };

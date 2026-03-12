@@ -251,6 +251,21 @@ export interface AgentAuthOptions {
 	 */
 	modes?: AgentMode[];
 	/**
+	 * Path or full URL for the device authorization approval page.
+	 *
+	 * The agent-auth plugin does not serve this page — your app must
+	 * implement it. This option controls the `verification_uri` and
+	 * `verification_uri_complete` returned by the device code flow.
+	 *
+	 * When a path is given (e.g. `"/approve"`), it is resolved against
+	 * the server origin. When a full URL is given, it is used as-is.
+	 *
+	 * The page receives `agent_id` and `code` as query parameters.
+	 *
+	 * @default "/device/capabilities"
+	 */
+	deviceAuthorizationPage?: string;
+	/**
 	 * Supported approval methods (§9).
 	 * @default ["ciba", "device_authorization"]
 	 */
@@ -282,6 +297,19 @@ export interface AgentAuthOptions {
 	 * Capability definitions returned by the capabilities endpoint (§4).
 	 */
 	capabilities?: Capability[];
+	/**
+	 * Require a valid agent JWT or host JWT to list or describe
+	 * capabilities.
+	 *
+	 * When `true`, unauthenticated requests to `GET /capability/list`
+	 * and `GET /capability/describe` receive a `401` with
+	 * `error: "authentication_required"` and a `WWW-Authenticate`
+	 * challenge header pointing to the discovery document. This
+	 * guides AI agents to call `connect_agent` first.
+	 *
+	 * @default false
+	 */
+	requireAuthForCapabilities?: boolean;
 	/**
 	 * Allowed key algorithms for agent/host keypairs (§5.1).
 	 * Use JWK curve names (`"Ed25519"`, `"P-256"`), **not** JWA identifiers.
@@ -479,6 +507,26 @@ export interface AgentAuthOptions {
 	 */
 	onEvent?: (event: AgentAuthEvent) => void | Promise<void>;
 	/**
+	 * Filter or augment capabilities based on the requesting user's context.
+	 *
+	 * Called by `GET /capability/list` and `GET /capability/describe`
+	 * before returning results. Use this to show different capabilities
+	 * to different users — e.g. admin-only capabilities, plan-gated
+	 * features, or per-org capability sets.
+	 *
+	 * Receives the full capability list and whatever auth context is
+	 * available (agent session, host session, or neither for
+	 * unauthenticated requests).
+	 *
+	 * Return the capabilities the caller should see.
+	 */
+	resolveCapabilities?: (context: {
+		capabilities: Capability[];
+		query: string | null;
+		agentSession: AgentSession | null;
+		hostSession: HostSession | null;
+	}) => Capability[] | Promise<Capability[]>;
+	/**
 	 * Custom query resolver for capability search (§6.2).
 	 *
 	 * When provided, completely replaces the built-in BM25-based
@@ -543,6 +591,7 @@ export type ResolvedAgentAuthOptions = Required<
 		| "freshSessionWindow"
 		| "blockedCapabilities"
 		| "modes"
+		| "deviceAuthorizationPage"
 		| "approvalMethods"
 		| "resolveApprovalMethod"
 		| "allowDynamicHostRegistration"
