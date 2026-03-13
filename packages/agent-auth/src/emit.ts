@@ -11,13 +11,14 @@ export function emit(
 	try {
 		const result = opts.onEvent(event);
 		if (result && typeof (result as Promise<void>).then === "function") {
+			const caught = (result as Promise<void>).catch((err) => {
+				console.error("[agent-auth] onEvent callback failed:", err);
+			});
 			if (ctx?.context?.runInBackground) {
-				ctx.context.runInBackground((result as Promise<void>).catch(() => {}));
-			} else {
-				(result as Promise<void>).catch(() => {});
+				ctx.context.runInBackground(caught);
 			}
 		}
-	} catch {
-		// intentionally swallowed
+	} catch (err) {
+		console.error("[agent-auth] onEvent callback threw:", err);
 	}
 }

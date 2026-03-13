@@ -3,14 +3,14 @@ import * as z from "zod";
 import { TABLE } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
-import type { Agent, AgentSession, ResolvedAgentAuthOptions } from "../types";
+import type { Agent, HostSession, ResolvedAgentAuthOptions } from "../types";
 import { validateKeyAlgorithm } from "./_helpers";
 
 /**
- * POST /agent/rotate-key (§6.7)
+ * POST /agent/rotate-key (§6.8)
  *
- * Rotate an agent's public key. Auth: Agent JWT (via agentSession on ctx.context).
- * The old key stops working immediately after rotation.
+ * Replaces an agent's public key. The old key stops working immediately.
+ * Auth: Host JWT — the server MUST verify the agent is registered under this host.
  */
 export function rotateKey(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -18,26 +18,26 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
+				agent_id: z.string().min(1),
 				public_key: z.record(z.string(), z.unknown()),
 			}),
 			metadata: {
 				openapi: {
 					description:
-						"Rotate an agent's public key via agent JWT (§6.7).",
+						"Rotate an agent's public key via host JWT (§6.8).",
 				},
 			},
 		},
 		async (ctx) => {
-			const agentSession = (
-				ctx.context as { agentSession?: AgentSession }
-			).agentSession;
+			const hostSession = (
+				ctx.context as { hostSession?: HostSession }
+			).hostSession;
 
-			if (!agentSession) {
+			if (!hostSession) {
 				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}
 
-			const agentId = agentSession.agent.id;
-			const { public_key: publicKey } = ctx.body;
+			const { agent_id: agentId, public_key: publicKey } = ctx.body;
 
 			validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
 
@@ -48,6 +48,10 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 
 			if (!agent) {
 				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+			}
+
+			if (agent.hostId !== hostSession.host.id) {
+				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
 			const kid =
@@ -66,7 +70,9 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 			emit(opts, {
 				type: "agent.key_rotated",
 				agentId,
-				actorType: "agent",
+				actorType: "system",
+				actorId: hostSession.host.userId ?? undefined,
+				hostId: hostSession.host.id,
 			}, ctx);
 
 			return ctx.json({

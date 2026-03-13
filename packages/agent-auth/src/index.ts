@@ -27,10 +27,10 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		agentMaxLifetime: options?.agentMaxLifetime ?? 86400,
 		maxAgentsPerUser: options?.maxAgentsPerUser ?? 25,
 		absoluteLifetime: options?.absoluteLifetime ?? 0,
-		freshSessionWindow: options?.freshSessionWindow ?? 0,
+		freshSessionWindow: options?.freshSessionWindow ?? 300,
 		blockedCapabilities: options?.blockedCapabilities ?? [],
 		allowDynamicHostRegistration:
-			options?.allowDynamicHostRegistration ?? true,
+			options?.allowDynamicHostRegistration ?? false,
 		defaultHostCapabilities:
 			options?.defaultHostCapabilities ?? [],
 		modes: options?.modes ?? ["delegated", "autonomous"],
@@ -47,7 +47,16 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		jtiCacheStorage: options?.jtiCacheStorage ?? "memory",
 		jwksCacheStorage: options?.jwksCacheStorage ?? "memory",
 		dangerouslySkipJtiCheck: options?.dangerouslySkipJtiCheck ?? false,
+		trustProxy: options?.trustProxy ?? false,
 	};
+
+	if (opts.dangerouslySkipJtiCheck) {
+		console.warn(
+			"[agent-auth] WARNING: dangerouslySkipJtiCheck is enabled — " +
+			"JWT replay protection is DISABLED. " +
+			"Never use this in production.",
+		);
+	}
 
 	const jtiCache = new JtiCacheProxy();
 	const jwksCache = new JwksCacheProxy();
@@ -71,6 +80,19 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 					(opts.jwksCacheStorage !== "memory");
 				if (jwksUseSecondary) {
 					jwksCache.useSecondaryStorage(ctx.secondaryStorage);
+				}
+
+				if (opts.jtiCacheStorage === "memory") {
+					console.warn(
+						"[agent-auth] JTI cache is using in-memory storage while secondaryStorage " +
+						"is available. Set jtiCacheStorage: 'secondary-storage' for multi-instance deployments.",
+					);
+				}
+				if (opts.jwksCacheStorage === "memory") {
+					console.warn(
+						"[agent-auth] JWKS cache is using in-memory storage while secondaryStorage " +
+						"is available. Set jwksCacheStorage: 'secondary-storage' for multi-instance deployments.",
+					);
 				}
 			}
 		},
@@ -106,7 +128,6 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			cibaAuthorize: routes.cibaAuthorize,
 			cibaPending: routes.cibaPending,
 			deviceCode: routes.deviceCode,
-			deviceToken: routes.deviceToken,
 		} as const,
 		rateLimit: buildRateLimits(options?.rateLimit),
 		schema,

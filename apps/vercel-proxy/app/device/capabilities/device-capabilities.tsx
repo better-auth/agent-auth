@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn, useSession } from "@/lib/auth-client";
+import { signIn, signOut, useSession } from "@/lib/auth-client";
 import { useEffect, useState, useCallback } from "react";
 
 function VercelLogo({ className }: { className?: string }) {
@@ -71,11 +71,15 @@ export default function DeviceCapabilities({
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [actionState, setActionState] = useState<
-		"idle" | "approving" | "denying" | "done"
+		"idle" | "approving" | "denying" | "done" | "reauth_required"
 	>("idle");
 	const [result, setResult] = useState<{
 		status: string;
 		added?: string[];
+	} | null>(null);
+	const [reauthInfo, setReauthInfo] = useState<{
+		max_age: number;
+		session_age: number;
 	} | null>(null);
 
 	const fetchAgentInfo = useCallback(async () => {
@@ -113,6 +117,14 @@ export default function DeviceCapabilities({
 			});
 			const data = await res.json();
 			if (!res.ok) {
+				if (data.code === "fresh_session_required") {
+					setReauthInfo({
+						max_age: data.max_age,
+						session_age: data.session_age,
+					});
+					setActionState("reauth_required");
+					return;
+				}
 				setError(data.message || "Action failed");
 				setActionState("idle");
 				return;
@@ -123,6 +135,23 @@ export default function DeviceCapabilities({
 			setError("Failed to process action");
 			setActionState("idle");
 		}
+	};
+
+	const handleReauth = () => {
+		const params = new URLSearchParams();
+		if (agentId) params.set("agent_id", agentId);
+		if (code) params.set("code", code);
+		const callbackURL = `/device/capabilities?${params.toString()}`;
+		signOut.mutate({
+			fetchOptions: {
+				onSuccess: () => {
+					signIn.oauth2({
+						providerId: "vercel-mcp",
+						callbackURL,
+					});
+				},
+			},
+		});
 	};
 
 	if (!sessionPending && !session) {
@@ -244,6 +273,60 @@ export default function DeviceCapabilities({
 					</div>
 					<h1 className="text-lg font-semibold text-white">Error</h1>
 					<p className="text-sm text-muted">{error}</p>
+				</div>
+			</div>
+		);
+	}
+
+	if (actionState === "reauth_required" && reauthInfo) {
+		return (
+			<div className="flex min-h-screen flex-col items-center justify-center px-6">
+				<div className="flex max-w-sm flex-col items-center gap-6 text-center">
+					<div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10">
+						<svg
+							className="h-7 w-7 text-amber-400"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+						>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+							/>
+						</svg>
+					</div>
+					<div>
+						<h1 className="text-xl font-semibold text-white">
+							Re-authentication Required
+						</h1>
+						<p className="mt-2 text-sm text-muted">
+							This approval requires a session less than{" "}
+							{reauthInfo.max_age < 60
+								? `${reauthInfo.max_age} seconds`
+								: `${Math.floor(reauthInfo.max_age / 60)} minutes`}{" "}
+							old. Your current session is{" "}
+							{reauthInfo.session_age < 60
+								? `${reauthInfo.session_age} seconds`
+								: `${Math.floor(reauthInfo.session_age / 60)} minutes`}{" "}
+							old.
+						</p>
+						<p className="mt-1 text-xs text-muted/60">
+							Sign in again to create a fresh session, then
+							you can approve the agent.
+						</p>
+					</div>
+					<button
+						onClick={handleReauth}
+						className="flex h-11 w-full cursor-pointer items-center justify-center gap-2.5 rounded-lg bg-white text-sm font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98]"
+					>
+						<VercelLogo className="h-3.5 w-3.5" />
+						Re-authenticate with Vercel
+					</button>
+					<p className="text-xs text-muted/50">
+						You&apos;ll be redirected back here after signing in
+					</p>
 				</div>
 			</div>
 		);

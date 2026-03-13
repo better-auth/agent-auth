@@ -136,37 +136,46 @@ export async function createGrantRows(
 	}
 }
 
-/** Format grants for API response — `agent_capability_grants` array (§6.5).
+/**
+ * Format grants for API response — `agent_capability_grants` array (§6.5).
  *
- * When `capabilityDefs` is provided, active grants are enriched with the
- * full capability definition (including `input` schema) so the agent
- * gets schemas at the moment it's granted access — zero extra calls.
+ * Per §6.3/§6.5: active grants MUST include full capability details
+ * (`description`, `input`, and any execution metadata). Pending and
+ * denied grants include only `capability` and `status`.
  */
 export function formatGrantsResponse(
 	grants: AgentCapabilityGrant[],
 	capabilityDefs?: Capability[],
-): Array<{
-	capability: string;
-	status: string;
-	granted_by?: string | null;
-	expires_at?: string | null;
-	definition?: Omit<Capability, "grant_status">;
-}> {
-	const defsMap = capabilityDefs
-		? new Map(capabilityDefs.map((c) => [c.name, c]))
-		: null;
+): Array<Record<string, unknown>> {
+	const capMap = new Map<string, Capability>();
+	if (capabilityDefs) {
+		for (const c of capabilityDefs) capMap.set(c.name, c);
+	}
 
-	return grants.map((g) => ({
-		capability: g.capability,
-		status: g.status,
-		...(g.grantedBy ? { granted_by: g.grantedBy } : {}),
-		...(g.expiresAt
-			? { expires_at: new Date(g.expiresAt).toISOString() }
-			: {}),
-		...(defsMap && g.status === "active" && defsMap.has(g.capability)
-			? { definition: stripGrantStatus(defsMap.get(g.capability)!) }
-			: {}),
-	}));
+	return grants.map((g) => {
+		const base: Record<string, unknown> = {
+			capability: g.capability,
+			status: g.status,
+		};
+
+		if (g.status === "active") {
+			if (g.grantedBy) base.granted_by = g.grantedBy;
+			if (g.expiresAt)
+				base.expires_at = new Date(g.expiresAt).toISOString();
+
+			const def = capMap.get(g.capability);
+			if (def) {
+				if (def.description) base.description = def.description;
+				if (def.input) base.input = def.input;
+				const { name: _, description: _d, input: _i, grant_status: _gs, ...extra } = def;
+				for (const [k, v] of Object.entries(extra)) {
+					if (v !== undefined) base[k] = v;
+				}
+			}
+		}
+
+		return base;
+	});
 }
 
 function stripGrantStatus(cap: Capability): Omit<Capability, "grant_status"> {
@@ -202,6 +211,8 @@ export async function buildApprovalInfo(
 		hostId: string | null;
 		capabilities: string[];
 		preferredMethod?: string;
+		loginHint?: string;
+		bindingMessage?: string;
 	},
 ): Promise<Record<string, unknown>> {
 	const resolved = await opts.resolveApprovalMethod({
@@ -236,8 +247,8 @@ export async function buildApprovalInfo(
 					capabilities: capabilitiesStr,
 					status: "pending",
 					userCodeHash: null,
-					loginHint: user.email,
-					bindingMessage: `Agent "${context.agentName}" requesting approval`,
+					loginHint: context.loginHint ?? user.email,
+					bindingMessage: context.bindingMessage ?? `Agent "${context.agentName}" requesting approval`,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,
 					deliveryMode: "poll",
@@ -259,7 +270,7 @@ export async function buildApprovalInfo(
 	const userCode = generateUserCode();
 	const codeHash = await hashToken(userCode);
 
-	await adapter.create<Record<string, unknown>, ApprovalRequest>({
+	const approvalReq = await adapter.create<Record<string, unknown>, ApprovalRequest>({
 		model: TABLE.approval,
 		data: {
 			method: "device_authorization",
@@ -269,8 +280,8 @@ export async function buildApprovalInfo(
 			capabilities: capabilitiesStr,
 			status: "pending",
 			userCodeHash: codeHash,
-			loginHint: null,
-			bindingMessage: null,
+			loginHint: context.loginHint ?? null,
+			bindingMessage: context.bindingMessage ?? null,
 			clientNotificationToken: null,
 			clientNotificationEndpoint: null,
 			deliveryMode: null,
@@ -284,7 +295,7 @@ export async function buildApprovalInfo(
 
 	return {
 		method: "device_authorization",
-		device_code: context.agentId,
+		device_code: approvalReq.id,
 		verification_uri: `${context.origin}/device/capabilities`,
 		verification_uri_complete: `${context.origin}/device/capabilities?agent_id=${context.agentId}&code=${userCode}`,
 		user_code: userCode,
@@ -352,8 +363,19 @@ export async function validateCapabilitiesExist(
 ): Promise<void> {
 	if (capabilityIds.length === 0) return;
 
-	if (opts.capabilities && opts.capabilities.length > 0) {
-		const known = new Set(opts.capabilities.map((c) => c.name));
+	const hasStaticList = opts.capabilities && opts.capabilities.length > 0;
+	const hasCustomValidator = !!opts.validateCapabilities;
+
+	if (!hasStaticList && !hasCustomValidator) {
+		console.warn(
+			`[agent-auth] Capabilities requested (${capabilityIds.join(", ")}) but no capabilities list or ` +
+			"validateCapabilities function is configured. All names are accepted unchecked.",
+		);
+		return;
+	}
+
+	if (hasStaticList) {
+		const known = new Set(opts.capabilities!.map((c) => c.name));
 		const unknown = capabilityIds.filter((id) => !known.has(id));
 		if (unknown.length > 0) {
 			throw agentError(
@@ -364,8 +386,8 @@ export async function validateCapabilitiesExist(
 		}
 	}
 
-	if (opts.validateCapabilities) {
-		const valid = await opts.validateCapabilities(capabilityIds);
+	if (hasCustomValidator) {
+		const valid = await opts.validateCapabilities!(capabilityIds);
 		if (!valid) {
 			throw agentError("BAD_REQUEST", ERR.INVALID_CAPABILITIES);
 		}
@@ -376,13 +398,16 @@ export function verifyAudience(
 	audValues: unknown,
 	baseURL: string,
 	headers?: Headers | null,
+	trustProxy?: boolean,
 ): boolean {
 	const configuredOrigin = new URL(baseURL).origin;
 	const acceptedOrigins = new Set([configuredOrigin]);
 	const reqHost = headers?.get("host");
-	const reqProto = headers?.get("x-forwarded-proto") ?? "http";
 	if (reqHost) {
-		acceptedOrigins.add(`${reqProto}://${reqHost}`);
+		const proto = trustProxy
+			? (headers?.get("x-forwarded-proto") ?? new URL(baseURL).protocol.replace(":", ""))
+			: new URL(baseURL).protocol.replace(":", "");
+		acceptedOrigins.add(`${proto}://${reqHost}`);
 	}
 	const values = Array.isArray(audValues)
 		? audValues

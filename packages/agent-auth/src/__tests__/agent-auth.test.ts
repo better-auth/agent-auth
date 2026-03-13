@@ -359,7 +359,7 @@ describe("Agent Registration", () => {
 		expect(balanceGrant!.status).toBe("active");
 	});
 
-	it("handles dynamic host registration (unknown host via hostJWT)", async () => {
+	it("rejects dynamic host registration when disabled (default)", async () => {
 		const hostKeypair = await generateTestKeypair();
 		const agentKeypair = await generateTestKeypair();
 		const dynamicHostId = `dynamic-host-${crypto.randomUUID()}`;
@@ -378,6 +378,54 @@ describe("Agent Registration", () => {
 				mode: "autonomous",
 			}),
 		});
+
+		expect(res.ok).toBe(false);
+		expect(res.status).toBe(403);
+		const body = await json<{ error: string }>(res);
+		expect(body.error).toBe("dynamic_host_registration_disabled");
+	});
+
+	it("allows dynamic host registration when explicitly enabled", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						allowDynamicHostRegistration: true,
+						modes: ["delegated", "autonomous"],
+						resolveAutonomousUser: async ({ hostId }) => ({
+							id: `synthetic_${hostId}`,
+							name: "Autonomous User",
+							email: `auto_${hostId}@test.local`,
+						}),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+
+		const hostKeypair = await generateTestKeypair();
+		const agentKeypair = await generateTestKeypair();
+		const dynamicHostId = `dynamic-host-${crypto.randomUUID()}`;
+		const hostJWT = await createHostJWT(
+			hostKeypair.privateKey,
+			hostKeypair.publicKey,
+			agentKeypair.publicKey,
+			dynamicHostId,
+		);
+
+		const res = await t.auth.handler(
+			new Request(`${API}/agent/register`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${hostJWT}`,
+				},
+				body: JSON.stringify({
+					name: "Dynamic Host Agent",
+					mode: "autonomous",
+				}),
+			}),
+		);
 
 		expect(res.ok).toBe(true);
 		const body = await json<{ agent_id: string; host_id: string }>(res);
@@ -561,74 +609,8 @@ describe("Agent Auth (JWT middleware)", () => {
 		expect(body.agent_id).toBe(agentId);
 	});
 
-	it("detects JWT replay (same jti rejected)", async () => {
-		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId);
-
-		const first = await api("/agent/status", {
-			method: "GET",
-			headers: { authorization: `Bearer ${jwt}` },
-		});
-		expect(first.ok).toBe(true);
-
-		const second = await api("/agent/status", {
-			method: "GET",
-			headers: { authorization: `Bearer ${jwt}` },
-		});
-		expect(second.ok).toBe(false);
-		expect(second.status).toBe(401);
-	});
-
-	it("rejects expired JWT", async () => {
-		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId, {
-			expiresInSeconds: -1,
-		});
-
-		const res = await api("/agent/status", {
-			method: "GET",
-			headers: { authorization: `Bearer ${jwt}` },
-		});
-		expect(res.ok).toBe(false);
-		expect(res.status).toBe(401);
-	});
-
-	it("rejects revoked agent", async () => {
-		const hostKeypair = await generateTestKeypair();
-		const createRes = await authedPost("/host/create", {
-			name: "Revoke Agent Host",
-			public_key: hostKeypair.publicKey,
-			default_capabilities: ["check_balance"],
-		});
-		const { hostId } = await json<{ hostId: string }>(createRes);
-
-		const revokeAgentKeypair = await generateTestKeypair();
-		const { agentId: revokedId } = await registerAgentViaHost({
-			hostKeypair,
-			agentKeypair: revokeAgentKeypair,
-			hostId,
-		});
-
-		const hostJWT = await signTestJWT({
-			privateKey: hostKeypair.privateKey,
-			subject: hostId,
-			audience: BASE,
-		});
-		const revokeRes = await api("/agent/revoke", {
-			method: "POST",
-			headers: { authorization: `Bearer ${hostJWT}` },
-			body: JSON.stringify({ agent_id: revokedId }),
-		});
-		expect(revokeRes.ok).toBe(true);
-
-		const jwt = await createAgentJWT(revokeAgentKeypair.privateKey, revokedId);
-		const statusRes = await api("/agent/status", {
-			method: "GET",
-			headers: { authorization: `Bearer ${jwt}` },
-		});
-		expect(statusRes.ok).toBe(false);
-		expect(statusRes.status).toBe(401);
-	});
-
 });
+
 
 describe("Status & Introspection", () => {
 	let agentKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
@@ -752,7 +734,7 @@ describe("Capability Management", () => {
 			status: string;
 			agent_capability_grants: GrantRow[];
 		}>(res);
-		expect(body.status).toBe("granted");
+		expect(body.status).toBe("active");
 		expect(
 			body.agent_capability_grants.some(
 				(g) => g.capability === "transfer" && g.status === "active",
@@ -875,8 +857,8 @@ describe("Capability Management", () => {
 		});
 
 		expect(grantRes.ok).toBe(true);
-		const body = await json<{ agentId: string; added: string[] }>(grantRes);
-		expect(body.agentId).toBe(agentId);
+		const body = await json<{ agent_id: string; added: string[] }>(grantRes);
+		expect(body.agent_id).toBe(agentId);
 		expect(body.added).toContain("transfer");
 		expect(body.added).toContain("admin_panel");
 	});
@@ -932,13 +914,17 @@ describe("Agent Lifecycle", () => {
 			hostId,
 		});
 
-		const oldJwt = await createAgentJWT(agentKeypair.privateKey, agentId);
 		const newKeypair = await generateTestKeypair();
+		const hostJWT = await signTestJWT({
+			privateKey: hostKeypair.privateKey,
+			subject: hostId,
+			audience: BASE,
+		});
 
 		const rotateRes = await api("/agent/rotate-key", {
 			method: "POST",
-			headers: { authorization: `Bearer ${oldJwt}` },
-			body: JSON.stringify({ public_key: newKeypair.publicKey }),
+			headers: { authorization: `Bearer ${hostJWT}` },
+			body: JSON.stringify({ agent_id: agentId, public_key: newKeypair.publicKey }),
 		});
 
 		expect(rotateRes.ok).toBe(true);
@@ -1097,8 +1083,8 @@ describe("Agent Lifecycle", () => {
 });
 
 describe("Discovery", () => {
-	it("GET /agent/discover returns spec-compliant config with version 1.0-draft", async () => {
-		const res = await api("/agent/discover", { method: "GET" });
+	it("GET /agent-configuration returns spec-compliant config with version 1.0-draft", async () => {
+		const res = await api("/agent-configuration", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
@@ -1113,27 +1099,27 @@ describe("Discovery", () => {
 		expect(body.modes).toEqual(["delegated", "autonomous"]);
 		expect(body.algorithms).toEqual(["Ed25519"]);
 		expect(body.endpoints).toBeDefined();
-		expect(body.endpoints.register).toBe("/agent/register");
-		expect(body.endpoints.capabilities).toBe("/capability/list");
-		expect(body.endpoints.status).toBe("/agent/status");
-		expect(body.endpoints.introspect).toBe("/agent/introspect");
+		expect(body.endpoints.register).toContain("/agent/register");
+		expect(body.endpoints.capabilities).toContain("/capability/list");
+		expect(body.endpoints.status).toContain("/agent/status");
+		expect(body.endpoints.introspect).toContain("/agent/introspect");
 	});
 });
 
 describe("Capabilities Endpoint", () => {
-	it("GET /capability/list returns list with name and description", async () => {
+	it("GET /capability/list returns lightweight list (name + description only)", async () => {
 		const res = await api("/capability/list", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
-			capabilities: Array<{ name: string; description: string; input?: Record<string, unknown> }>;
+			capabilities: Array<{ name: string; description: string }>;
 			has_more: boolean;
 		}>(res);
 		expect(body.capabilities).toBeInstanceOf(Array);
 		expect(body.capabilities.length).toBe(3);
 		expect(body.capabilities[0]).toHaveProperty("name");
 		expect(body.capabilities[0]).toHaveProperty("description");
-		expect(body.capabilities[0]).toHaveProperty("input");
+		expect(body.capabilities[0]).not.toHaveProperty("input");
 	});
 
 	it("includes grant_status when called with agent JWT", async () => {
@@ -1173,7 +1159,7 @@ describe("Capabilities Endpoint", () => {
 	});
 
 	it("supports query filtering", async () => {
-		const res = await api("/capabilities?query=balance", { method: "GET" });
+		const res = await api("/capability/list?query=balance", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
@@ -1297,3 +1283,6 @@ describe("Edge Cases", () => {
 		expect(body.enrollmentToken).toBeDefined();
 	});
 });
+
+// Security-specific tests (JWT replay, algorithm confusion, session freshness,
+// JTI partitioning, reactivation events, etc.) are in security.test.ts

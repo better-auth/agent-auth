@@ -37,6 +37,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				rotate_key: `${basePath}/agent/rotate-key`,
 				rotate_host_key: `${basePath}/host/rotate-key`,
 				introspect: `${basePath}/agent/introspect`,
+				describe_capability: `${basePath}/capability/describe`,
 				device_authorization: `${basePath}/device/code`,
 			};
 

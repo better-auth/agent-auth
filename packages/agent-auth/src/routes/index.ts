@@ -30,7 +30,6 @@ import { updateHost } from "./host/update";
 import { cibaAuthorize } from "./ciba/authorize";
 import { cibaPending } from "./ciba/pending";
 import { deviceCode } from "./device/code";
-import { deviceToken } from "./device/token";
 
 export function createAgentRoutes(
 	opts: ResolvedAgentAuthOptions,
@@ -40,11 +39,11 @@ export function createAgentRoutes(
 	return {
 		getAgentConfiguration: agentConfiguration(opts), // §6.1
 		listCapabilities: listCapabilities(opts), // §6.2
-		describeCapability: describeCapability(opts), // §6.2
+		describeCapability: describeCapability(opts), // §6.2.1
 		executeCapability: executeCapability(opts), // §6.11
 		register: register(opts, jtiCache, jwksCache), // §6.3
 		requestCapability: requestCapability(opts), // §6.4
-		agentStatus: agentStatus(), // §6.5
+		agentStatus: agentStatus(opts), // §6.5
 		getAgentSession: getAgentSession(), // not in spec
 		revokeAgent: revokeAgent(opts), // §6.6
 		rotateKey: rotateKey(opts), // §6.7
@@ -53,8 +52,8 @@ export function createAgentRoutes(
 		cleanupAgents: cleanupAgents(opts), // not in spec
 		approveCapability: approveCapability(opts), // §9.1
 		grantCapability: grantCapability(opts), // §4
-		listAgents: listAgents(), // §8
-		getAgent: getAgent(), // §8
+		listAgents: listAgents(opts), // §8
+		getAgent: getAgent(opts), // §8
 		updateAgent: updateAgent(opts), // §8
 		createHost: createHost(opts), // §3.2
 		enrollHost: enrollHost(opts), // §3.2
@@ -66,6 +65,5 @@ export function createAgentRoutes(
 		cibaAuthorize: cibaAuthorize(opts), // §9.2
 		cibaPending: cibaPending(), // §9.2
 		deviceCode: deviceCode(opts), // RFC 8628 §3.1–3.2
-		deviceToken: deviceToken(opts), // RFC 8628 §3.4
 	} as const;
 }

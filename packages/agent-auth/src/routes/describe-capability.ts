@@ -1,14 +1,23 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
+import { TABLE } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
-import type { ResolvedAgentAuthOptions } from "../types";
+import type {
+	AgentCapabilityGrant,
+	AgentSession,
+	HostSession,
+	ResolvedAgentAuthOptions,
+} from "../types";
 
 /**
- * GET /capability/describe
+ * GET /capability/describe (§6.2.1).
  *
- * Returns the full definition (including input schema) for a single
- * capability by name. Lightweight escape hatch for when the agent
- * needs to look up a schema mid-session.
+ * Returns the full detail for a single capability including `input`
+ * schema and any execution metadata. Supports the same three auth
+ * modes as `/capability/list`:
+ * - No auth: public capability detail
+ * - Host JWT: capability for host's linked user
+ * - Agent JWT: capability with grant_status
  */
 export function describeCapability(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -21,25 +30,61 @@ export function describeCapability(opts: ResolvedAgentAuthOptions) {
 			metadata: {
 				openapi: {
 					description:
-						"Returns the full definition for a single capability by name.",
+						"Returns full detail for a single capability (§6.2.1).",
 				},
 			},
 		},
 		async (ctx) => {
-			const { name } = ctx.query;
+			const capabilityName = ctx.query.name;
 			const allCapabilities = opts.capabilities ?? [];
-			const cap = allCapabilities.find((c) => c.name === name);
+			const capability = allCapabilities.find(
+				(c) => c.name === capabilityName,
+			);
 
-			if (!cap) {
+			if (!capability) {
 				throw agentError(
 					"NOT_FOUND",
 					ERR.CAPABILITY_NOT_FOUND,
-					`Capability "${name}" does not exist.`,
+					`Capability "${capabilityName}" does not exist.`,
 				);
 			}
 
-			const { grant_status, ...rest } = cap;
-			return ctx.json(rest);
+			const agentSession = (ctx.context as Record<string, unknown>)
+				.agentSession as AgentSession | undefined;
+			const hostSession = (ctx.context as Record<string, unknown>)
+				.hostSession as HostSession | undefined;
+
+			const { grant_status: _gs, ...capabilityFields } = capability;
+			const response: Record<string, unknown> = { ...capabilityFields };
+
+			if (agentSession) {
+				const grants =
+					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+						model: TABLE.grant,
+						where: [
+							{ field: "agentId", value: agentSession.agent.id },
+							{ field: "capability", value: capabilityName },
+						],
+					});
+
+				const now = new Date();
+				const hasActiveGrant = grants.some(
+					(g) =>
+						g.status === "active" &&
+						(!g.expiresAt || new Date(g.expiresAt) > now),
+				);
+
+				response.grant_status = hasActiveGrant
+					? "granted"
+					: "not_granted";
+			} else if (hostSession) {
+				const hostDefaults = hostSession.host.defaultCapabilities ?? [];
+				response.grant_status = hostDefaults.includes(capabilityName)
+					? "granted"
+					: "not_granted";
+			}
+
+			return ctx.json(response);
 		},
 	);
 }

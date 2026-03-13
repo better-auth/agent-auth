@@ -37,9 +37,9 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 			body: z.object({
 				capabilities: z.array(z.string()).min(1),
 				reason: z.string().optional(),
-				preferred_method: z
-					.enum(["device_authorization", "ciba"])
-					.optional(),
+				preferred_method: z.string().optional(),
+				login_hint: z.string().optional(),
+				binding_message: z.string().optional(),
 			}),
 			requireHeaders: true,
 			metadata: {
@@ -60,7 +60,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { capabilities: capabilityIds, reason, preferred_method: preferredMethod } = ctx.body;
+			const { capabilities: capabilityIds, reason, preferred_method: preferredMethod, login_hint: loginHint, binding_message: bindingMessage } = ctx.body;
 
 			// Validate blocked (§10.6)
 			if (opts.blockedCapabilities.length > 0) {
@@ -152,9 +152,9 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						agent_id: agentSession.agent.id,
 						status: "pending",
 						agent_capability_grants:
-							formatGrantsResponse(existingGrants),
-						approval: {
-							method: existingApproval.method,
+						formatGrantsResponse(existingGrants, opts.capabilities),
+					approval: {
+						method: existingApproval.method,
 							expires_in: Math.floor(
 								(new Date(
 									existingApproval.expiresAt,
@@ -179,6 +179,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						hostId: agentSession.agent.hostId,
 						capabilities: stillPending,
 						preferredMethod,
+						loginHint,
+						bindingMessage,
 					},
 				);
 
@@ -186,7 +188,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					agent_id: agentSession.agent.id,
 					status: "pending",
 					agent_capability_grants:
-						formatGrantsResponse(existingGrants),
+						formatGrantsResponse(existingGrants, opts.capabilities),
 					approval,
 				});
 			}
@@ -291,7 +293,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 
 				return ctx.json({
 					agent_id: agentSession.agent.id,
-					status: "granted",
+					status: "active",
 					agent_capability_grants:
 						formatGrantsResponse(updatedGrants, opts.capabilities),
 				});
@@ -326,6 +328,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					hostId: agentSession.agent.hostId,
 					capabilities: needsApproval,
 					preferredMethod,
+					loginHint,
+					bindingMessage,
 				},
 			);
 
@@ -353,7 +357,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 			return ctx.json({
 				agent_id: agentSession.agent.id,
 				status: "pending",
-				agent_capability_grants: formatGrantsResponse(allGrants),
+				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),
 				approval,
 			});
 		},

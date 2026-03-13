@@ -86,7 +86,7 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 			const now = new Date();
 			const expiresAt = new Date(now.getTime() + expiresIn * 1000);
 
-			await ctx.context.adapter.create<
+			const approvalReq = await ctx.context.adapter.create<
 				Record<string, unknown>,
 				ApprovalRequest
 			>({
@@ -115,7 +115,7 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 			const origin = new URL(ctx.context.baseURL).origin;
 
 			return ctx.json({
-				device_code: agent.id,
+				device_code: approvalReq.id,
 				user_code: userCode,
 				verification_uri: `${origin}/device/capabilities`,
 				verification_uri_complete: `${origin}/device/capabilities?agent_id=${agent.id}&code=${userCode}`,

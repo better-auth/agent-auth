@@ -13,7 +13,7 @@ export const DEFAULTS = {
 	agentMaxLifetime: 86400,
 	absoluteLifetime: 0,
 	maxAgentsPerUser: 25,
-	freshSessionWindow: 0,
+	freshSessionWindow: 300,
 	allowedKeyAlgorithms: ["Ed25519"] as readonly string[],
 	modes: ["delegated", "autonomous"] as readonly AgentMode[],
 	approvalMethods: [

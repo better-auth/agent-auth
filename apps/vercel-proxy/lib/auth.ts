@@ -123,8 +123,8 @@ export const auth = betterAuth({
 				return parseInt(getSetting("freshSessionWindow") ?? "300", 10);
 			},
 			...openapi,
+			trustProxy: process.env.TRUST_PROXY === "true",
 			providerName: "Vercel",
-			
 			providerDescription:
 				"Vercel is a cloud platform for deploying and hosting frontend applications, serverless functions, and full-stack web projects with automatic CI/CD, edge networking, and seamless Git integration.",
 			modes: ["delegated"],

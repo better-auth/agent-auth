@@ -7,6 +7,7 @@ import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	Agent,
 	AgentCapabilityGrant,
+	AgentSession,
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../types";
@@ -14,7 +15,8 @@ import type {
 /**
  * POST /agent/revoke
  *
- * Revoke an agent. Accepts either:
+ * Revoke an agent. Accepts any of:
+ * - Agent JWT: the agent revokes itself (body optional)
  * - Host JWT: the host proves ownership via `agent.hostId`
  * - User session: the user proves ownership via `agent.userId`
  */
@@ -24,29 +26,36 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 		{
 			method: "POST",
 			body: z.object({
-				agent_id: z.string(),
+				agent_id: z.string().optional(),
 			}),
 			metadata: {
 				openapi: {
 					description:
-						"Revoke an agent via host JWT or user session (§6.6).",
+						"Revoke an agent via agent JWT, host JWT, or user session (§6.6).",
 				},
 			},
 		},
 		async (ctx) => {
+			const agentSession = (ctx.context as Record<string, unknown>)
+				.agentSession as AgentSession | undefined;
 			const hostSession = (ctx.context as Record<string, unknown>)
 				.hostSession as HostSession | undefined;
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const userSession = await getSessionFromCtx(ctx as any);
 
-			if (!hostSession && !userSession) {
+			if (!agentSession && !hostSession && !userSession) {
 				throw agentError(
 					"UNAUTHORIZED",
 					ERR.UNAUTHORIZED_SESSION,
 				);
 			}
 
-			const { agent_id: agentId } = ctx.body;
+			const agentId = ctx.body.agent_id
+				?? agentSession?.agent.id;
+
+			if (!agentId) {
+				throw agentError("BAD_REQUEST", ERR.INVALID_REQUEST);
+			}
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,
@@ -57,7 +66,11 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
-			if (hostSession) {
+			if (agentSession) {
+				if (agent.id !== agentSession.agent.id) {
+					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
+				}
+			} else if (hostSession) {
 				if (agent.hostId !== hostSession.host.id) {
 					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 				}
@@ -97,6 +110,7 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 			emit(opts, {
 				type: "agent.revoked",
 				actorId:
+					agentSession?.user.id ??
 					userSession?.user.id ??
 					hostSession?.host.userId ??
 					undefined,

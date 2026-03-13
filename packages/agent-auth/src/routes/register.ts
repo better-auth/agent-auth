@@ -34,8 +34,10 @@ const registerBodySchema = z.object({
 	capabilities: z.array(z.string()).optional(),
 	reason: z.string().optional(),
 	mode: z.enum(["delegated", "autonomous"]).optional(),
-	preferred_method: z.enum(["device_authorization", "ciba"]).optional(),
+	preferred_method: z.string().optional(),
 	host_name: z.string().optional(),
+	login_hint: z.string().optional(),
+	binding_message: z.string().optional(),
 });
 
 export function register(
@@ -64,6 +66,8 @@ export function register(
 			mode: rawMode,
 			preferred_method: preferredMethod,
 			host_name: bodyHostName,
+			login_hint: loginHint,
+			binding_message: bindingMessage,
 		} = ctx.body;
 
 			// ---------- Require host JWT ----------
@@ -206,6 +210,7 @@ export function register(
 							payload.aud,
 							ctx.context.baseURL,
 							ctx.headers,
+							opts.trustProxy,
 						)
 					) {
 						throw agentError(
@@ -215,7 +220,7 @@ export function register(
 					}
 				}
 
-				// JTI replay (§5.6)
+				// JTI replay (§5.6) — partitioned by host identity
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
 						throw agentError(
@@ -223,14 +228,15 @@ export function register(
 							ERR.INVALID_JWT,
 						);
 					}
-					if (jtiCache && (await jtiCache.has(String(payload.jti)))) {
+					const jtiKey = `host:${hostRecord.id}:${payload.jti}`;
+					if (jtiCache && (await jtiCache.has(jtiKey))) {
 						throw agentError(
 							"UNAUTHORIZED",
 							ERR.JWT_REPLAY,
 						);
 					}
 					if (jtiCache) {
-						await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
+						await jtiCache.add(jtiKey, opts.jwtMaxAge);
 					}
 				}
 
@@ -262,7 +268,9 @@ export function register(
 								],
 								update: bgUpdates,
 							})
-							.catch(() => {}),
+							.catch((err) => {
+								console.error("[agent-auth] background host-update failed:", err);
+							}),
 					);
 				}
 
@@ -283,7 +291,9 @@ export function register(
 							],
 							update: heartbeat,
 						})
-						.catch(() => {}),
+						.catch((err) => {
+							console.error("[agent-auth] background host-heartbeat failed:", err);
+						}),
 				);
 			} else {
 				// ---- Unknown host — dynamic registration ----
@@ -331,6 +341,7 @@ export function register(
 							payload.aud,
 							ctx.context.baseURL,
 							ctx.headers,
+							opts.trustProxy,
 						)
 					) {
 						throw agentError(
@@ -340,7 +351,7 @@ export function register(
 					}
 				}
 
-				// JTI replay (§5.6)
+				// JTI replay (§5.6) — partitioned by sub (host identity)
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
 						throw agentError(
@@ -348,14 +359,15 @@ export function register(
 							ERR.INVALID_JWT,
 						);
 					}
-					if (jtiCache && (await jtiCache.has(String(payload.jti)))) {
+					const jtiKey = `host:${payload.sub ?? "dynamic"}:${payload.jti}`;
+					if (jtiCache && (await jtiCache.has(jtiKey))) {
 						throw agentError(
 							"UNAUTHORIZED",
 							ERR.JWT_REPLAY,
 						);
 					}
 					if (jtiCache) {
-						await jtiCache.add(String(payload.jti), opts.jwtMaxAge);
+						await jtiCache.add(jtiKey, opts.jwtMaxAge);
 					}
 				}
 
@@ -501,6 +513,56 @@ export function register(
 			validateCapabilityIds(allRequestedCaps, opts);
 			await validateCapabilitiesExist(allRequestedCaps, opts);
 
+			// ---------- Idempotency check (§6.3) ----------
+			const agentPubKeyStr = publicKey ? JSON.stringify(publicKey) : "";
+			if (hostId && agentPubKeyStr) {
+				const existingAgents = await ctx.context.adapter.findMany<Agent>({
+					model: TABLE.agent,
+					where: [
+						{ field: "hostId", value: hostId },
+						{ field: "publicKey", value: agentPubKeyStr },
+					],
+				});
+				const existing = existingAgents[0];
+				if (existing) {
+					if (existing.status === "pending") {
+						const existingGrants =
+							await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+								model: TABLE.grant,
+								where: [{ field: "agentId", value: existing.id }],
+							});
+						const response: Record<string, unknown> = {
+							agent_id: existing.id,
+							host_id: hostId,
+							name: existing.name,
+							host_name: hostRecord?.name ?? null,
+							mode: existing.mode,
+							status: "pending",
+							agent_capability_grants: formatGrantsResponse(existingGrants, opts.capabilities),
+						};
+						const origin = new URL(ctx.context.baseURL).origin;
+						response.approval = await buildApprovalInfo(
+							opts,
+							ctx.context.adapter,
+							ctx.context.internalAdapter,
+							{
+								origin,
+								agentId: existing.id,
+								userId,
+								agentName: existing.name,
+								hostId,
+								capabilities: allRequestedCaps,
+								preferredMethod,
+								loginHint,
+								bindingMessage,
+							},
+						);
+						return ctx.json(response);
+					}
+					throw agentError("CONFLICT", ERR.AGENT_EXISTS);
+				}
+			}
+
 			// ---------- Create agent ----------
 			const now = new Date();
 			const kid = publicKey
@@ -592,6 +654,8 @@ export function register(
 						hostId,
 						capabilities: [...resolvedCaps, ...pendingCaps],
 						preferredMethod,
+						loginHint,
+						bindingMessage,
 					},
 				);
 			}

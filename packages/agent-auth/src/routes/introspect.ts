@@ -98,13 +98,14 @@ export function introspect(
 
 			if (
 				payload.aud &&
-				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers)
+				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers, opts.trustProxy)
 			) {
 				return ctx.json(inactive);
 			}
 
 			if (jtiCache && typeof payload.jti === "string") {
-				if (await jtiCache.has(payload.jti)) {
+				const jtiKey = `${agent.id}:${payload.jti}`;
+				if (await jtiCache.has(jtiKey)) {
 					return ctx.json(inactive);
 				}
 			}
@@ -139,8 +140,8 @@ export function introspect(
 				agent_id: agent.id,
 				host_id: agent.hostId,
 				user_id: agent.userId ?? null,
-				agent_capability_grants:
-					formatGrantsResponse(relevantGrants),
+			agent_capability_grants:
+				formatGrantsResponse(relevantGrants, opts.capabilities),
 				mode: agent.mode,
 				expires_at: agent.expiresAt
 					? new Date(agent.expiresAt).toISOString()
