@@ -1,5 +1,6 @@
 import type { JtiCacheStore } from "../utils/jti-cache";
 import type { JwksCacheStore } from "../utils/jwks-cache";
+import { WebAuthnChallengeCache } from "../utils/webauthn-challenge-cache";
 import type { ResolvedAgentAuthOptions } from "../types";
 import { approveCapability } from "./approve-capability";
 import { cleanupAgents } from "./cleanup";
@@ -26,6 +27,7 @@ import { listHosts } from "./host/list";
 
 import { revokeHost } from "./host/revoke";
 import { rotateHostKey } from "./host/rotate-key";
+import { switchHostAccount } from "./host/switch-account";
 import { updateHost } from "./host/update";
 import { cibaAuthorize } from "./ciba/authorize";
 import { cibaPending } from "./ciba/pending";
@@ -36,6 +38,10 @@ export function createAgentRoutes(
 	jtiCache?: JtiCacheStore,
 	jwksCache?: JwksCacheStore,
 ) {
+	const webauthnChallengeCache = opts.proofOfPresence.enabled
+		? new WebAuthnChallengeCache()
+		: null;
+
 	return {
 		getAgentConfiguration: agentConfiguration(opts), // §6.1
 		listCapabilities: listCapabilities(opts), // §6.2
@@ -50,7 +56,7 @@ export function createAgentRoutes(
 		introspect: introspect(opts, jtiCache, jwksCache), // §6.10
 		reactivateAgent: reactivateAgent(opts), // §6.12
 		cleanupAgents: cleanupAgents(opts), // not in spec
-		approveCapability: approveCapability(opts), // §9.1
+		approveCapability: approveCapability(opts, webauthnChallengeCache), // §9.1
 		grantCapability: grantCapability(opts), // §4
 		listAgents: listAgents(opts), // §8
 		getAgent: getAgent(opts), // §8
@@ -60,6 +66,7 @@ export function createAgentRoutes(
 		listHosts: listHosts(), // §3
 		getHost: getHost(), // §3
 		revokeHost: revokeHost(opts), // §6.9
+		switchHostAccount: switchHostAccount(opts), // §2.9
 		updateHost: updateHost(opts), // §3
 		rotateHostKey: rotateHostKey(opts, jtiCache, jwksCache), // §6.8
 		cibaAuthorize: cibaAuthorize(opts), // §9.2

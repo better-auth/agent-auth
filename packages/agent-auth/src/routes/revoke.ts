@@ -102,7 +102,7 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 					await ctx.context.adapter.update({
 						model: TABLE.grant,
 						where: [{ field: "id", value: g.id }],
-						update: { status: "denied", updatedAt: now },
+						update: { status: "revoked", updatedAt: now },
 					});
 				}
 			}

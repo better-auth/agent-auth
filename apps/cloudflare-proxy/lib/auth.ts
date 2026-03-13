@@ -16,33 +16,39 @@ const REDIRECT_URI = `${process.env.BETTER_AUTH_URL}/callback`;
 const CLOUDFLARE_OPENAPI_URL =
 	"https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.json";
 
+const isBuild = process.env.NEXT_PHASE === "phase-production-build";
+
 let clientId = getRegistration("clientId");
 let useMcpOAuth = true;
 
 if (!clientId) {
-	try {
-		clientId = await registerMcpClient(REDIRECT_URI);
-		setRegistration("clientId", clientId);
-	} catch (e) {
-		if (process.env.CLOUDFLARE_CLIENT_ID) {
-			clientId = process.env.CLOUDFLARE_CLIENT_ID;
-			useMcpOAuth = false;
-			console.log(
-				"[cloudflare-proxy] MCP dynamic registration failed, using manual CLOUDFLARE_CLIENT_ID.",
-			);
-		} else {
-			throw new Error(
-				`MCP dynamic registration failed (${(e as Error).message}). ` +
-					`For local dev, either set BETTER_AUTH_URL to an HTTPS URL (e.g. via cloudflared tunnel) ` +
-					`or provide CLOUDFLARE_CLIENT_ID and CLOUDFLARE_CLIENT_SECRET env vars.`,
-			);
+	if (isBuild) {
+		clientId = "build-placeholder";
+	} else {
+		try {
+			clientId = await registerMcpClient(REDIRECT_URI);
+			setRegistration("clientId", clientId);
+		} catch (e) {
+			if (process.env.CLOUDFLARE_CLIENT_ID) {
+				clientId = process.env.CLOUDFLARE_CLIENT_ID;
+				useMcpOAuth = false;
+				console.log(
+					"[cloudflare-proxy] MCP dynamic registration failed, using manual CLOUDFLARE_CLIENT_ID.",
+				);
+			} else {
+				throw new Error(
+					`MCP dynamic registration failed (${(e as Error).message}). ` +
+						`For local dev, either set BETTER_AUTH_URL to an HTTPS URL (e.g. via cloudflared tunnel) ` +
+						`or provide CLOUDFLARE_CLIENT_ID and CLOUDFLARE_CLIENT_SECRET env vars.`,
+				);
+			}
 		}
 	}
 }
 
-const cloudflareSpec = await fetch(CLOUDFLARE_OPENAPI_URL).then((r) =>
-	r.json(),
-);
+const cloudflareSpec = isBuild
+	? { paths: {} }
+	: await fetch(CLOUDFLARE_OPENAPI_URL).then((r) => r.json());
 
 interface OpenAPIOperation {
 	operationId?: string;

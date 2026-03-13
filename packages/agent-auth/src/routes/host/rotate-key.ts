@@ -1,10 +1,11 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import { TABLE } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
-import { verifyAgentJWT } from "../../utils/crypto";
+import { verifyJWT } from "../../utils/crypto";
 import type { JwksCacheStore } from "../../utils/jwks-cache";
 import { MemoryJwksCache } from "../../utils/jwks-cache";
 import type { JtiCacheStore } from "../../utils/jti-cache";
@@ -48,11 +49,18 @@ export function rotateHostKey(
 			let hostId: string;
 			try {
 				const decoded = decodeJwt(bearer);
-				if (!decoded.sub) {
-					throw new Error("Missing sub");
+				const hdr = decodeProtectedHeader(bearer);
+				// §4.2: Host JWTs MUST have typ: "host+jwt"
+				if (hdr.typ !== "host+jwt") {
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
-				hostId = decoded.sub;
-			} catch {
+				// §4.2: iss = JWK thumbprint is the host identifier
+				if (typeof decoded.iss !== "string") {
+					throw new Error("Missing iss");
+				}
+				hostId = decoded.iss;
+			} catch (e) {
+				if (e instanceof APIError) throw e;
 				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 
@@ -92,13 +100,14 @@ export function rotateHostKey(
 				}
 			}
 
-			const payload = await verifyAgentJWT({
+			const payload = await verifyJWT({
 				jwt: bearer,
 				publicKey: currentPubKey,
 				maxAge: opts.jwtMaxAge,
 			});
 
-			if (!payload || payload.sub !== host.id) {
+			// §4.2: iss identifies the host
+			if (!payload || payload.iss !== host.id) {
 				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authClient } from "@/lib/auth-client";
 
 type ApprovalMethod = "device_authorization" | "ciba";
 
@@ -8,6 +9,7 @@ interface Settings {
 	freshSessionEnabled: boolean;
 	freshSessionWindow: number;
 	preferredApprovalMethod: ApprovalMethod;
+	webauthnEnabled: boolean;
 }
 
 export default function SettingsPage() {
@@ -213,12 +215,171 @@ export default function SettingsPage() {
 					</div>
 				</div>
 
+			<div className="flex flex-col gap-3">
+					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+						Proof of Presence (WebAuthn)
+					</h2>
+					<div className="rounded-lg border border-border bg-surface">
+						<div className="flex items-center justify-between border-b border-border px-4 py-4">
+							<div className="flex-1 pr-4">
+								<p className="text-sm font-medium text-white">
+									Require biometric verification for sensitive actions
+								</p>
+								<p className="mt-1 text-xs text-muted">
+									When enabled, capabilities marked with{" "}
+									<code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">
+										approvalStrength: &quot;webauthn&quot;
+									</code>{" "}
+									will require a passkey (fingerprint / Face ID) to approve.
+									This prevents AI agents with browser access from
+									self-approving.
+								</p>
+							</div>
+							<button
+								type="button"
+								role="switch"
+								aria-checked={settings.webauthnEnabled}
+								onClick={() =>
+									save({
+										webauthnEnabled:
+											!settings.webauthnEnabled,
+									})
+								}
+								className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+									settings.webauthnEnabled
+										? "bg-white"
+										: "bg-zinc-700"
+								}`}
+							>
+								<span
+									className={`pointer-events-none inline-block h-5 w-5 rounded-full shadow-lg transition-transform ${
+										settings.webauthnEnabled
+											? "translate-x-5 bg-black"
+											: "translate-x-0 bg-zinc-400"
+									}`}
+								/>
+							</button>
+						</div>
+
+						{settings.webauthnEnabled && (
+							<PasskeyManager />
+						)}
+					</div>
+				</div>
+
 				{(saving || saved) && (
-					<p className="text-xs text-muted">
-						{saving ? "Saving…" : "Settings saved."}
-					</p>
-				)}
+				<p className="text-xs text-muted">
+					{saving ? "Saving…" : "Settings saved."}
+				</p>
+			)}
 			</div>
+		</div>
+	);
+}
+
+function PasskeyManager() {
+	const [passkeys, setPasskeys] = useState<
+		{ id: string; name?: string | null; createdAt?: string }[]
+	>([]);
+	const [loading, setLoading] = useState(true);
+	const [registering, setRegistering] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const fetchPasskeys = async () => {
+		try {
+			const res = await fetch("/api/auth/passkey/list-user-passkeys");
+			if (res.ok) {
+				const data = await res.json();
+				setPasskeys(Array.isArray(data) ? data : []);
+			}
+		} catch {
+			// passkey table might not exist yet
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	useEffect(() => {
+		fetchPasskeys();
+	}, []);
+
+	const handleRegister = async () => {
+		setRegistering(true);
+		setError(null);
+		try {
+			const res = await authClient.passkey.addPasskey({
+				name: `Agent Auth Key ${new Date().toLocaleDateString()}`,
+			});
+			if (res?.error) {
+				setError(res.error.message ?? "Registration failed");
+			} else {
+				await fetchPasskeys();
+			}
+		} catch (e: unknown) {
+			const msg =
+				e instanceof Error ? e.message : "Passkey registration cancelled or failed";
+			if (!msg.includes("cancelled") && !msg.includes("abort")) {
+				setError(msg);
+			}
+		} finally {
+			setRegistering(false);
+		}
+	};
+
+	return (
+		<div className="px-4 py-4">
+			<div className="flex items-center justify-between">
+				<div>
+					<p className="text-sm font-medium text-white">Your passkeys</p>
+					<p className="mt-1 text-xs text-muted">
+						Register at least one passkey to enable biometric approvals.
+					</p>
+				</div>
+				<button
+					type="button"
+					onClick={handleRegister}
+					disabled={registering}
+					className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+				>
+					{registering ? "Registering…" : "+ Add Passkey"}
+				</button>
+			</div>
+
+			{error && (
+				<p className="mt-2 text-xs text-red-400">{error}</p>
+			)}
+
+			{loading ? (
+				<div className="mt-3 h-8 w-full animate-pulse rounded bg-white/5" />
+			) : passkeys.length === 0 ? (
+				<p className="mt-3 text-xs text-yellow-400/80">
+					No passkeys registered. WebAuthn approvals will fail until you add one.
+				</p>
+			) : (
+				<ul className="mt-3 divide-y divide-border">
+					{passkeys.map((pk) => (
+						<li
+							key={pk.id}
+							className="flex items-center justify-between py-2"
+						>
+							<div>
+								<p className="text-sm text-white">
+									{pk.name ?? "Unnamed passkey"}
+								</p>
+								{pk.createdAt && (
+									<p className="text-[11px] text-muted">
+										Added{" "}
+										{new Date(pk.createdAt).toLocaleDateString()}
+									</p>
+								)}
+							</div>
+							<span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-muted">
+								FIDO2
+							</span>
+						</li>
+					))}
+				</ul>
+			)}
 		</div>
 	);
 }

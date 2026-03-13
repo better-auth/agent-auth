@@ -13,6 +13,15 @@ export interface Keypair {
 	privateKey: AgentJWK;
 }
 
+/**
+ * Required approval strength for a capability (§8.11).
+ *
+ * - `"none"` — auto-grant, no user interaction required.
+ * - `"session"` — requires an active user session (device auth / CIBA).
+ * - `"webauthn"` — requires proof of physical presence via WebAuthn.
+ */
+export type ApprovalStrength = "none" | "session" | "webauthn";
+
 /** Capability definition — §4. */
 export interface Capability {
 	name: string;
@@ -22,6 +31,11 @@ export interface Capability {
 	 * `POST /capabilities/execute` (§6.11).
 	 */
 	input?: Record<string, unknown>;
+	/**
+	 * Required approval strength (§8.11).
+	 * `"webauthn"` requires physical presence (fingerprint, face, hardware key).
+	 */
+	approvalStrength?: ApprovalStrength;
 	grant_status?: "granted" | "not_granted";
 	[key: string]: unknown;
 }
@@ -50,10 +64,38 @@ export type AgentStatus =
 	| "rejected"
 	| "claimed";
 
+/** Primitive types allowed in constraint operator values (§2.13). */
+export type ConstraintPrimitive = string | number | boolean;
+
+/** Named constraint operators for a single field (§2.13). */
+export interface ConstraintOperators {
+	eq?: ConstraintPrimitive;
+	min?: number;
+	max?: number;
+	in?: ConstraintPrimitive[];
+	not_in?: ConstraintPrimitive[];
+}
+
+/** Constraint for a single capability argument field. */
+export type ConstraintValue = ConstraintPrimitive | ConstraintOperators;
+
+/** Scoped constraints applied to a capability grant (§2.13). */
+export type CapabilityConstraints = Record<string, ConstraintValue>;
+
+/**
+ * Capability request item — either a plain string (unconstrained)
+ * or an object with constraints (§2.13).
+ */
+export type CapabilityRequestItem = string | {
+	name: string;
+	constraints?: CapabilityConstraints;
+};
+
 export interface CapabilityGrant {
 	capability: string;
-	status: "active" | "pending" | "denied";
+	status: "active" | "pending" | "denied" | "revoked";
 	granted_by?: string | null;
+	constraints?: CapabilityConstraints | null;
 }
 
 /** Discovery response — §6.1. */
@@ -65,6 +107,7 @@ export interface ProviderConfig {
 	algorithms: string[];
 	modes: AgentMode[];
 	approval_methods: string[];
+	proof_of_presence_methods?: string[];
 	endpoints: Record<string, string>;
 	capabilities?: Capability[];
 	jwks_uri?: string;
@@ -86,7 +129,6 @@ export interface RegisterResponse {
 	agent_id: string;
 	host_id: string;
 	name: string;
-	host_name?: string | null;
 	mode: AgentMode;
 	status: AgentStatus;
 	agent_capability_grants: CapabilityGrant[];
@@ -96,11 +138,12 @@ export interface RegisterResponse {
 /** Status response from GET /agent/status — §6.5. */
 export interface StatusResponse {
 	agent_id: string;
+	name: string;
 	host_id: string;
 	status: AgentStatus;
 	agent_capability_grants: CapabilityGrant[];
 	mode: AgentMode;
-	user_id?: string | null;
+	activated_at?: string | null;
 	created_at?: string;
 	last_used_at?: string | null;
 	expires_at?: string | null;

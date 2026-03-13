@@ -7,6 +7,7 @@ const ALLOWED_KEYS = [
 	"freshSessionEnabled",
 	"freshSessionWindow",
 	"preferredApprovalMethod",
+	"webauthnEnabled",
 ] as const;
 
 export async function GET() {
@@ -25,6 +26,7 @@ export async function GET() {
 		),
 		preferredApprovalMethod:
 			getSetting("preferredApprovalMethod") ?? "device_authorization",
+		webauthnEnabled: getSetting("webauthnEnabled") === "true",
 	});
 }
 

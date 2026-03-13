@@ -41,10 +41,13 @@ export async function generateKeypair(): Promise<Keypair> {
 export interface SignHostJWTOptions {
 	hostKeypair: Keypair;
 	/**
-	 * JWT `sub` claim. Defaults to the public key's `kid` (JWK thumbprint),
+	 * Host identifier used as the JWT `iss` claim (§4.2).
+	 * Defaults to the public key's `kid` (JWK thumbprint),
 	 * which is the recommended value — it's deterministic, derived from
 	 * the key itself, and requires no server-assigned ID.
 	 */
+	issuer?: string;
+	/** @deprecated Use `issuer` instead. */
 	subject?: string;
 	/** JWT `aud` claim — the server's issuer URL. */
 	audience: string;
@@ -58,14 +61,14 @@ export interface SignHostJWTOptions {
 
 /**
  * Sign a host JWT per §5.2.
- * Uses the JWK thumbprint as the `sub` claim by default.
+ * Uses the JWK thumbprint as the `iss` claim by default (§4.2).
  * Includes `host_public_key` and optionally `agent_public_key` for registration.
  */
 export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 	const alg = resolveAlgorithm(opts.hostKeypair.privateKey);
 	const key = await importJWK(opts.hostKeypair.privateKey, alg);
 	const kid = opts.hostKeypair.publicKey.kid;
-	const sub = opts.subject ?? kid ?? await calculateJwkThumbprint(
+	const hostId = opts.issuer ?? opts.subject ?? kid ?? await calculateJwkThumbprint(
 		opts.hostKeypair.publicKey,
 		"sha256",
 	);
@@ -82,8 +85,9 @@ export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 	}
 
 	return new SignJWT(claims)
-		.setProtectedHeader({ alg, ...(kid ? { kid } : {}) })
-		.setSubject(sub)
+		.setProtectedHeader({ alg, typ: "host+jwt", ...(kid ? { kid } : {}) })
+		.setIssuer(hostId)
+		.setSubject(hostId)
 		.setAudience(opts.audience)
 		.setIssuedAt()
 		.setExpirationTime(`${opts.expiresInSeconds ?? 60}s`)
@@ -127,7 +131,7 @@ export async function signAgentJWT(opts: SignAgentJWTOptions): Promise<string> {
 	if (opts.ath) claims.ath = opts.ath;
 
 	return new SignJWT(claims)
-		.setProtectedHeader({ alg, ...(kid ? { kid } : {}) })
+		.setProtectedHeader({ alg, typ: "agent+jwt", ...(kid ? { kid } : {}) })
 		.setSubject(opts.agentId)
 		.setAudience(opts.audience)
 		.setIssuedAt()

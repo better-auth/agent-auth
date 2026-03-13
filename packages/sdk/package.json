@@ -1,5 +1,5 @@
 {
-  "name": "@better-auth/agent-auth-sdk",
+  "name": "@auth/agent",
   "version": "0.1.0",
   "type": "module",
   "description": "Client SDK for the Agent Auth Protocol — agent identity, registration, and capability-based authorization",

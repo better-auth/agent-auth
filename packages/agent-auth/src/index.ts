@@ -50,6 +50,19 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		jwksCacheStorage: options?.jwksCacheStorage ?? "memory",
 		dangerouslySkipJtiCheck: options?.dangerouslySkipJtiCheck ?? false,
 		trustProxy: options?.trustProxy ?? false,
+		proofOfPresence: (() => {
+			const enabled = options?.proofOfPresence?.enabled ?? false;
+			if (!enabled) return { enabled: false, rpId: "", origin: [] };
+			return {
+				enabled: true,
+				rpId: options?.proofOfPresence?.rpId ?? "",
+				origin: options?.proofOfPresence?.origin
+					? Array.isArray(options.proofOfPresence.origin)
+						? options.proofOfPresence.origin
+						: [options.proofOfPresence.origin]
+					: [],
+			};
+		})(),
 	};
 
 	if (opts.dangerouslySkipJtiCheck) {
@@ -69,6 +82,25 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		id: "agent-auth",
 		$ERROR_CODES: AGENT_AUTH_ERROR_CODES,
 		init(ctx) {
+			if (opts.proofOfPresence.enabled) {
+				const baseUrl = new URL(ctx.baseURL);
+				if (!opts.proofOfPresence.rpId) {
+					opts.proofOfPresence.rpId = baseUrl.hostname;
+				}
+				if (opts.proofOfPresence.origin.length === 0) {
+					opts.proofOfPresence.origin = [baseUrl.origin];
+				}
+
+				const hasPasskeyTable = ctx.tables?.["passkey"] != null;
+				if (!hasPasskeyTable) {
+					console.warn(
+						"[agent-auth] proofOfPresence is enabled but the passkey plugin " +
+						"is not installed. WebAuthn-gated approvals require " +
+						"@better-auth/passkey to be added to your plugins array " +
+						"so users can register authenticators.",
+					);
+				}
+			}
 			if (ctx.secondaryStorage) {
 				const jtiUseSecondary =
 					opts.jtiCacheStorage === "secondary-storage" ||
@@ -125,6 +157,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			listHosts: routes.listHosts,
 			getHost: routes.getHost,
 			revokeHost: routes.revokeHost,
+			switchHostAccount: routes.switchHostAccount,
 			updateHost: routes.updateHost,
 			rotateHostKey: routes.rotateHostKey,
 			cibaAuthorize: routes.cibaAuthorize,

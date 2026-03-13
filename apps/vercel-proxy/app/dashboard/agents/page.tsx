@@ -230,7 +230,7 @@ export default function AgentsPage() {
 		}
 	};
 
-	const filters = ["all", "active", "pending", "expired", "revoked"];
+	const filters = ["all", "active", "pending", "rejected", "expired", "revoked"];
 
 	return (
 		<div className="mx-auto w-full max-w-3xl px-6 py-8">

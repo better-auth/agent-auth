@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@better-auth/agent-auth": "workspace:*",
+    "@better-auth/passkey": "^1.5.5",
+    "@simplewebauthn/browser": "^13.3.0",
     "better-auth": "^1.5.4",
     "better-sqlite3": "^12.6.2",
     "next": "16.1.6",

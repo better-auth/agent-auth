@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, getSetting } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -32,6 +32,16 @@ export async function GET(req: Request) {
 		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
+	// If agent has no userId yet (pending), verify via host ownership
+	if (!agent.userId && agent.hostId) {
+		const hostOwner = db
+			.prepare("SELECT userId FROM agentHost WHERE id = ?")
+			.get(agent.hostId as string) as { userId: string | null } | undefined;
+		if (hostOwner?.userId && hostOwner.userId !== session.user.id) {
+			return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+		}
+	}
+
 	const grants = db
 		.prepare("SELECT * FROM agentCapabilityGrant WHERE agentId = ?")
 		.all(agentId) as Record<string, unknown>[];
@@ -45,6 +55,31 @@ export async function GET(req: Request) {
 	const needsActivation =
 		agent.status === "pending" ||
 		(host && host.status === "pending");
+
+	const webauthnEnabled = getSetting("webauthnEnabled") === "true";
+
+	const hasPasskeys = webauthnEnabled
+		? (db
+				.prepare("SELECT COUNT(*) as count FROM passkey WHERE userId = ?")
+				.get(session.user.id) as { count: number } | undefined
+			)?.count ?? 0
+		: 0;
+
+	const agentIsPending = agent.status === "pending";
+	const hostIsPending = host?.status === "pending";
+	const pendingGrants = grants.filter((g) => g.status === "pending");
+
+	// Context-aware: determine if this approval will need webauthn
+	let approvalContext: "host_approval" | "new_scopes" | "agent_creation" = "agent_creation";
+	if (agentIsPending && hostIsPending) {
+		approvalContext = "host_approval";
+	} else if (!agentIsPending && pendingGrants.length > 0) {
+		approvalContext = "new_scopes";
+	}
+
+	const willRequireWebAuthn =
+		webauthnEnabled &&
+		(approvalContext === "host_approval" || approvalContext === "new_scopes");
 
 	return NextResponse.json({
 		agent: {
@@ -65,5 +100,11 @@ export async function GET(req: Request) {
 			reason: g.reason,
 		})),
 		needsActivation,
+		approvalContext,
+		webauthn: {
+			enabled: webauthnEnabled,
+			hasPasskeys: hasPasskeys > 0,
+			required: willRequireWebAuthn,
+		},
 	});
 }

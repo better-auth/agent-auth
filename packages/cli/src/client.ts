@@ -1,6 +1,6 @@
 import { exec } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { AgentAuthClient } from "@better-auth/agent-auth-sdk";
+import { AgentAuthClient } from "@auth/agent";
 import { FileStorage } from "./storage.js";
 
 export interface ClientConfig {

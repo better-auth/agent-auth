@@ -36,6 +36,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				revoke_host: `${basePath}/host/revoke`,
 				rotate_key: `${basePath}/agent/rotate-key`,
 				rotate_host_key: `${basePath}/host/rotate-key`,
+				switch_account: `${basePath}/host/switch-account`,
 				introspect: `${basePath}/agent/introspect`,
 				describe_capability: `${basePath}/capability/describe`,
 				device_authorization: `${basePath}/device/code`,
@@ -45,22 +46,27 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				endpoints.ciba_authorize = `${basePath}/agent/ciba/authorize`;
 			}
 
-			return ctx.json({
-				version: "1.0-draft",
-				provider_name: opts.providerName ?? "agent-auth",
-				description:
-					opts.providerDescription ??
-					"Agent Auth enabled service",
-				issuer,
-				algorithms: opts.allowedKeyAlgorithms,
-				modes: opts.modes,
-				approval_methods: opts.approvalMethods,
-				endpoints,
-				...(opts.jwksUri ? { jwks_uri: opts.jwksUri } : {}),
-				...(opts.requireAuthForCapabilities
-					? { capabilities_require_auth: true }
-					: {}),
-			});
+		const proofOfPresenceMethods: string[] = [];
+		if (opts.proofOfPresence?.enabled) {
+			proofOfPresenceMethods.push("webauthn");
+		}
+
+		return ctx.json({
+			version: "1.0-draft",
+			provider_name: opts.providerName ?? "agent-auth",
+			description:
+				opts.providerDescription ??
+				"Agent Auth enabled service",
+			issuer,
+			algorithms: opts.allowedKeyAlgorithms,
+			modes: opts.modes,
+			approval_methods: opts.approvalMethods,
+			...(proofOfPresenceMethods.length > 0
+				? { proof_of_presence_methods: proofOfPresenceMethods }
+				: {}),
+			endpoints,
+			...(opts.jwksUri ? { jwks_uri: opts.jwksUri } : {}),
+		});
 		},
 	);
 }

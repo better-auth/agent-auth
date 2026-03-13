@@ -16,9 +16,12 @@ import type {
 	ApprovalRequest,
 	ResolvedAgentAuthOptions,
 } from "../types";
+import type { CapabilityConstraints } from "../types";
 import {
 	buildApprovalInfo,
+	capabilityItemZ,
 	formatGrantsResponse,
+	normalizeCapabilities,
 	validateCapabilitiesExist,
 } from "./_helpers";
 
@@ -34,13 +37,13 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 		"/agent/request-capability",
 		{
 			method: "POST",
-			body: z.object({
-				capabilities: z.array(z.string()).min(1),
-				reason: z.string().optional(),
-				preferred_method: z.string().optional(),
-				login_hint: z.string().optional(),
-				binding_message: z.string().optional(),
-			}),
+		body: z.object({
+			capabilities: z.array(capabilityItemZ).min(1),
+			reason: z.string().optional(),
+			preferred_method: z.string().optional(),
+			login_hint: z.string().optional(),
+			binding_message: z.string().optional(),
+		}),
 			requireHeaders: true,
 			metadata: {
 				openapi: {
@@ -60,7 +63,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { capabilities: capabilityIds, reason, preferred_method: preferredMethod, login_hint: loginHint, binding_message: bindingMessage } = ctx.body;
+			const { capabilities: rawCapabilities, reason, preferred_method: preferredMethod, login_hint: loginHint, binding_message: bindingMessage } = ctx.body;
+		const { ids: capabilityIds, constraintsMap } = normalizeCapabilities(rawCapabilities);
 
 			// Validate blocked (§10.6)
 			if (opts.blockedCapabilities.length > 0) {
@@ -132,6 +136,12 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					alreadyPending.has(c),
 				);
 
+				// §5.4: return only the requested grants, not the full set
+				const requestedSet = new Set(capabilityIds);
+				const requestedGrants = existingGrants.filter((g) =>
+					requestedSet.has(g.capability),
+				);
+
 				const existingApproval =
 					await ctx.context.adapter.findOne<ApprovalRequest>({
 						model: TABLE.approval,
@@ -152,9 +162,9 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						agent_id: agentSession.agent.id,
 						status: "pending",
 						agent_capability_grants:
-						formatGrantsResponse(existingGrants, opts.capabilities),
-					approval: {
-						method: existingApproval.method,
+							formatGrantsResponse(requestedGrants, opts.capabilities),
+						approval: {
+							method: existingApproval.method,
 							expires_in: Math.floor(
 								(new Date(
 									existingApproval.expiresAt,
@@ -188,7 +198,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					agent_id: agentSession.agent.id,
 					status: "pending",
 					agent_capability_grants:
-						formatGrantsResponse(existingGrants, opts.capabilities),
+						formatGrantsResponse(requestedGrants, opts.capabilities),
 					approval,
 				});
 			}
@@ -240,31 +250,32 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			// Auto-approve
-			for (const capId of autoApprove) {
-				const expiresAt = await resolveGrantExpiresAt(
-					opts,
-					capId,
-					{
-						agentId: agentSession.agent.id,
-						hostId: agentSession.agent.hostId,
-						userId: agentSession.host?.userId ?? null,
-					},
-				);
-				await ctx.context.adapter.create({
-					model: TABLE.grant,
-					data: {
-						agentId: agentSession.agent.id,
-						capability: capId,
-						grantedBy: agentSession.host?.userId ?? null,
-						expiresAt,
-						status: "active",
-						reason: reason ?? null,
-						createdAt: now,
-						updatedAt: now,
-					},
-				});
-			}
+		// Auto-approve
+		for (const capId of autoApprove) {
+			const expiresAt = await resolveGrantExpiresAt(
+				opts,
+				capId,
+				{
+					agentId: agentSession.agent.id,
+					hostId: agentSession.agent.hostId,
+					userId: agentSession.host?.userId ?? null,
+				},
+			);
+			await ctx.context.adapter.create({
+				model: TABLE.grant,
+				data: {
+					agentId: agentSession.agent.id,
+					capability: capId,
+					grantedBy: agentSession.host?.userId ?? null,
+					expiresAt,
+					status: "active",
+					reason: reason ?? null,
+					constraints: constraintsMap.get(capId) ?? null,
+					createdAt: now,
+					updatedAt: now,
+				},
+			});
+		}
 
 			if (needsApproval.length === 0) {
 				if (autoApprove.length > 0) {
@@ -280,6 +291,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 					}, ctx);
 				}
 
+				// §5.4: return only the newly requested grants, not the full set
+				const newGrantSet = new Set(capabilityIds);
 				const updatedGrants =
 					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
 						model: TABLE.grant,
@@ -290,31 +303,35 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 							},
 						],
 					});
+				const requestedGrants = updatedGrants.filter((g) =>
+					newGrantSet.has(g.capability),
+				);
 
 				return ctx.json({
 					agent_id: agentSession.agent.id,
 					status: "active",
 					agent_capability_grants:
-						formatGrantsResponse(updatedGrants, opts.capabilities),
+						formatGrantsResponse(requestedGrants, opts.capabilities),
 				});
 			}
 
-			// Create pending grants
-			for (const capId of needsApproval) {
-				await ctx.context.adapter.create({
-					model: TABLE.grant,
-					data: {
-						agentId: agentSession.agent.id,
-						capability: capId,
-						grantedBy: agentSession.host?.userId ?? null,
-						expiresAt: null,
-						status: "pending",
-						reason: reason ?? null,
-						createdAt: now,
-						updatedAt: now,
-					},
-				});
-			}
+		// Create pending grants
+		for (const capId of needsApproval) {
+			await ctx.context.adapter.create({
+				model: TABLE.grant,
+				data: {
+					agentId: agentSession.agent.id,
+					capability: capId,
+					grantedBy: agentSession.host?.userId ?? null,
+					expiresAt: null,
+					status: "pending",
+					reason: reason ?? null,
+					constraints: constraintsMap.get(capId) ?? null,
+					createdAt: now,
+					updatedAt: now,
+				},
+			});
+		}
 
 			const approval = await buildApprovalInfo(
 				opts,
@@ -346,6 +363,8 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				},
 			}, ctx);
 
+			// §5.4: return only the newly requested grants, not the full set
+			const requestedSet = new Set(capabilityIds);
 			const allGrants =
 				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
 					model: TABLE.grant,
@@ -353,11 +372,14 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 						{ field: "agentId", value: agentSession.agent.id },
 					],
 				});
+			const requestedGrants = allGrants.filter((g) =>
+				requestedSet.has(g.capability),
+			);
 
 			return ctx.json({
 				agent_id: agentSession.agent.id,
 				status: "pending",
-				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),
+				agent_capability_grants: formatGrantsResponse(requestedGrants, opts.capabilities),
 				approval,
 			});
 		},

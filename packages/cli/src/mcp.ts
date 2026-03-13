@@ -4,21 +4,55 @@ import { z, type ZodRawShape } from "zod";
 import {
   getAgentAuthTools,
   type ToolParameters,
-} from "@better-auth/agent-auth-sdk";
+} from "@auth/agent";
 import { createClient, type ClientConfig } from "./client.js";
-
-const zodTypeMap: Record<string, () => z.ZodTypeAny> = {
-  string: () => z.string(),
-  number: () => z.number(),
-  boolean: () => z.boolean(),
-  object: () => z.record(z.string(), z.unknown()),
-};
 
 interface PropertyDescriptor {
   type?: string;
-  items?: { type?: string };
+  items?: PropertyDescriptor & { oneOf?: PropertyDescriptor[] };
   enum?: [string, ...string[]];
   description?: string;
+  properties?: Record<string, PropertyDescriptor>;
+  required?: string[];
+  oneOf?: PropertyDescriptor[];
+}
+
+function propToZod(prop: PropertyDescriptor): z.ZodTypeAny {
+  if (prop.oneOf && prop.oneOf.length >= 2) {
+    const [a, b, ...rest] = prop.oneOf.map(propToZod);
+    return z.union([a, b, ...rest] as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
+  }
+
+  if (prop.type === "array") {
+    const items = prop.items;
+    if (items?.oneOf) {
+      return z.array(propToZod(items));
+    }
+    return z.array(items?.type === "string" ? z.string() : z.unknown());
+  }
+
+  if (prop.enum) {
+    return z.enum(prop.enum);
+  }
+
+  if (prop.type === "object" && prop.properties) {
+    const shape: ZodRawShape = {};
+    const req = new Set(prop.required ?? []);
+    for (const [k, v] of Object.entries(prop.properties)) {
+      let s = propToZod(v);
+      if (v.description) s = s.describe(v.description);
+      shape[k] = req.has(k) ? s : s.optional();
+    }
+    return z.object(shape);
+  }
+
+  switch (prop.type) {
+    case "string": return z.string();
+    case "number": return z.number();
+    case "boolean": return z.boolean();
+    case "object": return z.record(z.string(), z.unknown());
+    default: return z.unknown();
+  }
 }
 
 function jsonSchemaToZod(params: ToolParameters): ZodRawShape | undefined {
@@ -31,17 +65,7 @@ function jsonSchemaToZod(params: ToolParameters): ZodRawShape | undefined {
 
   for (const [key, value] of entries) {
     const prop = value as PropertyDescriptor;
-    let schema: z.ZodTypeAny;
-
-    if (prop.type === "array") {
-      schema = z.array(
-        prop.items?.type === "string" ? z.string() : z.unknown(),
-      );
-    } else if (prop.enum) {
-      schema = z.enum(prop.enum);
-    } else {
-      schema = (zodTypeMap[prop.type ?? "string"] ?? (() => z.unknown()))();
-    }
+    let schema = propToZod(prop);
 
     if (prop.description) {
       schema = schema.describe(prop.description);
@@ -72,7 +96,7 @@ export async function startMcpServer(config: ClientConfig): Promise<void> {
   const tools = getAgentAuthTools(client);
 
   const server = new McpServer({
-    name: "agent-auth",
+    name: "auth-agent",
     version: "0.1.0",
   });
 

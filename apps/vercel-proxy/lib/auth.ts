@@ -1,5 +1,6 @@
 import { agentAuth } from "@better-auth/agent-auth";
 import { createFromOpenAPI } from "@better-auth/agent-auth/openapi";
+import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import { genericOAuth, anonymous } from "better-auth/plugins";
 import { db, getSetting, insertLog } from "./db";
@@ -14,6 +15,14 @@ const vercelSpec = await fetch(VERCEL_OPENAPI_URL).then((r) => r.json());
 const openapi = createFromOpenAPI(vercelSpec, {
   baseUrl: "https://api.vercel.com",
   defaultHostCapabilities: "GET",
+  approvalStrength: {
+    GET: "session",
+    HEAD: "session",
+    POST: "webauthn",
+    PUT: "webauthn",
+    PATCH: "webauthn",
+    DELETE: "webauthn",
+  },
   async resolveHeaders({ agentSession, ctx }) {
     const account = await ctx.context.adapter.findOne<{
       accessToken: string | null;
@@ -66,7 +75,11 @@ export const auth = betterAuth({
 
             const response = await fetch(
               "https://vercel.com/api/login/oauth/token",
-              { method: "POST", body: params },
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: params.toString(),
+              },
             );
 
             if (!response.ok) {
@@ -116,13 +129,20 @@ export const auth = betterAuth({
       ],
     }),
     anonymous(),
+    passkey({
+      rpName: "Vercel Agent Auth",
+    }),
     agentAuth({
       freshSessionWindow: () => {
         if (getSetting("freshSessionEnabled") !== "true") return 0;
         return parseInt(getSetting("freshSessionWindow") ?? "300", 10);
       },
       ...openapi,
+      allowDynamicHostRegistration: true,
       trustProxy: process.env.TRUST_PROXY === "true",
+      proofOfPresence: {
+        enabled: getSetting("webauthnEnabled") === "true",
+      },
       providerName: "Vercel",
       providerDescription:
         "Vercel is a cloud platform for deploying and hosting frontend applications, serverless functions, and full-stack web projects with automatic CI/CD, edge networking, and seamless Git integration.",

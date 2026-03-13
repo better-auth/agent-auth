@@ -233,4 +233,12 @@ export const AGENT_AUTH_ERROR_CODES = {
 		code: "execute_not_configured",
 		message: "Server has not configured a capability execution handler",
 	},
+	CONSTRAINT_VIOLATED: {
+		code: "constraint_violated",
+		message: "One or more capability constraints were violated",
+	},
+	UNKNOWN_CONSTRAINT_OPERATOR: {
+		code: "unknown_constraint_operator",
+		message: "Constraint contains an unrecognized operator",
+	},
 } as const satisfies Record<string, ErrorDef>;

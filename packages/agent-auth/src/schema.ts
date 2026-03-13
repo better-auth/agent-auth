@@ -1,5 +1,9 @@
 import type { BetterAuthPluginDBSchema } from "@better-auth/core/db";
 
+type ConstraintPrim = string | number | boolean;
+type ConstraintOps = { eq?: ConstraintPrim; min?: number; max?: number; in?: ConstraintPrim[]; not_in?: ConstraintPrim[] };
+type ConstraintRecord = Record<string, ConstraintPrim | ConstraintOps>;
+
 function parseJSON<T>(value: string): T {
 	try {
 		return JSON.parse(value) as T;
@@ -225,20 +229,35 @@ export const agentSchema = () =>
 					required: true,
 					input: false,
 				},
-				status: {
-					type: "string",
-					required: true,
-					input: false,
-					defaultValue: "active",
-				},
-				reason: {
-					type: "string",
-					required: false,
-					input: false,
+			status: {
+				type: "string",
+				required: true,
+				input: false,
+				defaultValue: "active",
+			},
+			reason: {
+				type: "string",
+				required: false,
+				input: false,
+			},
+			constraints: {
+				type: "string",
+				required: false,
+				input: false,
+				transform: {
+					input(value: unknown) {
+						if (!value) return null;
+						return typeof value === "string" ? value : JSON.stringify(value);
+					},
+					output(value: unknown) {
+						if (!value) return null;
+						return parseJSON<ConstraintRecord>(value as string);
+					},
 				},
 			},
 		},
-		approvalRequest: {
+	},
+	approvalRequest: {
 			fields: {
 				method: {
 					type: "string",

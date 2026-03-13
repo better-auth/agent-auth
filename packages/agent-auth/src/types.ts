@@ -12,6 +12,17 @@ import type { agentSchema } from "./schema";
  * Additional pass-through metadata (e.g. for direct client execution)
  * can be included via the index signature.
  */
+/**
+ * Required approval strength for a capability (§8.11).
+ *
+ * - `"none"` — auto-grant, no user interaction required.
+ * - `"session"` — requires an active user session (device auth / CIBA).
+ * - `"webauthn"` — requires proof of physical presence via WebAuthn
+ *   (fingerprint, face scan, hardware key). Agents with browser access
+ *   cannot bypass this.
+ */
+export type ApprovalStrength = "none" | "session" | "webauthn";
+
 export interface Capability {
 	name: string;
 	description: string;
@@ -20,6 +31,17 @@ export interface Capability {
 	 * `POST /capability/execute` (§6.11).
 	 */
 	input?: Record<string, unknown>;
+	/**
+	 * Required approval strength for this capability (§8.11).
+	 *
+	 * When set to `"webauthn"`, the approval endpoint requires a
+	 * WebAuthn assertion with `userVerification: "required"` before
+	 * granting the capability. This prevents AI agents with browser
+	 * access from auto-approving.
+	 *
+	 * @default "session"
+	 */
+	approvalStrength?: ApprovalStrength;
 	grant_status?: "granted" | "not_granted";
 	[key: string]: unknown;
 }
@@ -63,7 +85,7 @@ export type HostStatus =
 	| "revoked"
 	| "rejected";
 
-export type GrantStatus = "active" | "pending" | "denied";
+export type GrantStatus = "active" | "pending" | "denied" | "revoked";
 
 /** Host — §8.1. */
 export interface AgentHost {
@@ -112,6 +134,51 @@ export interface Agent {
  */
 export type AgentMetadata = Record<string, string | number | boolean | null>;
 
+/**
+ * Primitive types allowed in constraint operator values (§2.13).
+ */
+export type ConstraintPrimitive = string | number | boolean;
+
+/**
+ * Named constraint operators for a single field (§2.13).
+ *
+ * - `eq`     — exact value match
+ * - `min`    — inclusive lower bound (numeric)
+ * - `max`    — inclusive upper bound (numeric)
+ * - `in`     — value must be one of the listed items
+ * - `not_in` — value must NOT be one of the listed items
+ */
+export interface ConstraintOperators {
+	eq?: ConstraintPrimitive;
+	min?: number;
+	max?: number;
+	in?: ConstraintPrimitive[];
+	not_in?: ConstraintPrimitive[];
+}
+
+/**
+ * Constraint for a single capability argument field.
+ *
+ * A bare primitive is shorthand for `{ eq: value }`.
+ */
+export type ConstraintValue = ConstraintPrimitive | ConstraintOperators;
+
+/**
+ * Scoped constraints applied to a capability grant (§2.13).
+ *
+ * Keys are capability argument field names; values define allowed ranges.
+ * Example: `{ amount: { max: 1000 }, currency: { in: ["USD", "EUR"] } }`
+ */
+export type CapabilityConstraints = Record<string, ConstraintValue>;
+
+/**
+ * Normalized capability request after parsing `string | { name, constraints }`.
+ */
+export interface NormalizedCapability {
+	capabilityId: string;
+	constraints?: CapabilityConstraints;
+}
+
 /** Agent capability grant — §8.3. */
 export interface AgentCapabilityGrant {
 	id: string;
@@ -119,6 +186,7 @@ export interface AgentCapabilityGrant {
 	capability: string;
 	grantedBy: string | null;
 	reason: string | null;
+	constraints: CapabilityConstraints | null;
 	expiresAt: Date | null;
 	status: GrantStatus;
 	createdAt: Date;
@@ -221,6 +289,7 @@ export type AgentAuthPath =
 	| "/host/list"
 	| "/host/get"
 	| "/host/revoke"
+	| "/host/switch-account"
 	| "/host/update"
 	| "/host/rotate-key"
 	| "/agent/ciba/authorize"
@@ -499,6 +568,37 @@ export interface AgentAuthOptions {
 	 */
 	trustProxy?: boolean;
 	/**
+	 * Proof-of-presence (WebAuthn) configuration for the approval
+	 * endpoint (§8.11).
+	 *
+	 * When enabled, capabilities with `approvalStrength: "webauthn"` require
+	 * a WebAuthn assertion in the approval request. This ensures that a
+	 * human with physical access to an authenticator has explicitly approved
+	 * the capability — AI agents with browser control cannot bypass this.
+	 *
+	 * Requires the Better Auth passkey plugin to be installed.
+	 */
+	proofOfPresence?: {
+		/**
+		 * Enable WebAuthn-gated approvals.
+		 * @default false
+		 */
+		enabled?: boolean;
+		/**
+		 * The Relying Party ID for WebAuthn ceremonies. Usually the domain
+		 * name (e.g. `"example.com"`).
+		 *
+		 * When omitted, derived from `baseURL`.
+		 */
+		rpId?: string;
+		/**
+		 * Allowed origin(s) for WebAuthn assertions.
+		 *
+		 * When omitted, derived from `baseURL`.
+		 */
+		origin?: string | string[];
+	};
+	/**
 	 * Custom schema overrides for the agent tables.
 	 */
 	schema?: InferOptionSchema<ReturnType<typeof agentSchema>>;
@@ -578,6 +678,13 @@ export interface AgentAuthOptions {
 	}) => void | Promise<void>;
 }
 
+/** Resolved proof-of-presence configuration. */
+export interface ResolvedProofOfPresence {
+	enabled: boolean;
+	rpId: string;
+	origin: string[];
+}
+
 export type ResolvedAgentAuthOptions = Required<
 	Pick<
 		AgentAuthOptions,
@@ -601,8 +708,9 @@ export type ResolvedAgentAuthOptions = Required<
 		| "dangerouslySkipJtiCheck"
 		| "trustProxy"
 	>
-> &
-	AgentAuthOptions;
+> & {
+	proofOfPresence: ResolvedProofOfPresence;
+} & AgentAuthOptions;
 
 interface AgentAuthEventBase {
 	orgId?: string;

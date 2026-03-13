@@ -8,10 +8,10 @@ import type {
 	AgentJWK,
 	ResolvedAgentAuthOptions,
 } from "../types";
-import { verifyAgentJWT } from "../utils/crypto";
+import { verifyJWT } from "../utils/crypto";
 import type { JtiCacheStore } from "../utils/jti-cache";
 import type { JwksCacheStore } from "../utils/jwks-cache";
-import { activeGrants, formatGrantsResponse, verifyAudience } from "./_helpers";
+import { activeGrants, verifyAudience } from "./_helpers";
 
 /**
  * POST /agent/introspect
@@ -48,6 +48,9 @@ export function introspect(
 			let agentId: string;
 			try {
 				const decoded = decodeJwt(token);
+				const tokenHeader = decodeProtectedHeader(token);
+				// §4.5: introspected token must be an agent JWT
+				if (tokenHeader.typ !== "agent+jwt") return ctx.json(inactive);
 				if (!decoded.sub) return ctx.json(inactive);
 				agentId = decoded.sub;
 			} catch {
@@ -88,7 +91,7 @@ export function introspect(
 
 			if (!publicKey) return ctx.json(inactive);
 
-			const payload = await verifyAgentJWT({
+			const payload = await verifyJWT({
 				jwt: token,
 				publicKey,
 				maxAge: opts.jwtMaxAge,
@@ -104,10 +107,14 @@ export function introspect(
 			}
 
 			if (jtiCache && typeof payload.jti === "string") {
+				// Use same key format as middleware so introspection
+				// correctly detects tokens already consumed by API calls
 				const jtiKey = `${agent.id}:${payload.jti}`;
 				if (await jtiCache.has(jtiKey)) {
 					return ctx.json(inactive);
 				}
+				// Mark as seen so the same token can't be re-introspected
+				await jtiCache.add(jtiKey, opts.jwtMaxAge);
 			}
 
 			if (agent.expiresAt && new Date(agent.expiresAt) <= new Date()) {
@@ -135,13 +142,16 @@ export function introspect(
 				}
 			}
 
+			// §5.12: introspect MUST return compact grants (capability + status only)
 			return ctx.json({
 				active: true,
 				agent_id: agent.id,
 				host_id: agent.hostId,
 				user_id: agent.userId ?? null,
-			agent_capability_grants:
-				formatGrantsResponse(relevantGrants, opts.capabilities),
+				agent_capability_grants: relevantGrants.map((g) => ({
+					capability: g.capability,
+					status: g.status,
+				})),
 				mode: agent.mode,
 				expires_at: agent.expiresAt
 					? new Date(agent.expiresAt).toISOString()

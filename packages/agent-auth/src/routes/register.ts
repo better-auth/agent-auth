@@ -1,11 +1,12 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import { TABLE } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { hasCapability, parseCapabilityIds } from "../utils/capabilities";
-import { verifyAgentJWT } from "../utils/crypto";
+import { verifyJWT } from "../utils/crypto";
 import type { JwksCacheStore } from "../utils/jwks-cache";
 import { MemoryJwksCache } from "../utils/jwks-cache";
 import type { JtiCacheStore } from "../utils/jti-cache";
@@ -18,10 +19,12 @@ import type {
 } from "../types";
 import {
 	buildApprovalInfo,
+	capabilityItemZ,
 	createGrantRows,
 	findHostByKey,
 	formatGrantsResponse,
 	isDynamicHostAllowed,
+	normalizeCapabilities,
 	resolveDefaultHostCapabilities,
 	validateCapabilityIds,
 	validateCapabilitiesExist,
@@ -31,7 +34,7 @@ import {
 
 const registerBodySchema = z.object({
 	name: z.string().min(1),
-	capabilities: z.array(z.string()).optional(),
+	capabilities: z.array(capabilityItemZ).optional(),
 	reason: z.string().optional(),
 	mode: z.enum(["delegated", "autonomous"]).optional(),
 	preferred_method: z.string().optional(),
@@ -59,16 +62,20 @@ export function register(
 			},
 		},
 		async (ctx) => {
-		const {
-			name,
-			capabilities: requestedCapIds,
-			reason,
-			mode: rawMode,
-			preferred_method: preferredMethod,
-			host_name: bodyHostName,
-			login_hint: loginHint,
-			binding_message: bindingMessage,
-		} = ctx.body;
+	const {
+		name,
+		capabilities: rawCapabilities,
+		reason,
+		mode: rawMode,
+		preferred_method: preferredMethod,
+		host_name: bodyHostName,
+		login_hint: loginHint,
+		binding_message: bindingMessage,
+	} = ctx.body;
+
+	const { ids: requestedCapIds, constraintsMap } = rawCapabilities
+		? normalizeCapabilities(rawCapabilities)
+		: { ids: undefined as string[] | undefined, constraintsMap: new Map() };
 
 			// ---------- Require host JWT ----------
 			const authHeader = ctx.headers?.get("authorization");
@@ -96,8 +103,17 @@ export function register(
 
 			try {
 				decoded = decodeJwt(hostJWT);
-				if (decoded.sub) hostIdFromJwt = String(decoded.sub);
-			} catch {
+				const regHeader = decodeProtectedHeader(hostJWT);
+				// §4.2: Host JWTs MUST have typ: "host+jwt"
+				if (regHeader.typ !== "host+jwt") {
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
+				}
+				// §4.2: iss = JWK thumbprint is the host identifier
+				if (typeof decoded.iss === "string") {
+					hostIdFromJwt = decoded.iss;
+				}
+			} catch (e) {
+				if (e instanceof APIError) throw e;
 				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 
@@ -194,13 +210,14 @@ export function register(
 					}
 				}
 
-				const payload = await verifyAgentJWT({
+				const payload = await verifyJWT({
 					jwt: hostJWT,
 					publicKey: hostPubKey,
 					maxAge: opts.jwtMaxAge,
 				});
 
-				if (!payload || payload.sub !== hostRecord.id) {
+				// §4.2: iss identifies the host
+				if (!payload || payload.iss !== hostRecord.id) {
 					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
@@ -325,7 +342,7 @@ export function register(
 					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
-				const payload = await verifyAgentJWT({
+				const payload = await verifyJWT({
 					jwt: hostJWT,
 					publicKey: resolvedHostPubKey,
 					maxAge: opts.jwtMaxAge,
@@ -359,7 +376,7 @@ export function register(
 							ERR.INVALID_JWT,
 						);
 					}
-					const jtiKey = `host:${payload.sub ?? "dynamic"}:${payload.jti}`;
+					const jtiKey = `host:${payload.iss ?? "dynamic"}:${payload.jti}`;
 					if (jtiCache && (await jtiCache.has(jtiKey))) {
 						throw agentError(
 							"UNAUTHORIZED",
@@ -531,15 +548,14 @@ export function register(
 								model: TABLE.grant,
 								where: [{ field: "agentId", value: existing.id }],
 							});
-						const response: Record<string, unknown> = {
-							agent_id: existing.id,
-							host_id: hostId,
-							name: existing.name,
-							host_name: hostRecord?.name ?? null,
-							mode: existing.mode,
-							status: "pending",
-							agent_capability_grants: formatGrantsResponse(existingGrants, opts.capabilities),
-						};
+					const response: Record<string, unknown> = {
+						agent_id: existing.id,
+						host_id: hostId,
+						name: existing.name,
+						mode: existing.mode,
+						status: "pending",
+						agent_capability_grants: formatGrantsResponse(existingGrants, opts.capabilities),
+					};
 						const origin = new URL(ctx.context.baseURL).origin;
 						response.approval = await buildApprovalInfo(
 							opts,
@@ -598,31 +614,34 @@ export function register(
 				},
 			});
 
+		await createGrantRows(
+			ctx.context.adapter,
+			agent.id,
+			resolvedCaps,
+			userId,
+			{
+				reason: reason ?? null,
+				...(isHostPending ? { status: "pending" } : {}),
+			},
+			isHostPending ? undefined : { pluginOpts: opts, hostId, userId },
+			constraintsMap,
+		);
+
+		if (pendingCaps.length > 0) {
 			await createGrantRows(
 				ctx.context.adapter,
 				agent.id,
-				resolvedCaps,
+				pendingCaps,
 				userId,
 				{
-					reason: reason ?? null,
-					...(isHostPending ? { status: "pending" } : {}),
+					status: "pending",
+					reason:
+						reason ?? "Capability not pre-authorized by host",
 				},
-				isHostPending ? undefined : { pluginOpts: opts, hostId, userId },
+				undefined,
+				constraintsMap,
 			);
-
-			if (pendingCaps.length > 0) {
-				await createGrantRows(
-					ctx.context.adapter,
-					agent.id,
-					pendingCaps,
-					userId,
-					{
-						status: "pending",
-						reason:
-							reason ?? "Capability not pre-authorized by host",
-					},
-				);
-			}
+		}
 
 			const allGrants =
 				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
@@ -634,7 +653,6 @@ export function register(
 				agent_id: agent.id,
 				host_id: hostId,
 				name: agent.name,
-				host_name: hostRecord?.name ?? null,
 				mode: agent.mode,
 				status: agentStatus,
 				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),

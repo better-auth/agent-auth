@@ -2,6 +2,7 @@
 
 import { signIn, signOut, useSession } from "@/lib/auth-client";
 import { useEffect, useState, useCallback } from "react";
+import { startAuthentication } from "@simplewebauthn/browser";
 
 function VercelLogo({ className }: { className?: string }) {
 	return (
@@ -57,6 +58,12 @@ interface AgentInfo {
 		reason: string | null;
 	}>;
 	needsActivation?: boolean;
+	approvalContext?: "host_approval" | "new_scopes" | "agent_creation";
+	webauthn?: {
+		enabled: boolean;
+		hasPasskeys: boolean;
+		required: boolean;
+	};
 }
 
 export default function DeviceCapabilities({
@@ -107,28 +114,68 @@ export default function DeviceCapabilities({
 		}
 	}, [session, sessionPending, agentId, fetchAgentInfo]);
 
-	const handleAction = async (action: "approve" | "deny") => {
+	const handleAction = async (
+		action: "approve" | "deny",
+		webauthnResponse?: Record<string, unknown>,
+	) => {
 		setActionState(action === "approve" ? "approving" : "denying");
 		try {
+			const body: Record<string, unknown> = {
+				agent_id: agentId,
+				action,
+			};
+			if (webauthnResponse) {
+				body.webauthn_response = webauthnResponse;
+			}
+
 			const res = await fetch("/api/auth/agent/approve-capability", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ agent_id: agentId, action }),
+				body: JSON.stringify(body),
 			});
 			const data = await res.json();
-			if (!res.ok) {
-				if (data.code === "fresh_session_required") {
-					setReauthInfo({
-						max_age: data.max_age,
-						session_age: data.session_age,
+
+			// Check body-level codes first (Better Auth may return 200 for error responses)
+			if (data.code === "fresh_session_required") {
+				setReauthInfo({
+					max_age: data.max_age,
+					session_age: data.session_age,
+				});
+				setActionState("reauth_required");
+				return;
+			}
+
+			if (data.code === "webauthn_required" && data.webauthn_options) {
+				try {
+					const assertion = await startAuthentication({
+						optionsJSON: data.webauthn_options,
 					});
-					setActionState("reauth_required");
-					return;
+					await handleAction("approve", assertion as unknown as Record<string, unknown>);
+				} catch (webauthnErr) {
+					const msg =
+						webauthnErr instanceof Error
+							? webauthnErr.message
+							: "WebAuthn authentication was cancelled or failed.";
+					setError(msg);
+					setActionState("idle");
 				}
+				return;
+			}
+
+			if (data.code === "webauthn_not_enrolled") {
+				setError(
+					"You need to register a passkey (fingerprint/face) before you can approve these capabilities. Go to your account settings to add one.",
+				);
+				setActionState("idle");
+				return;
+			}
+
+			if (!res.ok || data.code) {
 				setError(data.message || "Action failed");
 				setActionState("idle");
 				return;
 			}
+
 			setResult(data);
 			setActionState("done");
 		} catch {
@@ -142,7 +189,7 @@ export default function DeviceCapabilities({
 		if (agentId) params.set("agent_id", agentId);
 		if (code) params.set("code", code);
 		const callbackURL = `/device/capabilities?${params.toString()}`;
-		signOut.mutate({
+		signOut({
 			fetchOptions: {
 				onSuccess: () => {
 					signIn.oauth2({
@@ -530,32 +577,71 @@ export default function DeviceCapabilities({
 							)}
 						</div>
 
-						<div className="border-t border-border px-5 py-4">
-							<div className="flex gap-3">
-								<button
-									onClick={() => handleAction("deny")}
-									disabled={actionState !== "idle"}
-									className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:border-red-500/30 hover:text-red-400 disabled:pointer-events-none disabled:opacity-50"
+					<div className="border-t border-border px-5 py-4">
+						{agentInfo?.webauthn?.required && (
+							<div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+								<svg
+									className="h-4 w-4 shrink-0 text-amber-400"
+									fill="none"
+									viewBox="0 0 24 24"
+									stroke="currentColor"
 								>
-									{actionState === "denying" ? (
-										<Spinner />
-									) : (
-										"Deny"
-									)}
-								</button>
-								<button
-									onClick={() => handleAction("approve")}
-									disabled={actionState !== "idle"}
-									className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg bg-white text-sm font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-								>
-									{actionState === "approving" ? (
-										<Spinner />
-									) : (
-										"Approve"
-									)}
-								</button>
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"
+									/>
+								</svg>
+								<p className="text-xs text-amber-300">
+									{agentInfo.approvalContext === "host_approval"
+										? "New host connection — biometric verification (fingerprint/Face ID) required."
+										: "New capability request — biometric verification (fingerprint/Face ID) required."}
+								</p>
 							</div>
+						)}
+						<div className="flex gap-3">
+							<button
+								onClick={() => handleAction("deny")}
+								disabled={actionState !== "idle"}
+								className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:border-red-500/30 hover:text-red-400 disabled:pointer-events-none disabled:opacity-50"
+							>
+								{actionState === "denying" ? (
+									<Spinner />
+								) : (
+									"Deny"
+								)}
+							</button>
+							<button
+								onClick={() => handleAction("approve")}
+								disabled={actionState !== "idle"}
+								className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-white text-sm font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+							>
+								{actionState === "approving" ? (
+									<Spinner />
+								) : (
+									<>
+										{agentInfo?.webauthn?.required && (
+											<svg
+												className="h-4 w-4"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												<path
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													strokeWidth={2}
+													d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"
+												/>
+											</svg>
+										)}
+										Approve
+									</>
+								)}
+							</button>
 						</div>
+					</div>
 					</div>
 
 					<p className="text-center text-xs text-muted/50">

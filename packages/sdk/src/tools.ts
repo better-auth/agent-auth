@@ -1,4 +1,5 @@
 import type { AgentAuthClient } from "./client";
+import type { CapabilityRequestItem } from "./types";
 
 export interface ToolParameters {
 	type: "object";
@@ -125,76 +126,113 @@ export function getAgentAuthTools(
 		},
 
 		{
-			name: "describe_capability",
-			description:
-				"Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
-			parameters: {
-				type: "object",
-				properties: {
-					provider: {
-						type: "string",
-						description: "Provider URL, issuer, or name",
-					},
-					name: {
-						type: "string",
-						description: "Capability name to describe",
-					},
+		name: "describe_capability",
+		description:
+			"Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
+		parameters: {
+			type: "object",
+			properties: {
+				provider: {
+					type: "string",
+					description: "Provider URL, issuer, or name",
 				},
-				required: ["provider", "name"],
+				name: {
+					type: "string",
+					description: "Capability name to describe",
+				},
+				agent_id: {
+					type: "string",
+					description: "Agent ID to include grant_status context",
+				},
 			},
-			async execute(args) {
-				return client.describeCapability({
-					provider: args.provider as string,
-					name: args.name as string,
-				});
-			},
+			required: ["provider", "name"],
 		},
+		async execute(args) {
+			return client.describeCapability({
+				provider: args.provider as string,
+				name: args.name as string,
+				agentId: args.agent_id as string | undefined,
+			});
+		},
+	},
 
 		// ── Step 3: Connect an agent ──
 
 		{
-			name: "connect_agent",
-			description:
-				"Step 3: Connect a new agent to a provider. YOU MUST CALL THIS before using any tool that requires an agent_id. Creates a keypair, registers the agent, and handles approval flow. Returns the agent_id you'll need for all subsequent operations (execute_capability, agent_status, sign_jwt, etc.).",
-			parameters: {
-				type: "object",
-				properties: {
-					provider: {
-						type: "string",
-						description: "Provider URL, issuer, or name",
-					},
-					capabilities: {
-						type: "array",
-						items: { type: "string" },
-						description: "Capabilities to request",
-					},
-					mode: {
-						type: "string",
-						enum: ["delegated", "autonomous"],
-						description: "Agent mode",
-					},
-					name: {
-						type: "string",
-						description: "Agent name",
-					},
-					reason: {
-						type: "string",
-						description: "Reason for requesting capabilities",
-					},
+		name: "connect_agent",
+		description:
+			"Step 3: Connect an agent to a provider. Reuses an existing identity if one is already active for this provider (requesting any missing capabilities automatically). Only creates a new agent if none exists or all are expired/revoked. Returns the agent_id you'll need for all subsequent operations.",
+		parameters: {
+			type: "object",
+			properties: {
+				provider: {
+					type: "string",
+					description: "Provider URL, issuer, or name",
 				},
-				required: ["provider"],
+				capabilities: {
+					type: "array",
+					items: {
+						oneOf: [
+							{ type: "string" },
+							{
+								type: "object",
+								properties: {
+									name: { type: "string" },
+									constraints: { type: "object", description: "Scoped constraints (§2.13), e.g. { amount: { max: 1000 } }" },
+								},
+								required: ["name"],
+							},
+						],
+					},
+					description: "Capabilities to request (strings or objects with constraints)",
+				},
+				mode: {
+					type: "string",
+					enum: ["delegated", "autonomous"],
+					description: "Agent mode",
+				},
+				name: {
+					type: "string",
+					description: "Agent name",
+				},
+				reason: {
+					type: "string",
+					description: "Reason for requesting capabilities",
+				},
+				preferred_method: {
+					type: "string",
+					description: "Preferred approval method (e.g. device_authorization, ciba)",
+				},
+				login_hint: {
+					type: "string",
+					description: "Login hint for CIBA approval (e.g. user email)",
+				},
+				binding_message: {
+					type: "string",
+					description: "Binding message shown during approval",
+				},
+				force_new: {
+					type: "boolean",
+					description: "Skip identity reuse and always register a new agent",
+				},
 			},
-			async execute(args, ctx) {
-				return client.connectAgent({
-					provider: args.provider as string,
-					capabilities: args.capabilities as string[] | undefined,
-					mode: args.mode as "delegated" | "autonomous" | undefined,
-					name: args.name as string | undefined,
-					reason: args.reason as string | undefined,
-					signal: ctx?.signal,
-				});
-			},
+			required: ["provider"],
 		},
+		async execute(args, ctx) {
+			return client.connectAgent({
+				provider: args.provider as string,
+				capabilities: args.capabilities as CapabilityRequestItem[] | undefined,
+				mode: args.mode as "delegated" | "autonomous" | undefined,
+				name: args.name as string | undefined,
+				reason: args.reason as string | undefined,
+				preferredMethod: args.preferred_method as string | undefined,
+				loginHint: args.login_hint as string | undefined,
+				bindingMessage: args.binding_message as string | undefined,
+				forceNew: args.force_new as boolean | undefined,
+				signal: ctx?.signal,
+			});
+		},
+	},
 
 		// ── Step 4: Use the agent ──
 
@@ -279,37 +317,64 @@ export function getAgentAuthTools(
 		},
 
 		{
-			name: "request_capability",
-			description:
-				"Request additional capabilities for an existing agent. Requires an agent_id from connect_agent.",
-			parameters: {
-				type: "object",
-				properties: {
-					agent_id: {
-						type: "string",
-						description: "Agent ID returned by connect_agent",
-					},
-					capabilities: {
-						type: "array",
-						items: { type: "string" },
-						description: "Capabilities to request",
-					},
-					reason: {
-						type: "string",
-						description: "Reason for request",
-					},
+		name: "request_capability",
+		description:
+			"Request additional capabilities for an existing agent. Requires an agent_id from connect_agent.",
+		parameters: {
+			type: "object",
+			properties: {
+				agent_id: {
+					type: "string",
+					description: "Agent ID returned by connect_agent",
 				},
-				required: ["agent_id", "capabilities"],
+				capabilities: {
+					type: "array",
+					items: {
+						oneOf: [
+							{ type: "string" },
+							{
+								type: "object",
+								properties: {
+									name: { type: "string" },
+									constraints: { type: "object", description: "Scoped constraints (§2.13)" },
+								},
+								required: ["name"],
+							},
+						],
+					},
+					description: "Capabilities to request (strings or objects with constraints)",
+				},
+				reason: {
+					type: "string",
+					description: "Reason for request",
+				},
+				preferred_method: {
+					type: "string",
+					description: "Preferred approval method",
+				},
+				login_hint: {
+					type: "string",
+					description: "Login hint for CIBA approval",
+				},
+				binding_message: {
+					type: "string",
+					description: "Binding message shown during approval",
+				},
 			},
-			async execute(args, ctx) {
-				return client.requestCapability({
-					agentId: args.agent_id as string,
-					capabilities: args.capabilities as string[],
-					reason: args.reason as string | undefined,
-					signal: ctx?.signal,
-				});
-			},
+			required: ["agent_id", "capabilities"],
 		},
+		async execute(args, ctx) {
+			return client.requestCapability({
+				agentId: args.agent_id as string,
+				capabilities: args.capabilities as CapabilityRequestItem[],
+				reason: args.reason as string | undefined,
+				preferredMethod: args.preferred_method as string | undefined,
+				loginHint: args.login_hint as string | undefined,
+				bindingMessage: args.binding_message as string | undefined,
+				signal: ctx?.signal,
+			});
+		},
+	},
 
 		{
 			name: "disconnect_agent",
