@@ -108,6 +108,10 @@ export function getAgentAuthTools(
 						description:
 							"Agent ID to see grant status (only after connect_agent)",
 					},
+					limit: {
+						type: "number",
+						description: "Maximum number of capabilities to return",
+					},
 					cursor: {
 						type: "string",
 						description: "Pagination cursor",
@@ -120,119 +124,120 @@ export function getAgentAuthTools(
 					provider: args.provider as string,
 					query: args.query as string | undefined,
 					agentId: args.agent_id as string | undefined,
+					limit: args.limit as number | undefined,
 					cursor: args.cursor as string | undefined,
 				});
 			},
 		},
 
 		{
-		name: "describe_capability",
-		description:
-			"Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
-		parameters: {
-			type: "object",
-			properties: {
-				provider: {
-					type: "string",
-					description: "Provider URL, issuer, or name",
+			name: "describe_capability",
+			description:
+				"Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
+			parameters: {
+				type: "object",
+				properties: {
+					provider: {
+						type: "string",
+						description: "Provider URL, issuer, or name",
+					},
+					name: {
+						type: "string",
+						description: "Capability name to describe",
+					},
+					agent_id: {
+						type: "string",
+						description: "Agent ID to include grant_status context",
+					},
 				},
-				name: {
-					type: "string",
-					description: "Capability name to describe",
-				},
-				agent_id: {
-					type: "string",
-					description: "Agent ID to include grant_status context",
-				},
+				required: ["provider", "name"],
 			},
-			required: ["provider", "name"],
+			async execute(args) {
+				return client.describeCapability({
+					provider: args.provider as string,
+					name: args.name as string,
+					agentId: args.agent_id as string | undefined,
+				});
+			},
 		},
-		async execute(args) {
-			return client.describeCapability({
-				provider: args.provider as string,
-				name: args.name as string,
-				agentId: args.agent_id as string | undefined,
-			});
-		},
-	},
 
 		// ── Step 3: Connect an agent ──
 
 		{
-		name: "connect_agent",
-		description:
-			"Step 3: Connect an agent to a provider. Reuses an existing identity if one is already active for this provider (requesting any missing capabilities automatically). Only creates a new agent if none exists or all are expired/revoked. Returns the agent_id you'll need for all subsequent operations.",
-		parameters: {
-			type: "object",
-			properties: {
-				provider: {
-					type: "string",
-					description: "Provider URL, issuer, or name",
-				},
-				capabilities: {
-					type: "array",
-					items: {
-						oneOf: [
-							{ type: "string" },
-							{
-								type: "object",
-								properties: {
-									name: { type: "string" },
-									constraints: { type: "object", description: "Scoped constraints (§2.13), e.g. { amount: { max: 1000 } }" },
-								},
-								required: ["name"],
-							},
-						],
+			name: "connect_agent",
+			description:
+				"Step 3: Connect an agent to a provider. Reuses an existing identity if one is already active for this provider (requesting any missing capabilities automatically). Only creates a new agent if none exists or all are expired/revoked. Returns the agent_id you'll need for all subsequent operations.",
+			parameters: {
+				type: "object",
+				properties: {
+					provider: {
+						type: "string",
+						description: "Provider URL, issuer, or name",
 					},
-					description: "Capabilities to request (strings or objects with constraints)",
+					capabilities: {
+						type: "array",
+						items: {
+							oneOf: [
+								{ type: "string" },
+								{
+									type: "object",
+									properties: {
+										name: { type: "string" },
+										constraints: { type: "object", description: "Scoped constraints (§2.13), e.g. { amount: { max: 1000 } }" },
+									},
+									required: ["name"],
+								},
+							],
+						},
+						description: "Capabilities to request (strings or objects with constraints)",
+					},
+					mode: {
+						type: "string",
+						enum: ["delegated", "autonomous"],
+						description: "Agent mode",
+					},
+					name: {
+						type: "string",
+						description: "Agent name",
+					},
+					reason: {
+						type: "string",
+						description: "Reason for requesting capabilities",
+					},
+					preferred_method: {
+						type: "string",
+						description: "Preferred approval method (e.g. device_authorization, ciba)",
+					},
+					login_hint: {
+						type: "string",
+						description: "Login hint for CIBA approval (e.g. user email)",
+					},
+					binding_message: {
+						type: "string",
+						description: "Binding message shown during approval",
+					},
+					force_new: {
+						type: "boolean",
+						description: "Skip identity reuse and always register a new agent",
+					},
 				},
-				mode: {
-					type: "string",
-					enum: ["delegated", "autonomous"],
-					description: "Agent mode",
-				},
-				name: {
-					type: "string",
-					description: "Agent name",
-				},
-				reason: {
-					type: "string",
-					description: "Reason for requesting capabilities",
-				},
-				preferred_method: {
-					type: "string",
-					description: "Preferred approval method (e.g. device_authorization, ciba)",
-				},
-				login_hint: {
-					type: "string",
-					description: "Login hint for CIBA approval (e.g. user email)",
-				},
-				binding_message: {
-					type: "string",
-					description: "Binding message shown during approval",
-				},
-				force_new: {
-					type: "boolean",
-					description: "Skip identity reuse and always register a new agent",
-				},
+				required: ["provider"],
 			},
-			required: ["provider"],
+			async execute(args, ctx) {
+				return client.connectAgent({
+					provider: args.provider as string,
+					capabilities: args.capabilities as CapabilityRequestItem[] | undefined,
+					mode: args.mode as "delegated" | "autonomous" | undefined,
+					name: args.name as string | undefined,
+					reason: args.reason as string | undefined,
+					preferredMethod: args.preferred_method as string | undefined,
+					loginHint: args.login_hint as string | undefined,
+					bindingMessage: args.binding_message as string | undefined,
+					forceNew: args.force_new as boolean | undefined,
+					signal: ctx?.signal,
+				});
+			},
 		},
-		async execute(args, ctx) {
-			return client.connectAgent({
-				provider: args.provider as string,
-				capabilities: args.capabilities as CapabilityRequestItem[] | undefined,
-				mode: args.mode as "delegated" | "autonomous" | undefined,
-				name: args.name as string | undefined,
-				reason: args.reason as string | undefined,
-				preferredMethod: args.preferred_method as string | undefined,
-				loginHint: args.login_hint as string | undefined,
-				bindingMessage: args.binding_message as string | undefined,
-				forceNew: args.force_new as boolean | undefined,
-				signal: ctx?.signal,
-			});
-		},
-	},
 
 		// ── Step 4: Use the agent ──
 
@@ -317,64 +322,64 @@ export function getAgentAuthTools(
 		},
 
 		{
-		name: "request_capability",
-		description:
-			"Request additional capabilities for an existing agent. Requires an agent_id from connect_agent.",
-		parameters: {
-			type: "object",
-			properties: {
-				agent_id: {
-					type: "string",
-					description: "Agent ID returned by connect_agent",
-				},
-				capabilities: {
-					type: "array",
-					items: {
-						oneOf: [
-							{ type: "string" },
-							{
-								type: "object",
-								properties: {
-									name: { type: "string" },
-									constraints: { type: "object", description: "Scoped constraints (§2.13)" },
-								},
-								required: ["name"],
-							},
-						],
+			name: "request_capability",
+			description:
+				"Request additional capabilities for an existing agent. Requires an agent_id from connect_agent.",
+			parameters: {
+				type: "object",
+				properties: {
+					agent_id: {
+						type: "string",
+						description: "Agent ID returned by connect_agent",
 					},
-					description: "Capabilities to request (strings or objects with constraints)",
+					capabilities: {
+						type: "array",
+						items: {
+							oneOf: [
+								{ type: "string" },
+								{
+									type: "object",
+									properties: {
+										name: { type: "string" },
+										constraints: { type: "object", description: "Scoped constraints (§2.13)" },
+									},
+									required: ["name"],
+								},
+							],
+						},
+						description: "Capabilities to request (strings or objects with constraints)",
+					},
+					reason: {
+						type: "string",
+						description: "Reason for request",
+					},
+					preferred_method: {
+						type: "string",
+						description: "Preferred approval method",
+					},
+					login_hint: {
+						type: "string",
+						description: "Login hint for CIBA approval",
+					},
+					binding_message: {
+						type: "string",
+						description: "Binding message shown during approval",
+					},
 				},
-				reason: {
-					type: "string",
-					description: "Reason for request",
-				},
-				preferred_method: {
-					type: "string",
-					description: "Preferred approval method",
-				},
-				login_hint: {
-					type: "string",
-					description: "Login hint for CIBA approval",
-				},
-				binding_message: {
-					type: "string",
-					description: "Binding message shown during approval",
-				},
+				required: ["agent_id", "capabilities"],
 			},
-			required: ["agent_id", "capabilities"],
+			async execute(args, ctx) {
+				return client.requestCapability({
+					agentId: args.agent_id as string,
+					capabilities: args.capabilities as CapabilityRequestItem[],
+					reason: args.reason as string | undefined,
+					preferredMethod: args.preferred_method as string | undefined,
+					loginHint: args.login_hint as string | undefined,
+					bindingMessage: args.binding_message as string | undefined,
+					signal: ctx?.signal,
+				});
+			},
 		},
-		async execute(args, ctx) {
-			return client.requestCapability({
-				agentId: args.agent_id as string,
-				capabilities: args.capabilities as CapabilityRequestItem[],
-				reason: args.reason as string | undefined,
-				preferredMethod: args.preferred_method as string | undefined,
-				loginHint: args.login_hint as string | undefined,
-				bindingMessage: args.binding_message as string | undefined,
-				signal: ctx?.signal,
-			});
-		},
-	},
 
 		{
 			name: "disconnect_agent",
@@ -490,6 +495,77 @@ export function getAgentAuthTools(
 	];
 }
 
+// ─── Tool Filtering ─────────────────────────────────────────
+
+export type FilterToolsOptions =
+	| { only: string[]; exclude?: never }
+	| { only?: never; exclude: string[] };
+
+/**
+ * Filter tools to a subset by name.
+ *
+ * ```ts
+ * filterTools(tools, { only: ["execute_capability", "agent_status"] });
+ * filterTools(tools, { exclude: ["sign_jwt", "rotate_host_key"] });
+ * ```
+ */
+export function filterTools(
+	tools: AgentAuthTool[],
+	opts: FilterToolsOptions,
+): AgentAuthTool[] {
+	const knownNames = new Set(tools.map((t) => t.name));
+
+	if (opts.only) {
+		const nameSet = new Set(opts.only);
+		for (const name of nameSet) {
+			if (!knownNames.has(name)) {
+				console.warn(`filterTools: unknown tool name "${name}" in "only" list`);
+			}
+		}
+		return tools.filter((t) => nameSet.has(t.name));
+	}
+	if (opts.exclude) {
+		const nameSet = new Set(opts.exclude);
+		for (const name of nameSet) {
+			if (!knownNames.has(name)) {
+				console.warn(`filterTools: unknown tool name "${name}" in "exclude" list`);
+			}
+		}
+		return tools.filter((t) => !nameSet.has(t.name));
+	}
+	return tools;
+}
+
+// ─── Safe execution wrapper ─────────────────────────────────
+
+export interface ToolErrorResult {
+	error: string;
+	code?: string;
+}
+
+async function safeExecute(
+	tool: AgentAuthTool,
+	args: Record<string, unknown>,
+	context?: ToolContext,
+): Promise<unknown> {
+	try {
+		return await tool.execute(args, context);
+	} catch (err: unknown) {
+		if (
+			err &&
+			typeof err === "object" &&
+			"code" in err &&
+			"message" in err
+		) {
+			const e = err as { code: string; message: string };
+			return { error: e.message, code: e.code } satisfies ToolErrorResult;
+		}
+		const message =
+			err instanceof Error ? err.message : "Unknown error";
+		return { error: message } satisfies ToolErrorResult;
+	}
+}
+
 // ─── Framework Adapters ─────────────────────────────────────
 
 export interface OpenAIToolDefinition {
@@ -498,6 +574,7 @@ export interface OpenAIToolDefinition {
 		name: string;
 		description: string;
 		parameters: ToolParameters;
+		strict?: boolean;
 	};
 }
 
@@ -510,11 +587,21 @@ export interface OpenAITools {
 	) => Promise<unknown>;
 }
 
+export interface OpenAIToolsOptions {
+	/**
+	 * Enable OpenAI strict mode (structured outputs).
+	 * Adds `strict: true` and `additionalProperties: false`
+	 * to each function definition, preventing the model from
+	 * hallucinating arguments.
+	 */
+	strict?: boolean;
+}
+
 /**
  * Convert agent auth tools to OpenAI function calling format.
  *
  * ```ts
- * const { definitions, execute } = toOpenAITools(tools);
+ * const { definitions, execute } = toOpenAITools(tools, { strict: true });
  *
  * const res = await openai.chat.completions.create({
  *   model: "gpt-4o",
@@ -530,18 +617,43 @@ export interface OpenAITools {
  * }
  * ```
  */
-export function toOpenAITools(tools: AgentAuthTool[]): OpenAITools {
+function addAdditionalPropertiesFalse(schema: ToolParameters): ToolParameters {
+	const props: ToolParameters["properties"] = {};
+	for (const [key, prop] of Object.entries(schema.properties)) {
+		if (prop.type === "object" && prop.properties && typeof prop.properties === "object") {
+			const nested = addAdditionalPropertiesFalse({
+				type: "object",
+				properties: prop.properties as ToolParameters["properties"],
+			});
+			props[key] = { ...prop, properties: nested.properties, additionalProperties: false };
+		} else {
+			props[key] = prop;
+		}
+	}
+	return { ...schema, properties: props, additionalProperties: false } as ToolParameters;
+}
+
+export function toOpenAITools(
+	tools: AgentAuthTool[],
+	opts?: OpenAIToolsOptions,
+): OpenAITools {
 	const handlerMap = new Map<string, AgentAuthTool>();
 	const definitions: OpenAIToolDefinition[] = [];
+	const strict = opts?.strict ?? false;
 
 	for (const tool of tools) {
 		handlerMap.set(tool.name, tool);
+		const params = strict
+			? addAdditionalPropertiesFalse(tool.parameters)
+			: tool.parameters;
+
 		definitions.push({
 			type: "function",
 			function: {
 				name: tool.name,
 				description: tool.description,
-				parameters: tool.parameters,
+				parameters: params,
+				...(strict ? { strict: true } : {}),
 			},
 		});
 	}
@@ -551,9 +663,9 @@ export function toOpenAITools(tools: AgentAuthTool[]): OpenAITools {
 		async execute(name, args, context) {
 			const tool = handlerMap.get(name);
 			if (!tool) {
-				throw new Error(`Unknown tool: ${name}`);
+				return { error: `Unknown tool: ${name}`, code: "unknown_tool" } satisfies ToolErrorResult;
 			}
-			return tool.execute(args, context);
+			return safeExecute(tool, args, context);
 		},
 	};
 }
@@ -567,17 +679,30 @@ export interface AISDKTool {
 	) => Promise<unknown>;
 }
 
+export interface AISDKToolsOptions {
+	/**
+	 * The `jsonSchema` function from the `ai` package.
+	 * Wraps raw JSON Schema into the AI SDK's schema type.
+	 *
+	 * If omitted, the adapter will attempt to auto-import
+	 * `jsonSchema` from `"ai"`. Pass it explicitly to avoid
+	 * the dynamic import or if using a non-standard bundle.
+	 */
+	jsonSchema?: (schema: ToolParameters) => unknown;
+}
+
 /**
  * Convert agent auth tools to Vercel AI SDK format.
  *
- * Pass the `jsonSchema` function from the `ai` package to wrap
- * the JSON Schema parameters into the AI SDK's schema type.
+ * The adapter auto-imports `jsonSchema` from `"ai"` if not provided.
+ * Pass it explicitly if you want to avoid the dynamic import:
  *
  * ```ts
- * import { generateText } from "ai";
- * import { jsonSchema } from "ai";
+ * import { generateText, jsonSchema } from "ai";
+ * import { AgentAuthClient, getAgentAuthTools, toAISDKTools } from "@auth/agent";
  *
- * const tools = toAISDKTools(agentAuthTools, { jsonSchema });
+ * const client = new AgentAuthClient();
+ * const tools = await toAISDKTools(getAgentAuthTools(client));
  *
  * const { text } = await generateText({
  *   model: openai("gpt-4o"),
@@ -586,19 +711,128 @@ export interface AISDKTool {
  * });
  * ```
  */
-export function toAISDKTools(
+export async function toAISDKTools(
 	tools: AgentAuthTool[],
-	opts: {
-		jsonSchema: (schema: ToolParameters) => unknown;
-	},
-): Record<string, AISDKTool> {
+	opts?: AISDKToolsOptions,
+): Promise<Record<string, AISDKTool>> {
+	let wrapSchema = opts?.jsonSchema;
+	if (!wrapSchema) {
+		try {
+			const mod = "ai";
+			const ai = await (import(/* webpackIgnore: true */ mod) as Promise<{ jsonSchema: (s: ToolParameters) => unknown }>);
+			wrapSchema = ai.jsonSchema;
+		} catch {
+			throw new Error(
+				'toAISDKTools: could not import "ai" package. ' +
+					"Install it (`npm i ai`) or pass { jsonSchema } explicitly.",
+			);
+		}
+	}
+
+	const wrap = wrapSchema;
 	const result: Record<string, AISDKTool> = {};
 	for (const tool of tools) {
 		result[tool.name] = {
 			description: tool.description,
-			parameters: opts.jsonSchema(tool.parameters),
-			execute: (args, context) => tool.execute(args, context),
+			parameters: wrap(tool.parameters),
+			execute: (args, context) => safeExecute(tool, args, context),
 		};
 	}
 	return result;
+}
+
+// ─── Anthropic Adapter ──────────────────────────────────────
+
+export interface AnthropicToolDefinition {
+	name: string;
+	description: string;
+	input_schema: ToolParameters;
+}
+
+export interface AnthropicToolUseBlock {
+	type: "tool_use";
+	id: string;
+	name: string;
+	input: Record<string, unknown>;
+}
+
+export interface AnthropicToolResultBlock {
+	type: "tool_result";
+	tool_use_id: string;
+	content: string;
+}
+
+export interface AnthropicTools {
+	definitions: AnthropicToolDefinition[];
+	/**
+	 * Process `tool_use` blocks from an assistant response.
+	 * Executes each tool call and returns `tool_result` blocks
+	 * ready to append to the next user message.
+	 *
+	 * ```ts
+	 * const response = await anthropic.messages.create({
+	 *   model: "claude-sonnet-4-20250514",
+	 *   tools: definitions,
+	 *   messages,
+	 * });
+	 *
+	 * const toolUseBlocks = response.content.filter(b => b.type === "tool_use");
+	 * const results = await processToolUse(toolUseBlocks);
+	 * messages.push(
+	 *   { role: "assistant", content: response.content },
+	 *   { role: "user", content: results },
+	 * );
+	 * ```
+	 */
+	processToolUse: (
+		blocks: AnthropicToolUseBlock[],
+		context?: ToolContext,
+	) => Promise<AnthropicToolResultBlock[]>;
+}
+
+/**
+ * Convert agent auth tools to Anthropic Claude format.
+ *
+ * ```ts
+ * const { definitions, processToolUse } = toAnthropicTools(tools);
+ *
+ * const res = await anthropic.messages.create({
+ *   model: "claude-sonnet-4-20250514",
+ *   max_tokens: 1024,
+ *   tools: definitions,
+ *   messages: [{ role: "user", content: "List my Vercel domains" }],
+ * });
+ * ```
+ */
+export function toAnthropicTools(tools: AgentAuthTool[]): AnthropicTools {
+	const handlerMap = new Map<string, AgentAuthTool>();
+	const definitions: AnthropicToolDefinition[] = [];
+
+	for (const tool of tools) {
+		handlerMap.set(tool.name, tool);
+		definitions.push({
+			name: tool.name,
+			description: tool.description,
+			input_schema: tool.parameters,
+		});
+	}
+
+	return {
+		definitions,
+		async processToolUse(blocks, context) {
+			return Promise.all(
+				blocks.map(async (block) => {
+					const tool = handlerMap.get(block.name);
+					const result = tool
+						? await safeExecute(tool, block.input, context)
+						: { error: `Unknown tool: ${block.name}`, code: "unknown_tool" };
+					return {
+						type: "tool_result" as const,
+						tool_use_id: block.id,
+						content: JSON.stringify(result),
+					};
+				}),
+			);
+		},
+	};
 }

@@ -42,13 +42,14 @@ const result = await client.executeCapability({
 
 ### Vercel AI SDK
 
+`toAISDKTools` auto-imports `jsonSchema` from the `ai` package. Pass it explicitly if preferred:
+
 ```ts
 import { generateText } from "ai";
-import { jsonSchema } from "ai";
 import { AgentAuthClient, getAgentAuthTools, toAISDKTools } from "@auth/agent";
 
 const client = new AgentAuthClient();
-const tools = toAISDKTools(getAgentAuthTools(client), { jsonSchema });
+const tools = await toAISDKTools(getAgentAuthTools(client));
 
 const { text } = await generateText({
   model: openai("gpt-4o"),
@@ -57,13 +58,25 @@ const { text } = await generateText({
 });
 ```
 
+To pass `jsonSchema` explicitly (avoids the dynamic import):
+
+```ts
+import { generateText, jsonSchema } from "ai";
+import { AgentAuthClient, getAgentAuthTools, toAISDKTools } from "@auth/agent";
+
+const client = new AgentAuthClient();
+const tools = await toAISDKTools(getAgentAuthTools(client), { jsonSchema });
+```
+
 ### OpenAI Function Calling
 
 ```ts
 import { AgentAuthClient, getAgentAuthTools, toOpenAITools } from "@auth/agent";
 
 const client = new AgentAuthClient();
-const { definitions, execute } = toOpenAITools(getAgentAuthTools(client));
+const { definitions, execute } = toOpenAITools(getAgentAuthTools(client), {
+  strict: true, // structured outputs — prevents hallucinated arguments
+});
 
 const res = await openai.chat.completions.create({
   model: "gpt-4o",
@@ -74,6 +87,39 @@ const res = await openai.chat.completions.create({
 for (const call of res.choices[0].message.tool_calls ?? []) {
   const result = await execute(call.function.name, JSON.parse(call.function.arguments));
 }
+```
+
+### Anthropic Claude
+
+```ts
+import { AgentAuthClient, getAgentAuthTools, toAnthropicTools } from "@auth/agent";
+
+const client = new AgentAuthClient();
+const { definitions, processToolUse } = toAnthropicTools(getAgentAuthTools(client));
+
+const res = await anthropic.messages.create({
+  model: "claude-sonnet-4-20250514",
+  max_tokens: 1024,
+  tools: definitions,
+  messages,
+});
+
+const toolUseBlocks = res.content.filter((b) => b.type === "tool_use");
+if (toolUseBlocks.length > 0) {
+  const results = await processToolUse(toolUseBlocks);
+  messages.push(
+    { role: "assistant", content: res.content },
+    { role: "user", content: results },
+  );
+}
+```
+
+### Error Handling
+
+All adapters wrap tool execution errors as structured `{ error, code }` objects instead of throwing. This lets models recover gracefully:
+
+```json
+{ "error": "Capability not granted", "code": "capability_not_granted" }
 ```
 
 ## SDK Tools
@@ -97,6 +143,27 @@ The SDK exposes protocol tools that map to the agent lifecycle:
 | `rotate_agent_key` | Rotate agent keypair |
 | `rotate_host_key` | Rotate host keypair |
 | `enroll_host` | Enroll host with enrollment token |
+
+## Filtering Tools
+
+Use `filterTools` to expose only the tools your agent needs:
+
+```ts
+import { getAgentAuthTools, filterTools } from "@auth/agent";
+
+const allTools = getAgentAuthTools(client);
+
+const minimal = filterTools(allTools, { only: ["execute_capability", "agent_status"] });
+const safe = filterTools(allTools, { exclude: ["sign_jwt", "rotate_host_key"] });
+```
+
+## Subpath Import
+
+For lighter imports when you only need tools + adapters (no client, crypto, or storage):
+
+```ts
+import { getAgentAuthTools, toOpenAITools, filterTools } from "@auth/agent/tools";
+```
 
 ## Constraints (Section 2.13)
 
