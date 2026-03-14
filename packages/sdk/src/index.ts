@@ -4,7 +4,7 @@ export { generateKeypair, signHostJWT, signAgentJWT } from "./crypto";
 export { discoverProvider, searchProviders, searchRegistryFull, lookupByUrl } from "./discovery";
 export { detectHostName, detectTool } from "./host-name";
 export { AgentAuthSDKError } from "./types";
-export { getAgentAuthTools, toOpenAITools, toAISDKTools } from "./tools";
+export { getAgentAuthTools, filterTools, toOpenAITools, toAISDKTools, toAnthropicTools } from "./tools";
 
 export type {
 	AgentJWK,
@@ -47,7 +47,15 @@ export type {
 	AgentAuthTool,
 	ToolParameters,
 	ToolContext,
+	ToolErrorResult,
+	FilterToolsOptions,
 	OpenAIToolDefinition,
 	OpenAITools,
+	OpenAIToolsOptions,
 	AISDKTool,
+	AISDKToolsOptions,
+	AnthropicToolDefinition,
+	AnthropicToolUseBlock,
+	AnthropicToolResultBlock,
+	AnthropicTools,
 } from "./tools";
