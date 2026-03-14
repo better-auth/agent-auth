@@ -13,6 +13,12 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       }
+    },
+    "./tools": {
+      "import": {
+        "types": "./dist/tools-entry.d.ts",
+        "default": "./dist/tools-entry.js"
+      }
     }
   },
   "files": [
@@ -25,9 +31,18 @@
   "dependencies": {
     "jose": "^6.0.0"
   },
+  "peerDependencies": {
+    "ai": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^25.3.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.0"
   }
 }
