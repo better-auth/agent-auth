@@ -11,6 +11,7 @@ import type {
 	CapabilitiesResponse,
 	Capability,
 	CapabilityGrant,
+	CapabilityRequestItem,
 	EnrollHostResponse,
 	ExecuteCapabilityResponse,
 	HostIdentity,
@@ -241,15 +242,23 @@ export class AgentAuthClient {
 	async describeCapability(opts: {
 		provider: string;
 		name: string;
+		agentId?: string;
 	}): Promise<Capability> {
 		const config = await this.resolveConfig(opts.provider);
 		const describePath = config.endpoints.describe_capability ?? "/capability/describe";
 		const url = new URL(describePath, config.issuer);
 		url.searchParams.set("name", opts.name);
 
+		const headers: Record<string, string> = { accept: "application/json" };
+
+		if (opts.agentId) {
+			const token = await this.signJwt({ agentId: opts.agentId });
+			headers.authorization = `Bearer ${token.token}`;
+		}
+
 		const res = await this.fetchFn(url.toString(), {
 			method: "GET",
-			headers: { accept: "application/json" },
+			headers,
 		});
 
 		if (!res.ok) {
@@ -264,16 +273,25 @@ export class AgentAuthClient {
 	/**
 	 * Connect an agent to a service — §7.3.
 	 *
-	 * Generates an agent keypair, registers the agent on the server
-	 * via host JWT, handles approval if needed, and stores the connection.
+	 * If the client already has an active connection for this provider,
+	 * it reuses the existing identity (verifying server-side status).
+	 * Otherwise, generates a new agent keypair, registers the agent on
+	 * the server via host JWT, handles approval if needed, and stores
+	 * the connection.
+	 *
+	 * Pass `forceNew: true` to skip reuse and always create a new agent.
 	 */
 	async connectAgent(opts: {
 		provider: string;
-		capabilities?: string[];
+		capabilities?: CapabilityRequestItem[];
 		mode?: AgentMode;
 		reason?: string;
 		preferredMethod?: string;
+		loginHint?: string;
+		bindingMessage?: string;
 		name?: string;
+		/** Skip identity reuse and always register a new agent. */
+		forceNew?: boolean;
 		/**
 		 * Per-call abort signal. When aborted, the approval polling
 		 * loop exits immediately. Combined with the client-level
@@ -287,13 +305,19 @@ export class AgentAuthClient {
 		capabilityGrants: CapabilityGrant[];
 	}> {
 		const config = await this.resolveConfig(opts.provider);
+
+		if (!opts.forceNew) {
+			const existing = await this.findActiveConnection(config, opts.capabilities);
+			if (existing) return existing;
+		}
+
 		const { regBody, host, agentKeypair } =
 			await this.registerAgent(config, opts);
 
 		const connection: AgentConnection = {
 			agentId: regBody.agent_id,
 			hostId: regBody.host_id,
-			hostName: regBody.host_name ?? this.hostName,
+			hostName: this.hostName,
 			providerName: config.provider_name,
 			issuer: config.issuer,
 			mode: regBody.mode,
@@ -332,6 +356,81 @@ export class AgentAuthClient {
 		};
 	}
 
+	/**
+	 * Look for an existing active connection for a provider and reuse it.
+	 * If the agent needs additional capabilities, requests them automatically.
+	 * Returns null if no reusable connection is found.
+	 */
+	private async findActiveConnection(
+		config: ProviderConfig,
+		requestedCapabilities?: CapabilityRequestItem[],
+	): Promise<{
+		agentId: string;
+		hostId: string;
+		status: AgentStatus;
+		capabilityGrants: CapabilityGrant[];
+	} | null> {
+		const connections = await this.storage.listAgentConnections(config.issuer);
+		if (connections.length === 0) return null;
+
+		for (const conn of connections) {
+			try {
+				const status = await this.agentStatus(conn.agentId);
+
+				if (status.status !== "active") {
+					await this.storage.deleteAgentConnection(conn.agentId);
+					continue;
+				}
+
+				const missingCaps = this.findMissingCapabilities(
+					requestedCapabilities,
+					status.agent_capability_grants,
+				);
+
+				if (missingCaps.length > 0) {
+					await this.requestCapability({
+						agentId: conn.agentId,
+						capabilities: missingCaps,
+					});
+					const refreshed = await this.agentStatus(conn.agentId);
+					return {
+						agentId: conn.agentId,
+						hostId: conn.hostId,
+						status: refreshed.status,
+						capabilityGrants: refreshed.agent_capability_grants,
+					};
+				}
+
+				return {
+					agentId: conn.agentId,
+					hostId: conn.hostId,
+					status: status.status,
+					capabilityGrants: status.agent_capability_grants,
+				};
+			} catch {
+				await this.storage.deleteAgentConnection(conn.agentId);
+			}
+		}
+
+		return null;
+	}
+
+	private findMissingCapabilities(
+		requested: CapabilityRequestItem[] | undefined,
+		granted: CapabilityGrant[],
+	): CapabilityRequestItem[] {
+		if (!requested || requested.length === 0) return [];
+		const activeNames = new Set(
+			granted
+				.filter((g) => g.status === "active")
+				.map((g) => g.capability),
+		);
+		return requested.filter((cap) => {
+			const name = typeof cap === "string" ? cap : cap.name;
+			return !activeNames.has(name);
+		});
+	}
+
 	// ─── JWT Signing (§7.4) ─────────────────────────────────────
 
 	/**
@@ -347,7 +446,7 @@ export class AgentAuthClient {
 		htu?: string;
 		/** Access token hash for DPoP request binding (§5.3). */
 		ath?: string;
-	}): Promise<{ token: string; expiresAt: number }> {
+	}): Promise<{ token: string; expiresAt: number; expires_in: number }> {
 		const conn = await this.storage.getAgentConnection(opts.agentId);
 		if (!conn) {
 			throw new AgentAuthSDKError(
@@ -386,6 +485,7 @@ export class AgentAuthClient {
 		return {
 			token,
 			expiresAt: Math.floor(Date.now() / 1000) + this.jwtExpirySeconds,
+			expires_in: this.jwtExpirySeconds,
 		};
 	}
 
@@ -396,9 +496,11 @@ export class AgentAuthClient {
 	 */
 	async requestCapability(opts: {
 		agentId: string;
-		capabilities: string[];
+		capabilities: CapabilityRequestItem[];
 		reason?: string;
 		preferredMethod?: string;
+		loginHint?: string;
+		bindingMessage?: string;
 		signal?: AbortSignal;
 	}): Promise<{
 		granted: string[];
@@ -415,11 +517,13 @@ export class AgentAuthClient {
 			"/agent/request-capability",
 		);
 
-		const body: Record<string, unknown> = {
+		const body: Record<string, CapabilityRequestItem[] | string> = {
 			capabilities: opts.capabilities,
 		};
 		if (opts.reason) body.reason = opts.reason;
 		if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
+		if (opts.loginHint) body.login_hint = opts.loginHint;
+		if (opts.bindingMessage) body.binding_message = opts.bindingMessage;
 
 		const res = await this.fetchFn(url, {
 			method: "POST",
@@ -460,7 +564,7 @@ export class AgentAuthClient {
 		return {
 			granted: grants.filter((g) => g.status === "active").map((g) => g.capability),
 			pending: grants.filter((g) => g.status === "pending").map((g) => g.capability),
-			denied: grants.filter((g) => g.status === "denied").map((g) => g.capability),
+			denied: grants.filter((g) => g.status === "denied" || g.status === "revoked").map((g) => g.capability),
 		};
 	}
 
@@ -830,10 +934,12 @@ export class AgentAuthClient {
 	private async registerAgent(
 		config: ProviderConfig,
 		opts: {
-			capabilities?: string[];
+			capabilities?: CapabilityRequestItem[];
 			mode?: AgentMode;
 			reason?: string;
 			preferredMethod?: string;
+			loginHint?: string;
+			bindingMessage?: string;
 			name?: string;
 		},
 	): Promise<{
@@ -844,13 +950,15 @@ export class AgentAuthClient {
 		const registerUrl = this.resolveEndpoint(config, "register", "/agent/register");
 
 		const buildBody = () => {
-			const body: Record<string, unknown> = {
+			const body: Record<string, CapabilityRequestItem[] | string> = {
 				name: opts.name ?? `agent-${Date.now()}`,
 				mode: opts.mode ?? "delegated",
 			};
 			if (opts.capabilities) body.capabilities = opts.capabilities;
 			if (opts.reason) body.reason = opts.reason;
 			if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
+			if (opts.loginHint) body.login_hint = opts.loginHint;
+			if (opts.bindingMessage) body.binding_message = opts.bindingMessage;
 			if (this.hostName) body.host_name = this.hostName;
 			return body;
 		};

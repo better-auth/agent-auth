@@ -1,8 +1,27 @@
 import { Command } from "commander";
+import type { CapabilityConstraints, CapabilityRequestItem } from "@auth/agent";
 import { createClient, getClientConfig } from "./client.js";
 
-function json(data: unknown): void {
+function json<T>(data: T): void {
 	console.log(JSON.stringify(data, null, 2));
+}
+
+/**
+ * Merge plain capability IDs with an optional --constraints JSON flag.
+ * Returns `CapabilityRequestItem[]` accepted by the SDK.
+ */
+function mergeConstraints(
+	ids: string[] | undefined,
+	constraintsJson: string | undefined,
+): CapabilityRequestItem[] | undefined {
+	if (!ids) return undefined;
+	if (!constraintsJson) return ids;
+	const parsed = JSON.parse(constraintsJson) as Record<string, CapabilityConstraints>;
+	return ids.map((id): CapabilityRequestItem => {
+		const c = parsed[id];
+		if (c) return { name: id, constraints: c };
+		return id;
+	});
 }
 
 async function run(fn: () => Promise<void>): Promise<void> {
@@ -19,7 +38,7 @@ export function buildCli(): Command {
 	const program = new Command();
 
 	program
-		.name("agent-auth")
+		.name("auth-agent")
 		.description("CLI for the Agent Auth Protocol")
 		.version("0.1.0")
 		.option("--storage-dir <path>", "storage directory", process.env.AGENT_AUTH_STORAGE_DIR)
@@ -90,21 +109,47 @@ export function buildCli(): Command {
 		);
 
 	program
+		.command("describe <capability-name>")
+		.description("Get the full definition of a capability (including input schema)")
+		.requiredOption("--provider <url>", "provider URL or name")
+		.option("--agent-id <id>", "agent ID for grant status context")
+		.action((name: string, opts) =>
+			run(async () => {
+				const result = await client().describeCapability({
+					provider: opts.provider,
+					name,
+					agentId: opts.agentId,
+				});
+				json(result);
+			}),
+		);
+
+	program
 		.command("connect")
 		.description("Connect an agent to a provider")
 		.requiredOption("--provider <url>", "provider URL or name")
 		.option("--capabilities <ids...>", "capability IDs to request")
+		.option("--constraints <json>", "JSON constraints map, e.g. '{\"transfer\":{\"amount\":{\"max\":1000}}}'")
 		.option("--mode <mode>", "agent mode (delegated|autonomous)", "delegated")
 		.option("--name <name>", "agent name")
 		.option("--reason <reason>", "reason for requesting capabilities")
+		.option("--force-new", "skip identity reuse and always register a new agent")
+		.option("--preferred-method <method>", "preferred approval method (e.g. device_authorization, ciba)")
+		.option("--login-hint <hint>", "login hint for CIBA approval (e.g. user email)")
+		.option("--binding-message <msg>", "binding message shown during approval")
 		.action((opts) =>
 			run(async () => {
+				const capabilities = mergeConstraints(opts.capabilities, opts.constraints);
 				const result = await client().connectAgent({
 					provider: opts.provider,
-					capabilities: opts.capabilities,
+					capabilities,
 					mode: opts.mode,
 					name: opts.name,
 					reason: opts.reason,
+					forceNew: opts.forceNew,
+					preferredMethod: opts.preferredMethod,
+					loginHint: opts.loginHint,
+					bindingMessage: opts.bindingMessage,
 				});
 				json(result);
 			}),
@@ -138,13 +183,21 @@ export function buildCli(): Command {
 		.command("request <agent-id>")
 		.description("Request additional capabilities for an agent")
 		.requiredOption("--capabilities <ids...>", "capability IDs to request")
+		.option("--constraints <json>", "JSON constraints map, e.g. '{\"transfer\":{\"amount\":{\"max\":1000}}}'")
 		.option("--reason <reason>", "reason for request")
+		.option("--preferred-method <method>", "preferred approval method (e.g. device_authorization, ciba)")
+		.option("--login-hint <hint>", "login hint for CIBA approval (e.g. user email)")
+		.option("--binding-message <msg>", "binding message shown during approval")
 		.action((agentId: string, opts) =>
 			run(async () => {
+				const capabilities = mergeConstraints(opts.capabilities as string[], opts.constraints) ?? opts.capabilities as string[];
 				const result = await client().requestCapability({
 					agentId,
-					capabilities: opts.capabilities,
+					capabilities,
 					reason: opts.reason,
+					preferredMethod: opts.preferredMethod,
+					loginHint: opts.loginHint,
+					bindingMessage: opts.bindingMessage,
 				});
 				json(result);
 			}),

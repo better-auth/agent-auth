@@ -22,8 +22,8 @@ Three packages, one plugin:
 | Package | Purpose |
 |---|---|
 | `@better-auth/agent-auth` | Better Auth plugin (server-side) |
-| `@better-auth/agent-auth-sdk` | Client SDK for agent runtimes |
-| `@better-auth/agent-auth-cli` | CLI + MCP server |
+| `@auth/agent` | Client SDK for agent runtimes |
+| `@auth/agent-cli` | CLI + MCP server |
 
 There is **no** separate gateway package. Capabilities and their execution are configured directly on `agentAuth()`.
 
@@ -160,11 +160,11 @@ Each OpenAPI operation with an `operationId` becomes a capability. Path/query/he
 The SDK provides `AgentAuthClient` for agent runtimes (AI tools, scripts, automation):
 
 ```bash
-pnpm add @better-auth/agent-auth-sdk
+pnpm add @auth/agent
 ```
 
 ```ts
-import { AgentAuthClient, MemoryStorage } from "@better-auth/agent-auth-sdk"
+import { AgentAuthClient, MemoryStorage } from "@auth/agent"
 
 const client = new AgentAuthClient({
   storage: new MemoryStorage(),
@@ -189,7 +189,7 @@ const result = await client.executeCapability({
 ### AI Framework Adapters
 
 ```ts
-import { getAgentAuthTools, toOpenAITools, toAISDKTools } from "@better-auth/agent-auth-sdk"
+import { getAgentAuthTools, toOpenAITools, toAISDKTools } from "@auth/agent"
 
 const tools = getAgentAuthTools(client)
 
@@ -204,37 +204,58 @@ const aiTools = toAISDKTools(tools, { jsonSchema })
 ## CLI & MCP Server
 
 ```bash
-pnpm add @better-auth/agent-auth-cli
+pnpm add @auth/agent-cli
 ```
 
 ```bash
 # Start MCP server (for Cursor, Claude, etc.)
-agent-auth mcp
+auth-agent mcp
 
 # CLI commands
-agent-auth discover https://myapp.com
-agent-auth connect https://myapp.com --capabilities read:data
-agent-auth execute <agent-id> read:data
-agent-auth status <agent-id>
+auth-agent discover https://myapp.com
+auth-agent connect https://myapp.com --capabilities read:data
+auth-agent execute <agent-id> read:data
+auth-agent status <agent-id>
 ```
 
 Set `AGENT_AUTH_ENCRYPTION_KEY` to encrypt private keys stored in `~/.agent-auth/`.
+
+## Proof of Presence / WebAuthn (§8.11)
+
+Prevents AI agents with browser control from auto-approving sensitive capabilities:
+
+```ts
+agentAuth({
+  capabilities: [
+    { name: "read", description: "Read data", approvalStrength: "session" },
+    { name: "delete", description: "Delete data", approvalStrength: "webauthn" },
+  ],
+  proofOfPresence: { enabled: true },
+})
+```
+
+With OpenAPI: `approvalStrength: { GET: "session", POST: "webauthn", DELETE: "webauthn" }`
+
+Levels: `"none"` (auto-grant), `"session"` (default), `"webauthn"` (biometric/hardware key).
+
+The approval endpoint returns `code: "webauthn_required"` with challenge options. The client completes the WebAuthn ceremony and retries.
 
 ## Key Plugin Options
 
 | Option | Default | Description |
 |---|---|---|
-| `capabilities` | `[]` | Capability definitions (name, description, input schema) |
+| `capabilities` | `[]` | Capability definitions (name, description, input schema, approvalStrength) |
 | `onExecute` | — | Handler for `POST /capability/execute` |
 | `modes` | `["delegated", "autonomous"]` | Supported agent modes |
 | `approvalMethods` | `["ciba", "device_authorization"]` | Approval flow methods |
+| `proofOfPresence` | `{ enabled: false }` | WebAuthn-gated approvals (§8.11) |
 | `allowedKeyAlgorithms` | `["Ed25519"]` | Accepted JWK algorithms |
 | `jwtMaxAge` | `60` | Max JWT age in seconds |
 | `agentSessionTTL` | `3600` | Sliding session TTL (seconds) |
 | `agentMaxLifetime` | `86400` | Max agent lifetime (seconds) |
 | `maxAgentsPerUser` | `25` | Agent limit per user |
-| `allowDynamicHostRegistration` | `true` | Allow unknown hosts |
-| `dynamicHostDefaultCapabilities` | `[]` | Default caps for dynamic hosts |
+| `allowDynamicHostRegistration` | `false` | Allow unknown hosts |
+| `defaultHostCapabilities` | `[]` | Default caps for dynamic hosts |
 | `blockedCapabilities` | `[]` | Always-blocked capabilities |
 | `onEvent` | — | Audit event callback |
 

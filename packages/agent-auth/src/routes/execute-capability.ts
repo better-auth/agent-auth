@@ -5,9 +5,11 @@ import { TABLE } from "../constants";
 import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
+import { validateConstraints } from "../utils/constraints";
 import type {
 	AgentCapabilityGrant,
 	AgentSession,
+	ConstraintPrimitive,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
@@ -98,19 +100,38 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					(!g.expiresAt || new Date(g.expiresAt) > now),
 			);
 
-			if (!activeGrant) {
-				throw agentError(
-					"FORBIDDEN",
-					ERR.CAPABILITY_NOT_GRANTED,
-					`Agent does not have an active grant for capability "${capabilityName}".`,
-				);
-			}
+		if (!activeGrant) {
+			throw agentError(
+				"FORBIDDEN",
+				ERR.CAPABILITY_NOT_GRANTED,
+				`Agent does not have an active grant for capability "${capabilityName}".`,
+			);
+		}
 
-			if (!opts.onExecute) {
-				throw agentError(
-					"NOT_IMPLEMENTED" as any,
-					ERR.EXECUTE_NOT_CONFIGURED,
-				);
+		if (activeGrant.constraints) {
+			const constraintArgs = (args ?? {}) as Record<string, ConstraintPrimitive | undefined>;
+			const result = validateConstraints(activeGrant.constraints, constraintArgs);
+			if (result.unknownOperators.length > 0) {
+				throw new APIError("BAD_REQUEST", {
+					error: ERR.UNKNOWN_CONSTRAINT_OPERATOR.code,
+					message: `Unknown constraint operators: ${result.unknownOperators.join(", ")}`,
+					operators: result.unknownOperators,
+				});
+			}
+			if (result.violations.length > 0) {
+				throw new APIError("FORBIDDEN", {
+					error: ERR.CONSTRAINT_VIOLATED.code,
+					message: ERR.CONSTRAINT_VIOLATED.message,
+					violations: result.violations,
+				});
+			}
+		}
+
+		if (!opts.onExecute) {
+				throw new APIError("INTERNAL_SERVER_ERROR", {
+					error: ERR.EXECUTE_NOT_CONFIGURED.code,
+					message: ERR.EXECUTE_NOT_CONFIGURED.message,
+				});
 			}
 
 			const startTime = Date.now();

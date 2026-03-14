@@ -140,6 +140,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 							expiresAt,
 							status: "active",
 							reason: null,
+							constraints: null,
 							createdAt: now,
 							updatedAt: now,
 						},

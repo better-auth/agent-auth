@@ -45,22 +45,29 @@ async function signTestJWT(opts: {
 	privateKey: AgentJWK;
 	subject: string;
 	audience: string;
+	typ?: "host+jwt" | "agent+jwt";
+	issuer?: string;
 	expiresInSeconds?: number;
 	capabilities?: string[];
 	additionalClaims?: Record<string, unknown>;
 }): Promise<string> {
 	const key = await importJWK(opts.privateKey, "EdDSA");
-	return new SignJWT({
+	const builder = new SignJWT({
 		...(opts.capabilities ? { capabilities: opts.capabilities } : {}),
 		...opts.additionalClaims,
 	})
-		.setProtectedHeader({ alg: "EdDSA" })
+		.setProtectedHeader({ alg: "EdDSA", typ: opts.typ ?? "agent+jwt" })
 		.setSubject(opts.subject)
 		.setAudience(opts.audience)
 		.setIssuedAt()
 		.setExpirationTime(`${opts.expiresInSeconds ?? 60}s`)
-		.setJti(globalThis.crypto.randomUUID())
-		.sign(key);
+		.setJti(globalThis.crypto.randomUUID());
+
+	if (opts.issuer) {
+		builder.setIssuer(opts.issuer);
+	}
+
+	return builder.sign(key);
 }
 
 async function createHostJWT(
@@ -69,9 +76,12 @@ async function createHostJWT(
 	agentPublicKey: AgentJWK,
 	hostId?: string,
 ): Promise<string> {
+	const id = hostId ?? "new-host";
 	return signTestJWT({
 		privateKey: hostPrivateKey,
-		subject: hostId ?? "new-host",
+		subject: id,
+		issuer: id,
+		typ: "host+jwt",
 		audience: BASE,
 		additionalClaims: {
 			host_public_key: hostPublicKey,
@@ -301,6 +311,8 @@ describe("JWT Expiry & Revocation", () => {
 		const hostJWT = await signTestJWT({
 			privateKey: sharedHostKeypair.privateKey,
 			subject: sharedHostId,
+			issuer: sharedHostId,
+			typ: "host+jwt",
 			audience: BASE,
 		});
 		const revokeRes = await api("/agent/revoke", {

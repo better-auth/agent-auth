@@ -78,8 +78,14 @@ export function describeCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { grant_status: _gs, ...capabilityFields } = capability;
-			const response: Record<string, unknown> = { ...capabilityFields };
+			const { grant_status: _gs, approvalStrength, ...capabilityFields } =
+				capability;
+			const response: Record<string, unknown> = {
+				...capabilityFields,
+				...(approvalStrength
+					? { approval_strength: approvalStrength }
+					: {}),
+			};
 
 			if (agentSession) {
 				const grants =
@@ -107,6 +113,10 @@ export function describeCapability(opts: ResolvedAgentAuthOptions) {
 					? "granted"
 					: "not_granted";
 			}
+
+			// §10.6: Capability Caching — use private when response varies by auth
+			const cacheScope = agentSession || hostSession ? "private" : "public";
+			ctx.setHeader("Cache-Control", `${cacheScope}, max-age=300`);
 
 			return ctx.json(response);
 		},

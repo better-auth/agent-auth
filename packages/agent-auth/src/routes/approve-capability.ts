@@ -8,14 +8,23 @@ import { emit } from "../emit";
 import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 import { findBlockedCapabilities } from "../utils/capabilities";
 import {
+	generateApprovalChallenge,
+	verifyApprovalResponse,
+	type StoredPasskey,
+	type AuthenticationResponseJSON,
+} from "../utils/webauthn";
+import type { WebAuthnChallengeCache } from "../utils/webauthn-challenge-cache";
+import {
 	activatePendingAgent,
 	resolvePendingApprovalRequests,
 	deliverApprovalNotifications,
 } from "./_helpers";
 import type {
 	Agent,
+	AgentHost,
 	AgentCapabilityGrant,
 	ApprovalRequest,
+	Capability,
 	ResolvedAgentAuthOptions,
 } from "../types";
 
@@ -29,18 +38,24 @@ import type {
  * approval request record (for CIBA flows where the UI shows the
  * approval request ID).
  */
-export function approveCapability(opts: ResolvedAgentAuthOptions) {
+export function approveCapability(
+	opts: ResolvedAgentAuthOptions,
+	challengeCache: WebAuthnChallengeCache | null = null,
+) {
 	return createAuthEndpoint(
 		"/agent/approve-capability",
 		{
 			method: "POST",
-			body: z.object({
-				agent_id: z.string().optional(),
-				approval_id: z.string().optional(),
-				action: z.enum(["approve", "deny"]),
-				capabilities: z.array(z.string()).optional(),
-				ttl: z.number().positive().optional(),
-			}),
+		body: z.object({
+			agent_id: z.string().optional(),
+			approval_id: z.string().optional(),
+			action: z.enum(["approve", "deny"]),
+			capabilities: z.array(z.string()).optional(),
+			ttl: z.number().positive().optional(),
+			webauthn_response: z
+				.record(z.string(), z.unknown())
+				.optional(),
+		}),
 			use: [sessionMiddleware],
 			metadata: {
 				openapi: {
@@ -52,13 +67,14 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const session = ctx.context.session;
 
-			const {
-				agent_id: directAgentId,
-				approval_id: approvalId,
-				action,
-				capabilities: userCapIds,
-				ttl: explicitTTL,
-			} = ctx.body;
+		const {
+			agent_id: directAgentId,
+			approval_id: approvalId,
+			action,
+			capabilities: userCapIds,
+			ttl: explicitTTL,
+			webauthn_response: webauthnResponse,
+		} = ctx.body;
 
 			let agentId: string;
 			let approvalRequest: ApprovalRequest | null = null;
@@ -93,7 +109,7 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 			if (!agent) {
 				throw APIError.from(
 					"NOT_FOUND",
-					ERR.CAPABILITY_REQUEST_NOT_FOUND,
+					ERR.AGENT_NOT_FOUND,
 				);
 			}
 
@@ -138,7 +154,11 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 					await ctx.context.adapter.update({
 						model: TABLE.agent,
 						where: [{ field: "id", value: agentId }],
-						update: { status: "rejected", updatedAt: now },
+						update: {
+							status: "rejected",
+							userId: session.user.id,
+							updatedAt: now,
+						},
 					});
 				}
 
@@ -200,17 +220,152 @@ export function approveCapability(opts: ResolvedAgentAuthOptions) {
 				}
 			}
 
-			if (opts.blockedCapabilities.length > 0) {
-				const blocked = findBlockedCapabilities(
-					[...approvedCapIds],
-					opts.blockedCapabilities,
+		if (opts.proofOfPresence.enabled && challengeCache) {
+			// Context-aware approval strength:
+			//   host pending  → webauthn  (first-time host approval)
+			//   agent active + new grants → webauthn  (new scope request)
+			//   agent pending + host active → session  (agent creation under trusted host)
+			let requiresWebAuthn = false;
+
+			if (agentIsPending && agent.hostId) {
+				const host = await ctx.context.adapter.findOne<AgentHost>({
+					model: TABLE.host,
+					where: [{ field: "id", value: agent.hostId }],
+				});
+				requiresWebAuthn = !host || host.status === "pending";
+			} else if (!agentIsPending && pendingGrants.length > 0) {
+				requiresWebAuthn = true;
+			}
+
+			// Per-capability overrides can still escalate to webauthn
+			if (!requiresWebAuthn) {
+				const capDefs = opts.capabilities ?? [];
+				const capDefMap = new Map<string, Capability>(
+					capDefs.map((c) => [c.name, c]),
 				);
-				if (blocked.length > 0) {
-					throw new APIError("BAD_REQUEST", {
-						message: `Blocked capabilities: ${blocked.join(", ")}`,
+				requiresWebAuthn = capabilities.some((capId) => {
+					const def = capDefMap.get(capId);
+					return def?.approvalStrength === "webauthn";
+				});
+			}
+
+			if (requiresWebAuthn) {
+				let passkeys: StoredPasskey[] = [];
+				try {
+					passkeys =
+						await ctx.context.adapter.findMany<StoredPasskey>({
+							model: "passkey",
+							where: [
+								{ field: "userId", value: session.user.id },
+							],
+						});
+				} catch {
+					// passkey table doesn't exist (passkey plugin not installed)
+				}
+
+				if (passkeys.length === 0) {
+					return ctx.json(
+						{
+							code: "webauthn_not_enrolled",
+							message:
+								"No passkeys registered. Register a passkey before approving capabilities that require proof of physical presence.",
+						},
+						{ status: 403 },
+					);
+				}
+
+				if (!webauthnResponse) {
+					const { options } = await generateApprovalChallenge(
+						opts.proofOfPresence,
+						passkeys,
+					);
+
+					challengeCache.set(
+						session.user.id,
+						agentId,
+						options.challenge,
+					);
+
+					return ctx.json(
+						{
+							code: "webauthn_required",
+							message:
+								"This approval requires proof of physical presence. Complete the WebAuthn challenge.",
+							webauthn_options: options,
+						},
+						{ status: 403 },
+					);
+				}
+
+				const expectedChallenge = challengeCache.consume(
+					session.user.id,
+					agentId,
+				);
+
+				if (!expectedChallenge) {
+					throw new APIError("FORBIDDEN", {
+						message:
+							"WebAuthn challenge expired or not found. Request a new challenge.",
+					});
+				}
+
+				const assertionResponse =
+					webauthnResponse as unknown as AuthenticationResponseJSON;
+				const matchingPasskey = passkeys.find(
+					(pk) => pk.credentialID === assertionResponse.id,
+				);
+
+				if (!matchingPasskey) {
+					throw new APIError("FORBIDDEN", {
+						message: "WebAuthn credential not recognized.",
+					});
+				}
+
+				try {
+					const verification = await verifyApprovalResponse(
+						opts.proofOfPresence,
+						assertionResponse,
+						expectedChallenge,
+						matchingPasskey,
+					);
+
+					if (!verification.verified) {
+						throw new APIError("FORBIDDEN", {
+							message: "WebAuthn verification failed.",
+						});
+					}
+
+					await ctx.context.adapter.update({
+						model: "passkey",
+						where: [
+							{ field: "id", value: matchingPasskey.id },
+						],
+						update: {
+							counter:
+								verification.authenticationInfo.newCounter,
+						},
+					});
+				} catch (error) {
+					if (error instanceof APIError) throw error;
+					throw new APIError("FORBIDDEN", {
+						message:
+							"WebAuthn assertion verification failed.",
 					});
 				}
 			}
+		}
+
+		if (opts.blockedCapabilities.length > 0) {
+			const blocked = findBlockedCapabilities(
+				[...approvedCapIds],
+				opts.blockedCapabilities,
+			);
+			if (blocked.length > 0) {
+				throw new APIError("BAD_REQUEST", {
+					message: `Blocked capabilities: ${blocked.join(", ")}`,
+				});
+			}
+		}
 
 			const alreadyActive = new Set(
 				allGrants

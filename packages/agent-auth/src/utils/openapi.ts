@@ -1,5 +1,6 @@
 import type {
 	AgentAuthOptions,
+	ApprovalStrength,
 	Capability,
 	DefaultHostCapabilitiesContext,
 } from "../types";
@@ -403,6 +404,19 @@ type DefaultHostCapabilitiesFilter =
 			context: DefaultHostCapabilitiesContext,
 	  ) => boolean | Promise<boolean>);
 
+/**
+ * Filter for assigning `approvalStrength` to capabilities from an OpenAPI spec.
+ *
+ * - `ApprovalStrength` — apply to all capabilities.
+ * - `Record<string, ApprovalStrength>` — map HTTP method → strength
+ *   (e.g. `{ GET: "session", POST: "webauthn", DELETE: "webauthn" }`).
+ * - `(cap) => ApprovalStrength` — per-capability callback.
+ */
+type ApprovalStrengthFilter =
+	| ApprovalStrength
+	| Record<string, ApprovalStrength>
+	| ((capability: OpenAPICapabilityInfo) => ApprovalStrength);
+
 type CreateFromOpenAPIOptions = {
 	baseUrl: string;
 	resolveHeaders?: (context: {
@@ -435,7 +449,44 @@ type CreateFromOpenAPIOptions = {
 	 * ```
 	 */
 	defaultHostCapabilities?: DefaultHostCapabilitiesFilter;
+	/**
+	 * Assign `approvalStrength` to capabilities derived from the spec (§8.11).
+	 *
+	 * Controls which capabilities require proof of physical presence
+	 * (WebAuthn) versus a standard session-based approval.
+	 *
+	 * @example
+	 * ```ts
+	 * // All mutating methods require WebAuthn
+	 * approvalStrength: { GET: "session", POST: "webauthn", DELETE: "webauthn" }
+	 *
+	 * // Everything requires WebAuthn
+	 * approvalStrength: "webauthn"
+	 *
+	 * // Per-capability callback
+	 * approvalStrength: (cap) =>
+	 *   cap.method === "DELETE" ? "webauthn" : "session"
+	 * ```
+	 */
+	approvalStrength?: ApprovalStrengthFilter;
 };
+
+/** Resolve `approvalStrength` for a single parsed capability. */
+function resolveApprovalStrength(
+	cap: ParsedCapability,
+	filter: ApprovalStrengthFilter | undefined,
+): ApprovalStrength | undefined {
+	if (filter === undefined) return undefined;
+	if (typeof filter === "string") return filter;
+	if (typeof filter === "function") {
+		return filter({
+			name: cap.name,
+			method: cap._method ?? "GET",
+			description: cap.description,
+		});
+	}
+	return filter[cap._method ?? "GET"];
+}
 
 /**
  * Resolve the `defaultHostCapabilities` value to pass to the plugin.
@@ -520,7 +571,14 @@ export function createFromOpenAPI(
 > {
 	const parsed = parseOpenAPICapabilities(spec);
 	const capabilities: Capability[] = parsed.map(
-		({ _method, ...cap }) => cap,
+		({ _method, ...cap }) => {
+			const strength = resolveApprovalStrength(
+				{ ...cap, _method },
+				opts.approvalStrength,
+			);
+			if (strength) cap.approvalStrength = strength;
+			return cap;
+		},
 	);
 
 	const onExecute = createOpenAPIHandler(spec, {

@@ -113,9 +113,13 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 				);
 			} else if (hostSession) {
 				grantedCapabilityIds = new Set(
-					hostSession.host.defaultCapabilities,
+					hostSession.host.defaultCapabilities ?? [],
 				);
 			}
+
+			// §10.6: Capability Caching — use private when response varies by auth
+			const cacheScope = grantedCapabilityIds ? "private" : "public";
+			ctx.setHeader("Cache-Control", `${cacheScope}, max-age=300`);
 
 			return ctx.json({
 				capabilities: page.map((c) => {
@@ -123,6 +127,9 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 						name: c.name,
 						description: c.description,
 					};
+					if (c.approvalStrength) {
+						result.approval_strength = c.approvalStrength;
+					}
 					if (grantedCapabilityIds) {
 						result.grant_status = grantedCapabilityIds.has(c.name)
 							? "granted"

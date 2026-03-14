@@ -50,6 +50,13 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
+			if (agent.status !== "active") {
+				throw agentError(
+					"FORBIDDEN",
+					agent.status === "revoked" ? ERR.AGENT_REVOKED : ERR.AGENT_PENDING,
+				);
+			}
+
 			if (agent.hostId !== hostSession.host.id) {
 				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}

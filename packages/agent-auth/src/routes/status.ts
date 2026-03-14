@@ -43,7 +43,7 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 			let targetAgentId: string;
 
 			if (agentSession) {
-				targetAgentId = ctx.query?.agent_id ?? agentSession.agent.id;
+				targetAgentId = agentSession.agent.id;
 			} else if (hostSession) {
 				if (!ctx.query?.agent_id) {
 				throw agentError(
@@ -78,11 +78,14 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 
 			return ctx.json({
 				agent_id: agent.id,
+				name: agent.name,
 				host_id: agent.hostId,
 				status: agent.status,
 				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
 				mode: agent.mode,
-				user_id: agent.userId,
+				activated_at: agent.activatedAt
+					? new Date(agent.activatedAt).toISOString()
+					: null,
 				created_at: agent.createdAt,
 				last_used_at: agent.lastUsedAt,
 				expires_at: agent.expiresAt,

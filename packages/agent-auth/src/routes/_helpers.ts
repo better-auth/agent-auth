@@ -1,4 +1,5 @@
 import type { GenericEndpointContext } from "@better-auth/core";
+import * as z from "zod";
 import { TABLE, DEFAULTS } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
@@ -18,9 +19,56 @@ import type {
 	AgentHost,
 	ApprovalRequest,
 	Capability,
+	CapabilityConstraints,
 	DefaultHostCapabilitiesContext,
+	NormalizedCapability,
 	ResolvedAgentAuthOptions,
 } from "../types";
+
+// ── Capability parsing schemas (§2.13) ──────────────────────
+
+const constraintPrimitiveZ = z.union([z.string(), z.number(), z.boolean()]);
+const constraintOperatorValueZ = z.union([
+	z.string(),
+	z.number(),
+	z.boolean(),
+	z.array(constraintPrimitiveZ),
+]);
+
+export const capabilityConstraintsZ = z.record(
+	z.string(),
+	z.union([constraintPrimitiveZ, z.record(z.string(), constraintOperatorValueZ)]),
+);
+
+export const capabilityItemZ = z.union([
+	z.string(),
+	z.object({
+		name: z.string(),
+		constraints: capabilityConstraintsZ.optional(),
+	}),
+]);
+
+/**
+ * Normalize mixed capability array from API input into separate
+ * ID list and constraints map. See spec §2.13.
+ */
+export function normalizeCapabilities(
+	caps: Array<string | { name: string; constraints?: CapabilityConstraints }>,
+): { ids: string[]; constraintsMap: Map<string, CapabilityConstraints> } {
+	const ids: string[] = [];
+	const constraintsMap = new Map<string, CapabilityConstraints>();
+	for (const c of caps) {
+		if (typeof c === "string") {
+			ids.push(c);
+		} else {
+			ids.push(c.name);
+			if (c.constraints) {
+				constraintsMap.set(c.name, c.constraints as CapabilityConstraints);
+			}
+		}
+	}
+	return { ids, constraintsMap };
+}
 
 /**
  * Resolve the device authorization page base URL from the configured
@@ -107,6 +155,7 @@ export async function createGrantRows(
 		hostId: string | null;
 		userId: string | null;
 	},
+	constraintsMap?: Map<string, CapabilityConstraints>,
 ): Promise<void> {
 	if (grantOpts?.clearExisting) {
 		const existing = await adapter.findMany<{ id: string }>({
@@ -136,6 +185,7 @@ export async function createGrantRows(
 						},
 					)
 				: null;
+		const constraints = constraintsMap?.get(cap) ?? null;
 		await adapter.create({
 			model: TABLE.grant,
 			data: {
@@ -145,6 +195,7 @@ export async function createGrantRows(
 				expiresAt,
 				status,
 				reason: grantOpts?.reason ?? null,
+				constraints,
 				createdAt: now,
 				updatedAt: now,
 			},
@@ -169,7 +220,7 @@ export function formatGrantsResponse(
 	}
 
 	return grants.map((g) => {
-		const base: Record<string, unknown> = {
+		const base: Record<string, CapabilityConstraints | string | number | boolean | null | Record<string, string>> = {
 			capability: g.capability,
 			status: g.status,
 		};
@@ -178,14 +229,14 @@ export function formatGrantsResponse(
 			if (g.grantedBy) base.granted_by = g.grantedBy;
 			if (g.expiresAt)
 				base.expires_at = new Date(g.expiresAt).toISOString();
+			if (g.constraints) base.constraints = g.constraints;
 
 			const def = capMap.get(g.capability);
 			if (def) {
 				if (def.description) base.description = def.description;
-				if (def.input) base.input = def.input;
 				const { name: _, description: _d, input: _i, grant_status: _gs, ...extra } = def;
 				for (const [k, v] of Object.entries(extra)) {
-					if (v !== undefined) base[k] = v;
+					if (v !== undefined) base[k] = v as string;
 				}
 			}
 		}
@@ -472,7 +523,7 @@ export async function claimAutonomousAgents(
 				await adapter.update({
 					model: TABLE.grant,
 					where: [{ field: "id", value: g.id }],
-					update: { status: "denied", updatedAt: now },
+					update: { status: "revoked", updatedAt: now },
 				});
 			}
 		}

@@ -35,22 +35,29 @@ async function signTestJWT(opts: {
 	privateKey: AgentJWK;
 	subject: string;
 	audience: string;
+	typ?: "host+jwt" | "agent+jwt";
+	issuer?: string;
 	expiresInSeconds?: number;
 	capabilities?: string[];
 	additionalClaims?: Record<string, unknown>;
 }): Promise<string> {
 	const key = await importJWK(opts.privateKey, "EdDSA");
-	return new SignJWT({
+	const builder = new SignJWT({
 		...(opts.capabilities ? { capabilities: opts.capabilities } : {}),
 		...opts.additionalClaims,
 	})
-		.setProtectedHeader({ alg: "EdDSA" })
+		.setProtectedHeader({ alg: "EdDSA", typ: opts.typ ?? "agent+jwt" })
 		.setSubject(opts.subject)
 		.setAudience(opts.audience)
 		.setIssuedAt()
 		.setExpirationTime(`${opts.expiresInSeconds ?? 60}s`)
-		.setJti(globalThis.crypto.randomUUID())
-		.sign(key);
+		.setJti(globalThis.crypto.randomUUID());
+
+	if (opts.issuer) {
+		builder.setIssuer(opts.issuer);
+	}
+
+	return builder.sign(key);
 }
 
 const TEST_CAPABILITIES = [
@@ -165,9 +172,12 @@ async function createHostJWT(
 	agentPublicKey: AgentJWK,
 	hostId?: string,
 ): Promise<string> {
+	const id = hostId ?? "new-host";
 	return signTestJWT({
 		privateKey: hostPrivateKey,
-		subject: hostId ?? "new-host",
+		subject: id,
+		issuer: id,
+		typ: "host+jwt",
 		audience: BASE,
 		additionalClaims: {
 			host_public_key: hostPublicKey,
@@ -884,6 +894,8 @@ describe("Agent Lifecycle", () => {
 		const hostJWT = await signTestJWT({
 			privateKey: hostKeypair.privateKey,
 			subject: hostId,
+			issuer: hostId,
+			typ: "host+jwt",
 			audience: BASE,
 		});
 		const revokeRes = await api("/agent/revoke", {
@@ -918,6 +930,8 @@ describe("Agent Lifecycle", () => {
 		const hostJWT = await signTestJWT({
 			privateKey: hostKeypair.privateKey,
 			subject: hostId,
+			issuer: hostId,
+			typ: "host+jwt",
 			audience: BASE,
 		});
 
@@ -1243,6 +1257,8 @@ describe("Edge Cases", () => {
 		const hostJWT = await signTestJWT({
 			privateKey: hostKeypair.privateKey,
 			subject: hostId,
+			issuer: hostId,
+			typ: "host+jwt",
 			audience: BASE,
 		});
 		await api("/agent/revoke", {
@@ -1281,6 +1297,293 @@ describe("Edge Cases", () => {
 		}>(res);
 		expect(body.status).toBe("pending_enrollment");
 		expect(body.enrollmentToken).toBeDefined();
+	});
+});
+
+describe("Constraints (§2.13)", () => {
+	let hostKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
+	let hostId: string;
+
+	beforeAll(async () => {
+		hostKeypair = await generateTestKeypair();
+		const createRes = await authedPost("/host/create", {
+			name: "Constraint Host",
+			public_key: hostKeypair.publicKey,
+			default_capabilities: ["check_balance", "transfer"],
+		});
+		const body = await json<{ hostId: string }>(createRes);
+		hostId = body.hostId;
+	});
+
+	it("registers agent with constrained capabilities", async () => {
+		const agentKeypair = await generateTestKeypair();
+		const hostJWT = await createHostJWT(
+			hostKeypair.privateKey,
+			hostKeypair.publicKey,
+			agentKeypair.publicKey,
+			hostId,
+		);
+
+		const res = await api("/agent/register", {
+			method: "POST",
+			headers: { authorization: `Bearer ${hostJWT}` },
+			body: JSON.stringify({
+				name: "Constrained Agent",
+				capabilities: [
+					"check_balance",
+					{ name: "transfer", constraints: { amount: { max: 1000 }, currency: { in: ["USD", "EUR"] } } },
+				],
+				mode: "delegated",
+			}),
+		});
+
+		expect(res.ok).toBe(true);
+		const body = await json<{
+			agent_id: string;
+			status: string;
+			agent_capability_grants: Array<{
+				capability: string;
+				status: string;
+				constraints?: Record<string, unknown>;
+			}>;
+		}>(res);
+		expect(body.status).toBe("active");
+
+		const transferGrant = body.agent_capability_grants.find((g) => g.capability === "transfer");
+		expect(transferGrant).toBeDefined();
+		expect(transferGrant!.constraints).toBeDefined();
+		expect((transferGrant!.constraints as Record<string, Record<string, number>>).amount.max).toBe(1000);
+	});
+
+	it("request-capability with constraints stores them on grant", async () => {
+		const agentKeypair = await generateTestKeypair();
+		const { agentId } = await registerAgentViaHost({
+			hostKeypair,
+			agentKeypair,
+			hostId,
+			capabilities: ["check_balance"],
+		});
+
+		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId);
+		const res = await api("/agent/request-capability", {
+			method: "POST",
+			headers: { authorization: `Bearer ${jwt}` },
+			body: JSON.stringify({
+				capabilities: [
+					{ name: "transfer", constraints: { amount: { max: 500 } } },
+				],
+			}),
+		});
+
+		expect(res.ok).toBe(true);
+		const body = await json<{
+			status: string;
+			agent_capability_grants: Array<{
+				capability: string;
+				status: string;
+				constraints?: Record<string, unknown>;
+			}>;
+		}>(res);
+		expect(body.status).toBe("active");
+		const transferGrant = body.agent_capability_grants.find((g) => g.capability === "transfer");
+		expect(transferGrant).toBeDefined();
+		expect(transferGrant!.constraints).toBeDefined();
+	});
+
+	it("execute succeeds within constraints", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						capabilities: TEST_CAPABILITIES,
+						modes: ["delegated"],
+						defaultHostCapabilities: ["check_balance", "transfer"],
+						onExecute: ({ capability, arguments: args }) => ({
+							capability,
+							result: "ok",
+							args,
+						}),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+		const { headers: h } = await t.signInWithTestUser();
+		const cookie = h.get("cookie") ?? "";
+
+		const hk = await generateTestKeypair();
+		const createRes = await t.auth.handler(
+			new Request(`${API}/host/create`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie },
+				body: JSON.stringify({
+					name: "Exec Constraint Host",
+					public_key: hk.publicKey,
+					default_capabilities: ["check_balance", "transfer"],
+				}),
+			}),
+		);
+		const { hostId: hId } = await json<{ hostId: string }>(createRes);
+
+		const ak = await generateTestKeypair();
+		const hostJWT = await createHostJWT(hk.privateKey, hk.publicKey, ak.publicKey, hId);
+		const regRes = await t.auth.handler(
+			new Request(`${API}/agent/register`, {
+				method: "POST",
+				headers: { "content-type": "application/json", authorization: `Bearer ${hostJWT}` },
+				body: JSON.stringify({
+					name: "Exec Agent",
+					capabilities: [
+						"check_balance",
+						{ name: "transfer", constraints: { amount: { max: 1000 } } },
+					],
+					mode: "delegated",
+				}),
+			}),
+		);
+		const { agent_id: aId } = await json<{ agent_id: string }>(regRes);
+
+		const jwt = await createAgentJWT(ak.privateKey, aId);
+		const execRes = await t.auth.handler(
+			new Request(`${API}/capability/execute`, {
+				method: "POST",
+				headers: { "content-type": "application/json", authorization: `Bearer ${jwt}` },
+				body: JSON.stringify({ capability: "transfer", arguments: { amount: 500, to: "alice" } }),
+			}),
+		);
+
+		expect(execRes.ok).toBe(true);
+		const execBody = await json<{ data: { result: string } }>(execRes);
+		expect(execBody.data.result).toBe("ok");
+	});
+
+	it("execute fails with constraint_violated when arguments violate constraints", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						capabilities: TEST_CAPABILITIES,
+						modes: ["delegated"],
+						defaultHostCapabilities: ["check_balance", "transfer"],
+						onExecute: ({ capability }) => ({ capability, result: "ok" }),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+		const { headers: h } = await t.signInWithTestUser();
+		const cookie = h.get("cookie") ?? "";
+
+		const hk = await generateTestKeypair();
+		const createRes = await t.auth.handler(
+			new Request(`${API}/host/create`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie },
+				body: JSON.stringify({
+					name: "Violation Host",
+					public_key: hk.publicKey,
+					default_capabilities: ["check_balance", "transfer"],
+				}),
+			}),
+		);
+		const { hostId: hId } = await json<{ hostId: string }>(createRes);
+
+		const ak = await generateTestKeypair();
+		const hostJWT = await createHostJWT(hk.privateKey, hk.publicKey, ak.publicKey, hId);
+		const regRes = await t.auth.handler(
+			new Request(`${API}/agent/register`, {
+				method: "POST",
+				headers: { "content-type": "application/json", authorization: `Bearer ${hostJWT}` },
+				body: JSON.stringify({
+					name: "Violation Agent",
+					capabilities: [
+						{ name: "transfer", constraints: { amount: { max: 100 } } },
+					],
+					mode: "delegated",
+				}),
+			}),
+		);
+		const { agent_id: aId } = await json<{ agent_id: string }>(regRes);
+
+		const jwt = await createAgentJWT(ak.privateKey, aId);
+		const execRes = await t.auth.handler(
+			new Request(`${API}/capability/execute`, {
+				method: "POST",
+				headers: { "content-type": "application/json", authorization: `Bearer ${jwt}` },
+				body: JSON.stringify({ capability: "transfer", arguments: { amount: 500, to: "alice" } }),
+			}),
+		);
+
+		expect(execRes.ok).toBe(false);
+		expect(execRes.status).toBe(403);
+		const body = await json<{ error: string; violations: Array<{ field: string }> }>(execRes);
+		expect(body.error).toBe("constraint_violated");
+		expect(body.violations).toBeInstanceOf(Array);
+		expect(body.violations[0].field).toBe("amount");
+	});
+
+	it("unknown operator rejected with unknown_constraint_operator", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						capabilities: TEST_CAPABILITIES,
+						modes: ["delegated"],
+						defaultHostCapabilities: ["transfer"],
+						onExecute: ({ capability }) => ({ capability, result: "ok" }),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+		const { headers: h } = await t.signInWithTestUser();
+		const cookie = h.get("cookie") ?? "";
+
+		const hk = await generateTestKeypair();
+		const createRes = await t.auth.handler(
+			new Request(`${API}/host/create`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie },
+				body: JSON.stringify({
+					name: "Unknown Op Host",
+					public_key: hk.publicKey,
+					default_capabilities: ["transfer"],
+				}),
+			}),
+		);
+		const { hostId: hId } = await json<{ hostId: string }>(createRes);
+
+		const ak = await generateTestKeypair();
+		const hostJWT = await createHostJWT(hk.privateKey, hk.publicKey, ak.publicKey, hId);
+		const regRes = await t.auth.handler(
+			new Request(`${API}/agent/register`, {
+				method: "POST",
+				headers: { "content-type": "application/json", authorization: `Bearer ${hostJWT}` },
+				body: JSON.stringify({
+					name: "Unknown Op Agent",
+					capabilities: [
+						{ name: "transfer", constraints: { amount: { bogus_op: 999 } } },
+					],
+					mode: "delegated",
+				}),
+			}),
+		);
+		const { agent_id: aId } = await json<{ agent_id: string }>(regRes);
+
+		const jwt = await createAgentJWT(ak.privateKey, aId);
+		const execRes = await t.auth.handler(
+			new Request(`${API}/capability/execute`, {
+				method: "POST",
+				headers: { "content-type": "application/json", authorization: `Bearer ${jwt}` },
+				body: JSON.stringify({ capability: "transfer", arguments: { amount: 100, to: "alice" } }),
+			}),
+		);
+
+		expect(execRes.ok).toBe(false);
+		expect(execRes.status).toBe(400);
+		const body = await json<{ error: string; operators: string[] }>(execRes);
+		expect(body.error).toBe("unknown_constraint_operator");
+		expect(body.operators).toContain("bogus_op");
 	});
 });
 

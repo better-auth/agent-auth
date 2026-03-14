@@ -10,7 +10,7 @@ export interface ProviderConfig {
 	jwks_uri?: string;
 }
 
-const KNOWN_PATHS = ["/api/auth", "/auth", "/api"];
+const KNOWN_PATHS = ["/api/auth/agent", "/api/auth", "/auth", "/api"];
 const FETCH_TIMEOUT_MS = 8000;
 
 async function fetchWithTimeout(

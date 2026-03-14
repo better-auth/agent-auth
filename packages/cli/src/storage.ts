@@ -7,7 +7,7 @@ import type {
   HostIdentity,
   ProviderConfig,
   Storage,
-} from "@better-auth/agent-auth-sdk";
+} from "@auth/agent";
 
 const DEFAULT_DIR = path.join(os.homedir(), ".agent-auth");
 

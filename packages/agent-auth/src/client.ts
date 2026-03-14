@@ -35,6 +35,7 @@ export const agentAuthClient = () => {
 			"/host/update": "POST",
 			"/host/rotate-key": "POST",
 			"/host/enroll": "POST",
+			"/host/switch-account": "POST",
 			"/agent/ciba/authorize": "POST",
 			"/device/code": "POST",
 		},

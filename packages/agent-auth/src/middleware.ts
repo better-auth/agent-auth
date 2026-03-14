@@ -7,7 +7,7 @@ import { TABLE } from "./constants";
 import { emit } from "./emit";
 import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES } from "./errors";
 import { parseCapabilityIds } from "./utils/capabilities";
-import { verifyAgentJWT, hashRequestBody } from "./utils/crypto";
+import { verifyJWT, hashRequestBody } from "./utils/crypto";
 import type { JtiCacheStore } from "./utils/jti-cache";
 import type { JwksCacheStore } from "./utils/jwks-cache";
 
@@ -88,49 +88,151 @@ export function createAgentAuthBeforeHook(
 				?.get("authorization")
 				?.replace(/^Bearer\s+/i, "")!;
 
-			let agentId: string;
+			let decoded: ReturnType<typeof decodeJwt>;
+			let header: ReturnType<typeof decodeProtectedHeader>;
 			try {
-				const decoded = decodeJwt(bearer);
-				if (!decoded.sub) {
-					throw agentError(
-						"UNAUTHORIZED",
-						AGENT_AUTH_ERROR_CODES.INVALID_JWT,
-					);
-				}
-				agentId = decoded.sub;
+				decoded = decodeJwt(bearer);
+				header = decodeProtectedHeader(bearer);
+			} catch {
+				throw agentError(
+					"UNAUTHORIZED",
+					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+				);
+			}
 
-				if (!decoded.aud) {
+			// §4.2/§4.5: MUST validate typ header
+			const typ = header.typ;
+			if (typ !== "host+jwt" && typ !== "agent+jwt") {
+				throw agentError(
+					"UNAUTHORIZED",
+					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+				);
+			}
+
+			// Validate aud (common to both token types)
+			if (!decoded.aud) {
+				throw agentError(
+					"UNAUTHORIZED",
+					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+				);
+			}
+			const configuredOrigin = new URL(
+				ctx.context.baseURL,
+			).origin;
+			const acceptedOrigins = new Set([configuredOrigin]);
+			const reqHost = ctx.headers?.get("host");
+			if (reqHost) {
+				const proto = opts.trustProxy
+					? (ctx.headers?.get("x-forwarded-proto") ?? new URL(ctx.context.baseURL).protocol.replace(":", ""))
+					: new URL(ctx.context.baseURL).protocol.replace(":", "");
+				acceptedOrigins.add(`${proto}://${reqHost}`);
+			}
+			const audValues = Array.isArray(decoded.aud)
+				? decoded.aud
+				: [decoded.aud];
+			if (
+				!audValues.some((a) =>
+					acceptedOrigins.has(String(a)),
+				)
+			) {
+				throw agentError(
+					"UNAUTHORIZED",
+					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+				);
+			}
+
+			// ── Host JWT path (typ: "host+jwt") ──
+			if (typ === "host+jwt") {
+				// §4.2: iss = JWK thumbprint is the host identifier
+				const hostIdFromIss = typeof decoded.iss === "string" ? decoded.iss : null;
+				if (!hostIdFromIss) {
 					throw agentError(
 						"UNAUTHORIZED",
 						AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 					);
 				}
-				const configuredOrigin = new URL(
-					ctx.context.baseURL,
-				).origin;
-				const acceptedOrigins = new Set([configuredOrigin]);
-				const reqHost = ctx.headers?.get("host");
-				if (reqHost) {
-					const proto = opts.trustProxy
-						? (ctx.headers?.get("x-forwarded-proto") ?? new URL(ctx.context.baseURL).protocol.replace(":", ""))
-						: new URL(ctx.context.baseURL).protocol.replace(":", "");
-					acceptedOrigins.add(`${proto}://${reqHost}`);
+
+				const host = await db.findHostById(hostIdFromIss)
+					?? await db.findHostByKid(hostIdFromIss);
+
+				const hostAllowed =
+					host &&
+					(host.publicKey || host.jwksUrl) &&
+					(host.status === "active" ||
+						(host.status === "pending" && ctx.path === "/agent/status"));
+
+				if (!hostAllowed) {
+					throw agentError(
+						"UNAUTHORIZED",
+						AGENT_AUTH_ERROR_CODES.AGENT_NOT_FOUND,
+					);
 				}
-				const audValues = Array.isArray(decoded.aud)
-					? decoded.aud
-					: [decoded.aud];
-				if (
-					!audValues.some((a) =>
-						acceptedOrigins.has(String(a)),
-					)
-				) {
+
+				let hostPubKey: AgentJWK | null = null;
+				if (host.jwksUrl && jwksCache) {
+					try {
+						if (header.kid) {
+							hostPubKey = await jwksCache.getKeyByKid(host.jwksUrl, header.kid);
+						}
+					} catch (err) {
+						console.error("[agent-auth] JWKS fetch failed for host %s:", host.id, err);
+					}
+				}
+				if (!hostPubKey && host.publicKey) {
+					try {
+						hostPubKey = JSON.parse(host.publicKey) as AgentJWK;
+					} catch {
+						throw agentError(
+							"UNAUTHORIZED",
+							AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
+						);
+					}
+				}
+				if (!hostPubKey) {
+					throw agentError(
+						"UNAUTHORIZED",
+						AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
+					);
+				}
+				if (!isKeyAlgorithmAllowed(hostPubKey, opts.allowedKeyAlgorithms)) {
+					throw agentError(
+						"UNAUTHORIZED",
+						AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
+					);
+				}
+				const hostPayload = await verifyJWT({
+					jwt: bearer,
+					publicKey: hostPubKey,
+					maxAge: opts.jwtMaxAge,
+				});
+				if (!hostPayload) {
 					throw agentError(
 						"UNAUTHORIZED",
 						AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 					);
 				}
-			} catch (e) {
-				if (e instanceof APIError) throw e;
+				const hostCaps = parseCapabilityIds(
+					host.defaultCapabilities,
+				);
+				const hostSession: HostSession = {
+					host: {
+						id: host.id,
+						userId: host.userId,
+						defaultCapabilities: hostCaps,
+						status: host.status,
+					},
+				};
+				(
+					ctx.context as {
+						hostSession?: HostSession;
+					}
+				).hostSession = hostSession;
+				return { context: ctx };
+			}
+
+			// ── Agent JWT path (typ: "agent+jwt") ──
+			const agentId = typeof decoded.sub === "string" ? decoded.sub : null;
+			if (!agentId) {
 				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
@@ -140,79 +242,6 @@ export function createAgentAuthBeforeHook(
 			let agent = await db.findAgentById(agentId);
 
 			if (!agent) {
-				const host = await db.findHostById(agentId)
-					?? await db.findHostByKid(agentId);
-
-				const hostAllowed =
-					host &&
-					(host.publicKey || host.jwksUrl) &&
-					(host.status === "active" ||
-						(host.status === "pending" && ctx.path === "/agent/status"));
-
-				if (hostAllowed) {
-					let hostPubKey: AgentJWK | null = null;
-					if (host.jwksUrl && jwksCache) {
-						try {
-							const header = decodeProtectedHeader(bearer);
-							if (header.kid) {
-								hostPubKey = await jwksCache.getKeyByKid(host.jwksUrl, header.kid);
-							}
-						} catch (err) {
-							console.error("[agent-auth] JWKS fetch failed for host %s:", host.id, err);
-						}
-					}
-					if (!hostPubKey && host.publicKey) {
-						try {
-							hostPubKey = JSON.parse(host.publicKey) as AgentJWK;
-						} catch {
-							throw agentError(
-								"UNAUTHORIZED",
-								AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
-							);
-						}
-					}
-					if (!hostPubKey) {
-						throw agentError(
-							"UNAUTHORIZED",
-							AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
-						);
-					}
-					if (!isKeyAlgorithmAllowed(hostPubKey, opts.allowedKeyAlgorithms)) {
-						throw agentError(
-							"UNAUTHORIZED",
-							AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
-						);
-					}
-					const hostPayload = await verifyAgentJWT({
-						jwt: bearer,
-						publicKey: hostPubKey,
-						maxAge: opts.jwtMaxAge,
-					});
-					if (!hostPayload) {
-						throw agentError(
-							"UNAUTHORIZED",
-							AGENT_AUTH_ERROR_CODES.INVALID_JWT,
-						);
-					}
-					const hostCaps = parseCapabilityIds(
-						host.defaultCapabilities,
-					);
-					const hostSession: HostSession = {
-						host: {
-							id: host.id,
-							userId: host.userId,
-							defaultCapabilities: hostCaps,
-							status: host.status,
-						},
-					};
-					(
-						ctx.context as {
-							hostSession?: HostSession;
-						}
-					).hostSession = hostSession;
-					return { context: ctx };
-				}
-
 				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.AGENT_NOT_FOUND,
@@ -223,6 +252,12 @@ export function createAgentAuthBeforeHook(
 				throw agentError(
 					"FORBIDDEN",
 					AGENT_AUTH_ERROR_CODES.AGENT_REVOKED,
+				);
+			}
+			if (agent.status === "claimed") {
+				throw agentError(
+					"FORBIDDEN",
+					AGENT_AUTH_ERROR_CODES.AGENT_CLAIMED,
 				);
 			}
 			if (agent.status === "pending") {
@@ -286,7 +321,6 @@ export function createAgentAuthBeforeHook(
 			let publicKey: AgentJWK | null = null;
 			if (agent.jwksUrl && jwksCache) {
 				try {
-					const header = decodeProtectedHeader(bearer);
 					if (header.kid) {
 						publicKey = await jwksCache.getKeyByKid(agent.jwksUrl, header.kid);
 					}
@@ -316,7 +350,7 @@ export function createAgentAuthBeforeHook(
 					AGENT_AUTH_ERROR_CODES.INVALID_PUBLIC_KEY,
 				);
 			}
-			const payload = await verifyAgentJWT({
+			const payload = await verifyJWT({
 				jwt: bearer,
 				publicKey,
 				maxAge: opts.jwtMaxAge,

@@ -4,7 +4,6 @@ import {
 	jwtVerify,
 	SignJWT,
 	importJWK,
-	decodeProtectedHeader,
 	errors as joseErrors,
 } from "jose";
 import type { AgentJWK } from "../types";
@@ -73,6 +72,10 @@ export interface SignAgentJWTOptions {
 	subject: string;
 	/** JWT `aud` claim — the server's issuer URL. */
 	audience: string;
+	/** JWT `typ` header (§4.2/§4.5). @default "agent+jwt" */
+	typ?: "host+jwt" | "agent+jwt";
+	/** JWT `iss` claim — required for host JWTs (§4.2). */
+	issuer?: string;
 	/** Expiry in seconds from now. @default 60 */
 	expiresInSeconds?: number;
 	/** Optional capabilities to restrict this JWT to (§5.3). */
@@ -98,17 +101,21 @@ export async function signAgentJWT(
 		...(opts.ath ? { ath: opts.ath } : {}),
 		...opts.additionalClaims,
 	})
-		.setProtectedHeader({ alg, typ: "JWT" })
+		.setProtectedHeader({ alg, typ: opts.typ ?? "agent+jwt" })
 		.setSubject(opts.subject)
 		.setAudience(opts.audience)
 		.setIssuedAt()
 		.setExpirationTime(`${opts.expiresInSeconds ?? 60}s`)
 		.setJti(globalThis.crypto.randomUUID());
 
+	if (opts.issuer) {
+		builder.setIssuer(opts.issuer);
+	}
+
 	return builder.sign(key);
 }
 
-export interface VerifyAgentJWTOptions {
+export interface VerifyJWTOptions {
 	jwt: string;
 	publicKey: AgentJWK;
 	/** Maximum acceptable age in seconds. */
@@ -122,8 +129,8 @@ export interface VerifyAgentJWTOptions {
  * The algorithm is always derived from the key, never from the
  * JWT header, to prevent algorithm confusion attacks (§5.1).
  */
-export async function verifyAgentJWT(
-	opts: VerifyAgentJWTOptions,
+export async function verifyJWT(
+	opts: VerifyJWTOptions,
 ): Promise<Record<string, unknown> | null> {
 	try {
 		const alg = resolveAlgorithm(opts.publicKey);
@@ -138,3 +145,9 @@ export async function verifyAgentJWT(
 		throw err;
 	}
 }
+
+/** @deprecated Use `VerifyJWTOptions` instead. */
+export type VerifyAgentJWTOptions = VerifyJWTOptions;
+
+/** @deprecated Use `verifyJWT` instead. */
+export const verifyAgentJWT = verifyJWT;
