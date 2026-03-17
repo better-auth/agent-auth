@@ -3,6 +3,7 @@ import * as z from "zod";
 import { TABLE, DEFAULTS } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
+import { hashToken } from "../../utils/approval";
 import type {
 	ApprovalRequest,
 	HostSession,
@@ -58,8 +59,16 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 
 			const user =
 				await ctx.context.internalAdapter.findUserByEmail(loginHint);
+
 			if (!user) {
-				throw agentError("NOT_FOUND", ERR.INVALID_REQUEST);
+				// Timing ballast: approximate the DB write latency on the success path
+				// to prevent user enumeration via timing side-channel (CIBA Core §13.1)
+				await hashToken(loginHint);
+				return ctx.json({
+					auth_req_id: crypto.randomUUID(),
+					expires_in: DEFAULTS.cibaExpiresIn,
+					interval: DEFAULTS.cibaInterval,
+				});
 			}
 
 			const now = new Date();
