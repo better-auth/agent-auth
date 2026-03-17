@@ -369,7 +369,7 @@ export async function buildApprovalInfo(
 
 	return {
 		method: "device_authorization",
-		device_code: context.agentId,
+		device_code: approvalReq.id,
 		verification_uri: pageBase,
 		verification_uri_complete: `${pageBase}?agent_id=${context.agentId}&code=${userCode}`,
 		user_code: userCode,

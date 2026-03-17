@@ -11,107 +11,26 @@ import { describe, expect, it, beforeAll, vi } from "vitest";
 import { getTestInstance } from "better-auth/test";
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from "jose";
 import { agentAuth as _agentAuth } from "../index";
-import { agentAuthClient } from "../client";
 import { verifyAudience, getCapabilityLocation } from "../routes/_helpers";
-import type { AgentAuthOptions, AgentJWK, AgentAuthEvent } from "../types";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const agentAuth = (opts?: AgentAuthOptions): any => _agentAuth(opts);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const agentAuthClientPlugin = (): any => agentAuthClient();
-
-const BASE = "http://localhost:3000";
-const API = `${BASE}/api/auth`;
+import {
+	agentAuth,
+	agentAuthClientPlugin,
+	generateTestKeypair,
+	signTestJWT,
+	createHostJWT,
+	createAgentJWT,
+	json,
+	createTestClient,
+	BASE,
+	API,
+} from "./helpers";
+import type { AgentJWK, AgentAuthEvent } from "../types";
 
 const TEST_CAPABILITIES = [
 	{ name: "check_balance", description: "Check account balance" },
 	{ name: "transfer", description: "Transfer money" },
 	{ name: "admin_panel", description: "Access admin panel" },
 ];
-
-async function generateTestKeypair(): Promise<{
-	publicKey: AgentJWK;
-	privateKey: AgentJWK;
-}> {
-	const { publicKey, privateKey } = await generateKeyPair("EdDSA", {
-		crv: "Ed25519",
-		extractable: true,
-	});
-	return {
-		publicKey: (await exportJWK(publicKey)) as AgentJWK,
-		privateKey: (await exportJWK(privateKey)) as AgentJWK,
-	};
-}
-
-async function signTestJWT(opts: {
-	privateKey: AgentJWK;
-	subject: string;
-	audience: string;
-	typ?: "host+jwt" | "agent+jwt";
-	issuer?: string;
-	expiresInSeconds?: number;
-	capabilities?: string[];
-	additionalClaims?: Record<string, unknown>;
-}): Promise<string> {
-	const key = await importJWK(opts.privateKey, "EdDSA");
-	const builder = new SignJWT({
-		...(opts.capabilities ? { capabilities: opts.capabilities } : {}),
-		...opts.additionalClaims,
-	})
-		.setProtectedHeader({ alg: "EdDSA", typ: opts.typ ?? "agent+jwt" })
-		.setSubject(opts.subject)
-		.setAudience(opts.audience)
-		.setIssuedAt()
-		.setExpirationTime(`${opts.expiresInSeconds ?? 60}s`)
-		.setJti(globalThis.crypto.randomUUID());
-
-	if (opts.issuer) {
-		builder.setIssuer(opts.issuer);
-	}
-
-	return builder.sign(key);
-}
-
-async function createHostJWT(
-	hostPrivateKey: AgentJWK,
-	hostPublicKey: AgentJWK,
-	agentPublicKey: AgentJWK,
-	hostId?: string,
-): Promise<string> {
-	const id = hostId ?? "new-host";
-	return signTestJWT({
-		privateKey: hostPrivateKey,
-		subject: id,
-		issuer: id,
-		typ: "host+jwt",
-		audience: BASE,
-		additionalClaims: {
-			host_public_key: hostPublicKey,
-			agent_public_key: agentPublicKey,
-		},
-	});
-}
-
-async function createAgentJWT(
-	agentPrivateKey: AgentJWK,
-	agentId: string,
-	opts?: {
-		capabilities?: string[];
-		expiresInSeconds?: number;
-		additionalClaims?: Record<string, unknown>;
-	},
-): Promise<string> {
-	return signTestJWT({
-		privateKey: agentPrivateKey,
-		subject: agentId,
-		audience: BASE,
-		...opts,
-	});
-}
-
-async function json<T = unknown>(res: Response): Promise<T> {
-	return res.json() as Promise<T>;
-}
 
 // ---------- Shared test instance for basic JWT security tests ----------
 
@@ -122,58 +41,7 @@ let sharedAgentKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
 let sharedAgentId: string;
 let sharedHostKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
 let sharedHostId: string;
-
-function api(path: string, init?: RequestInit): Promise<Response> {
-	return auth.handler(
-		new Request(`${API}${path}`, {
-			...init,
-			headers: {
-				"content-type": "application/json",
-				...(init?.headers as Record<string, string> | undefined),
-			},
-		}),
-	);
-}
-
-function authedPost(
-	path: string,
-	body: unknown,
-	extraHeaders?: Record<string, string>,
-): Promise<Response> {
-	return api(path, {
-		method: "POST",
-		headers: { cookie: sessionCookie, ...extraHeaders },
-		body: JSON.stringify(body),
-	});
-}
-
-async function registerAgentViaHost(opts: {
-	hostKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
-	agentKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
-	hostId: string;
-	name?: string;
-	capabilities?: string[];
-	mode?: "delegated" | "autonomous";
-}): Promise<{ agentId: string; body: Record<string, unknown> }> {
-	const hostJWT = await createHostJWT(
-		opts.hostKeypair.privateKey,
-		opts.hostKeypair.publicKey,
-		opts.agentKeypair.publicKey,
-		opts.hostId,
-	);
-	const res = await api("/agent/register", {
-		method: "POST",
-		headers: { authorization: `Bearer ${hostJWT}` },
-		body: JSON.stringify({
-			name: opts.name ?? "Test Agent",
-			capabilities: opts.capabilities,
-			mode: opts.mode ?? "delegated",
-		}),
-	});
-	expect(res.ok).toBe(true);
-	const body = await json<Record<string, unknown>>(res);
-	return { agentId: body.agent_id as string, body };
-}
+let client: ReturnType<typeof createTestClient>;
 
 beforeAll(async () => {
 	const t = await getTestInstance(
@@ -194,21 +62,22 @@ beforeAll(async () => {
 		{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
 	);
 	auth = t.auth;
+	client = createTestClient((req) => auth.handler(req));
 
 	const { headers } = await t.signInWithTestUser();
 	sessionCookie = headers.get("cookie") ?? "";
 
 	sharedHostKeypair = await generateTestKeypair();
-	const createRes = await authedPost("/host/create", {
+	const createRes = await client.authedPost("/host/create", {
 		name: "Security Test Host",
 		public_key: sharedHostKeypair.publicKey,
 		default_capabilities: ["check_balance", "transfer"],
-	});
+	}, sessionCookie);
 	const { hostId } = await json<{ hostId: string }>(createRes);
 	sharedHostId = hostId;
 
 	sharedAgentKeypair = await generateTestKeypair();
-	const reg = await registerAgentViaHost({
+	const reg = await client.registerAgentViaHost({
 		hostKeypair: sharedHostKeypair,
 		agentKeypair: sharedAgentKeypair,
 		hostId: sharedHostId,
@@ -225,13 +94,13 @@ describe("JWT Replay Protection", () => {
 	it("detects JWT replay (same jti rejected)", async () => {
 		const jwt = await createAgentJWT(sharedAgentKeypair.privateKey, sharedAgentId);
 
-		const first = await api("/agent/status", {
+		const first = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt}` },
 		});
 		expect(first.ok).toBe(true);
 
-		const second = await api("/agent/status", {
+		const second = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt}` },
 		});
@@ -241,7 +110,7 @@ describe("JWT Replay Protection", () => {
 
 	it("JTI is partitioned by agent identity (different agents can reuse same jti value)", async () => {
 		const agentKeypair1 = await generateTestKeypair();
-		const { agentId: agentId1 } = await registerAgentViaHost({
+		const { agentId: agentId1 } = await client.registerAgentViaHost({
 			hostKeypair: sharedHostKeypair,
 			agentKeypair: agentKeypair1,
 			hostId: sharedHostId,
@@ -250,7 +119,7 @@ describe("JWT Replay Protection", () => {
 		});
 
 		const agentKeypair2 = await generateTestKeypair();
-		const { agentId: agentId2 } = await registerAgentViaHost({
+		const { agentId: agentId2 } = await client.registerAgentViaHost({
 			hostKeypair: sharedHostKeypair,
 			agentKeypair: agentKeypair2,
 			hostId: sharedHostId,
@@ -274,13 +143,13 @@ describe("JWT Replay Protection", () => {
 			additionalClaims: { jti: sharedJti },
 		});
 
-		const res1 = await api("/agent/status", {
+		const res1 = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt1}` },
 		});
 		expect(res1.ok).toBe(true);
 
-		const res2 = await api("/agent/status", {
+		const res2 = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt2}` },
 		});
@@ -294,7 +163,7 @@ describe("JWT Expiry & Revocation", () => {
 			expiresInSeconds: -1,
 		});
 
-		const res = await api("/agent/status", {
+		const res = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt}` },
 		});
@@ -304,7 +173,7 @@ describe("JWT Expiry & Revocation", () => {
 
 	it("rejects revoked agent", async () => {
 		const revokeAgentKeypair = await generateTestKeypair();
-		const { agentId: revokedId } = await registerAgentViaHost({
+		const { agentId: revokedId } = await client.registerAgentViaHost({
 			hostKeypair: sharedHostKeypair,
 			agentKeypair: revokeAgentKeypair,
 			hostId: sharedHostId,
@@ -317,7 +186,7 @@ describe("JWT Expiry & Revocation", () => {
 			typ: "host+jwt",
 			audience: BASE,
 		});
-		const revokeRes = await api("/agent/revoke", {
+		const revokeRes = await client.api("/agent/revoke", {
 			method: "POST",
 			headers: { authorization: `Bearer ${hostJWT}` },
 			body: JSON.stringify({ agent_id: revokedId }),
@@ -325,7 +194,7 @@ describe("JWT Expiry & Revocation", () => {
 		expect(revokeRes.ok).toBe(true);
 
 		const jwt = await createAgentJWT(revokeAgentKeypair.privateKey, revokedId);
-		const statusRes = await api("/agent/status", {
+		const statusRes = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt}` },
 		});
@@ -341,7 +210,7 @@ describe("JWT Expiry & Revocation", () => {
 describe("Algorithm Security", () => {
 	it("rejects JWT with algorithm confusion (HS256 in header vs Ed25519 key)", async () => {
 		const agentKeypair = await generateTestKeypair();
-		const { agentId } = await registerAgentViaHost({
+		const { agentId } = await client.registerAgentViaHost({
 			hostKeypair: sharedHostKeypair,
 			agentKeypair,
 			hostId: sharedHostId,
@@ -367,7 +236,7 @@ describe("Algorithm Security", () => {
 				.replace(/=+$/, ""),
 		);
 
-		const badRes = await api("/agent/status", {
+		const badRes = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${badAlgJwt}` },
 		});
@@ -383,11 +252,11 @@ describe("Algorithm Security", () => {
 		});
 		const pubJWK = (await exportJWK(publicKey)) as AgentJWK;
 
-		const res = await authedPost("/host/create", {
+		const res = await client.authedPost("/host/create", {
 			name: "P256 Host",
 			public_key: pubJWK,
 			default_capabilities: ["check_balance"],
-		});
+		}, sessionCookie);
 
 		// Should reject because P-256 is not in allowedKeyAlgorithms
 		expect(res.ok).toBe(false);
@@ -410,7 +279,7 @@ describe("Algorithm Security", () => {
 		const wrongKeypair = await generateTestKeypair();
 		const jwt = await createAgentJWT(wrongKeypair.privateKey, sharedAgentId);
 
-		const res = await api("/agent/status", {
+		const res = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt}` },
 		});
@@ -476,7 +345,9 @@ describe("Fresh Session Window", () => {
 				}),
 			}),
 		);
-		const { agent_id: agentId } = await json<{ agent_id: string }>(regRes);
+		const regBody = await json<{ agent_id: string; approval: { user_code: string } }>(regRes);
+		const agentId = regBody.agent_id;
+		const userCode = regBody.approval.user_code;
 
 		await new Promise((r) => setTimeout(r, 1500));
 
@@ -487,6 +358,7 @@ describe("Fresh Session Window", () => {
 				body: JSON.stringify({
 					agent_id: agentId,
 					action: "approve",
+					user_code: userCode,
 				}),
 			}),
 		);
@@ -676,15 +548,15 @@ describe("Absolute Lifetime", () => {
 describe("Host Revocation Cascade", () => {
 	it("agent auth fails when host is revoked", async () => {
 		const hostKeypair = await generateTestKeypair();
-		const createRes = await authedPost("/host/create", {
+		const createRes = await client.authedPost("/host/create", {
 			name: "Revocable Host",
 			public_key: hostKeypair.publicKey,
 			default_capabilities: ["check_balance"],
-		});
+		}, sessionCookie);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
 		const agentKeypair = await generateTestKeypair();
-		const { agentId } = await registerAgentViaHost({
+		const { agentId } = await client.registerAgentViaHost({
 			hostKeypair,
 			agentKeypair,
 			hostId,
@@ -693,18 +565,18 @@ describe("Host Revocation Cascade", () => {
 
 		// Verify agent works before revocation
 		const jwt1 = await createAgentJWT(agentKeypair.privateKey, agentId);
-		const okRes = await api("/agent/status", {
+		const okRes = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt1}` },
 		});
 		expect(okRes.ok).toBe(true);
 
 		// Revoke the host
-		await authedPost("/host/revoke", { host_id: hostId });
+		await client.authedPost("/host/revoke", { host_id: hostId }, sessionCookie);
 
 		// Agent should now fail
 		const jwt2 = await createAgentJWT(agentKeypair.privateKey, agentId);
-		const failRes = await api("/agent/status", {
+		const failRes = await client.api("/agent/status", {
 			method: "GET",
 			headers: { authorization: `Bearer ${jwt2}` },
 		});
