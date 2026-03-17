@@ -1,6 +1,6 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { boolean, pgTable, text } from "drizzle-orm/pg-core";
 
-export const provider = sqliteTable("provider", {
+export const provider = pgTable("provider", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull().unique(),
 	displayName: text("display_name").notNull(),
@@ -15,7 +15,7 @@ export const provider = sqliteTable("provider", {
 	jwksUri: text("jwks_uri"),
 	categories: text("categories").notNull().default("[]"),
 	logoUrl: text("logo_url"),
-	verified: integer("verified", { mode: "boolean" }).notNull().default(false),
+	verified: boolean("verified").notNull().default(false),
 	lastCheckedAt: text("last_checked_at"),
 	status: text("status").notNull().default("active"),
 	createdAt: text("created_at").notNull(),

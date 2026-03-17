@@ -15,7 +15,7 @@ const fontMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "Better Auth — Agent Auth Registry",
+	title: "AGENT-AUTH — Registry",
 	description:
 		"A searchable directory of Agent Auth-capable services. Discover providers by intent.",
 };

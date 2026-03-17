@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BetterAuthLogo } from "@/components/icons/logo";
+import { AgentAuthLogo } from "@/components/icons/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { db } from "@/lib/db";
 import { provider } from "@/lib/db/schema";
@@ -41,10 +41,10 @@ export default async function ProviderDetailPage({
 	return (
 		<div className="h-dvh flex flex-col">
 			<nav className="shrink-0 flex items-center border-b border-foreground/[0.06]">
-				<Link href="/" className="flex items-center gap-2 px-5 sm:px-6 py-3">
-					<BetterAuthLogo className="h-4 w-4" />
+				<Link href="/" className="flex items-center gap-2.5 px-5 sm:px-6 py-3">
+					<AgentAuthLogo className="h-3.5 w-auto" />
 					<p className="select-none font-mono text-xs uppercase tracking-wider text-foreground/70">
-						Better Auth
+						Agent-Auth
 					</p>
 				</Link>
 				<div className="ml-auto flex items-center px-5 sm:px-6">
