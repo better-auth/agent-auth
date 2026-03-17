@@ -1,8 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE, DEFAULTS } from "../../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { generateUserCode, hashToken } from "../../utils/approval";
 import { resolveDeviceAuthPage } from "../_helpers";
 import type {
@@ -38,10 +37,7 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 				.hostSession as HostSession | undefined;
 
 			if (!hostSession) {
-				throw APIError.from(
-					"UNAUTHORIZED",
-					ERR.UNAUTHORIZED_SESSION,
-				);
+				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
@@ -50,34 +46,27 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 			});
 
 			if (!agent) {
-				throw APIError.from("NOT_FOUND", ERR.AGENT_NOT_FOUND);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			if (agent.hostId !== hostSession.host.id) {
-				throw APIError.from("FORBIDDEN", ERR.UNAUTHORIZED);
+				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
 			if (agent.status !== "pending") {
 				if (agent.status === "active") {
-					return ctx.json(
-						{
-							error: "invalid_request",
-							error_description:
-								"Agent is already active. No approval needed.",
-						},
-						{ status: 400 },
-					);
+					throw agentError("BAD_REQUEST", ERR.INVALID_REQUEST, "Agent is already active. No approval needed.");
 				}
 				if (agent.status === "revoked") {
-					throw APIError.from("FORBIDDEN", ERR.AGENT_REVOKED);
+					throw agentError("FORBIDDEN", ERR.AGENT_REVOKED);
 				}
 				if (agent.status === "rejected") {
-					throw APIError.from("FORBIDDEN", ERR.AGENT_REJECTED);
+					throw agentError("FORBIDDEN", ERR.AGENT_REJECTED);
 				}
 				if (agent.status === "expired") {
-					throw APIError.from("FORBIDDEN", ERR.AGENT_EXPIRED);
+					throw agentError("FORBIDDEN", ERR.AGENT_EXPIRED);
 				}
-				throw APIError.from("BAD_REQUEST", ERR.INVALID_REQUEST);
+				throw agentError("BAD_REQUEST", ERR.INVALID_REQUEST);
 			}
 
 			const expiresIn = DEFAULTS.cibaExpiresIn;

@@ -6,20 +6,22 @@ export interface ErrorDef {
 }
 
 /**
- * Create a spec-compliant error (§6.13).
- * Response body: `{ error: "error_code", message: "Human-readable description" }`
+ * Create a spec-compliant error (RFC 6749 §5.2).
+ * Response body: `{ error: "error_code", error_description: "Human-readable description", ...extra }`
  */
 export function agentError(
 	status: ConstructorParameters<typeof APIError>[0],
 	err: ErrorDef,
 	overrideMessage?: string,
 	headers?: Record<string, string>,
+	extra?: Record<string, unknown>,
 ): APIError {
 	return new APIError(
 		status,
 		{
 			error: err.code,
-			message: overrideMessage ?? err.message,
+			error_description: overrideMessage ?? err.message,
+			...extra,
 		},
 		headers ?? {},
 	);
@@ -248,5 +250,17 @@ export const AGENT_AUTH_ERROR_CODES = {
 	APPROVAL_EXPIRED: {
 		code: "approval_expired",
 		message: "The approval request has expired",
+	},
+	WEBAUTHN_NOT_ENROLLED: {
+		code: "webauthn_not_enrolled",
+		message: "No passkeys registered. Register a passkey before approving capabilities that require proof of physical presence.",
+	},
+	WEBAUTHN_REQUIRED: {
+		code: "webauthn_required",
+		message: "This approval requires proof of physical presence. Complete the WebAuthn challenge.",
+	},
+	WEBAUTHN_VERIFICATION_FAILED: {
+		code: "webauthn_verification_failed",
+		message: "WebAuthn verification failed",
 	},
 } as const satisfies Record<string, ErrorDef>;
