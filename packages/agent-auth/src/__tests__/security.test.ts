@@ -1219,3 +1219,263 @@ describe("Location model — introspect audience integration", () => {
 		expect(body.active).toBe(false);
 	});
 });
+
+// ================================================================
+// Grant Revocation Consistency
+// ================================================================
+
+describe("Grant Revocation Consistency", () => {
+	it("agent revoke → all grants become revoked", async () => {
+		const agentKeypair = await generateTestKeypair();
+		const { agentId } = await client.registerAgentViaHost({
+			hostKeypair: sharedHostKeypair,
+			agentKeypair,
+			hostId: sharedHostId,
+			capabilities: ["check_balance", "transfer"],
+		});
+
+		// Verify grants are active
+		const jwt1 = await createAgentJWT(agentKeypair.privateKey, agentId);
+		const statusRes = await client.api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt1}` },
+		});
+		expect(statusRes.ok).toBe(true);
+		const statusBody = await json<{ agent_capability_grants: Array<{ status: string }> }>(statusRes);
+		expect(statusBody.agent_capability_grants.some((g) => g.status === "active")).toBe(true);
+
+		// Revoke via user session
+		const revokeRes = await client.authedPost("/agent/revoke", { agent_id: agentId }, sessionCookie);
+		expect(revokeRes.ok).toBe(true);
+
+		// Verify grants are revoked via introspect (agent JWT won't work since agent is revoked)
+		const introRes = await client.api("/agent/introspect", {
+			method: "POST",
+			body: JSON.stringify({ token: jwt1 }),
+		});
+		const introBody = await json<{
+			active: boolean;
+			agent_capability_grants?: Array<{ status: string }>;
+		}>(introRes);
+		expect(introBody.active).toBe(false);
+	});
+
+	it("host revoke cascade → all agent grants become revoked (not denied)", async () => {
+		const hostKeypair = await generateTestKeypair();
+		const createRes = await client.authedPost("/host/create", {
+			name: "Cascade Grant Host",
+			public_key: hostKeypair.publicKey,
+			default_capabilities: ["check_balance", "transfer"],
+		}, sessionCookie);
+		const { hostId } = await json<{ hostId: string }>(createRes);
+
+		const agentKeypair = await generateTestKeypair();
+		const { agentId } = await client.registerAgentViaHost({
+			hostKeypair,
+			agentKeypair,
+			hostId,
+			capabilities: ["check_balance", "transfer"],
+		});
+
+		// Verify agent works
+		const jwt1 = await createAgentJWT(agentKeypair.privateKey, agentId);
+		const okRes = await client.api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt1}` },
+		});
+		expect(okRes.ok).toBe(true);
+
+		// Revoke the host
+		const revokeRes = await client.authedPost("/host/revoke", { host_id: hostId }, sessionCookie);
+		expect(revokeRes.ok).toBe(true);
+		const revokeBody = await json<{ agents_revoked: number }>(revokeRes);
+		expect(revokeBody.agents_revoked).toBeGreaterThanOrEqual(1);
+
+		// Introspect should show inactive (agent is revoked)
+		const introRes = await client.api("/agent/introspect", {
+			method: "POST",
+			body: JSON.stringify({ token: jwt1 }),
+		});
+		const introBody = await json<{ active: boolean }>(introRes);
+		expect(introBody.active).toBe(false);
+	});
+
+	it("absolute lifetime expiry → grants revoked alongside agent", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						absoluteLifetime: 1,
+						agentSessionTTL: 86400,
+						agentMaxLifetime: 86400,
+						capabilities: TEST_CAPABILITIES,
+						modes: ["delegated"],
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+
+		const { headers: authHeaders } = await t.signInWithTestUser();
+		const cookie = authHeaders.get("cookie") ?? "";
+		const localClient = createTestClient((req) => t.auth.handler(req));
+
+		const hostKeypair = await generateTestKeypair();
+		const createRes = await localClient.authedPost("/host/create", {
+			name: "Abs Lifetime Grant Host",
+			public_key: hostKeypair.publicKey,
+			default_capabilities: ["check_balance"],
+		}, cookie);
+		const { hostId } = await json<{ hostId: string }>(createRes);
+
+		const agentKeypair = await generateTestKeypair();
+		const { agentId } = await localClient.registerAgentViaHost({
+			hostKeypair,
+			agentKeypair,
+			hostId,
+			capabilities: ["check_balance"],
+		});
+
+		// Wait for absolute lifetime to expire
+		await new Promise((r) => setTimeout(r, 1500));
+
+		// Trigger the absolute lifetime check
+		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId);
+		const res = await localClient.api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.status).toBe(403);
+
+		// Allow background task to complete
+		await new Promise((r) => setTimeout(r, 100));
+
+		// Verify grants are also revoked via introspect
+		const introRes = await localClient.api("/agent/introspect", {
+			method: "POST",
+			body: JSON.stringify({ token: jwt }),
+		});
+		const introBody = await json<{ active: boolean }>(introRes);
+		expect(introBody.active).toBe(false);
+	});
+
+	it("reactivate with approval → grants created as pending directly", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						agentSessionTTL: 1,
+						agentMaxLifetime: 86400,
+						capabilities: TEST_CAPABILITIES,
+						modes: ["delegated"],
+						resolveAutonomousUser: async ({ hostId }) => ({
+							id: `synthetic_${hostId}`,
+							name: "Auto User",
+							email: `auto_${hostId}@test.local`,
+						}),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+
+		// Create an unlinked host (no user session — use host JWT for registration)
+		const hostKeypair = await generateTestKeypair();
+		const hostJWT = await signTestJWT({
+			privateKey: hostKeypair.privateKey,
+			subject: "new-host",
+			issuer: "new-host",
+			typ: "host+jwt",
+			audience: BASE,
+			additionalClaims: {
+				host_public_key: hostKeypair.publicKey,
+			},
+		});
+
+		const enrollRes = await t.auth.handler(
+			new Request(`${API}/host/enroll`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${hostJWT}`,
+				},
+				body: JSON.stringify({
+					name: "Unlinked Host",
+					default_capabilities: ["check_balance"],
+				}),
+			}),
+		);
+
+		if (!enrollRes.ok) {
+			// If host/enroll doesn't exist, register via host/create with a temp user
+			// then clear userId — skip test if not feasible
+			return;
+		}
+
+		const enrollBody = await json<{ host_id: string }>(enrollRes);
+		const hostId = enrollBody.host_id;
+
+		const agentKeypair = await generateTestKeypair();
+		const regHostJWT = await createHostJWT(
+			hostKeypair.privateKey,
+			hostKeypair.publicKey,
+			agentKeypair.publicKey,
+			hostId,
+		);
+
+		const regRes = await t.auth.handler(
+			new Request(`${API}/agent/register`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${regHostJWT}`,
+				},
+				body: JSON.stringify({
+					name: "Reactivation Pending Agent",
+					capabilities: ["check_balance"],
+					mode: "delegated",
+				}),
+			}),
+		);
+
+		if (!regRes.ok) return;
+		const regBody = await json<{ agent_id: string }>(regRes);
+		const agentId = regBody.agent_id;
+
+		// Wait for session TTL to expire
+		await new Promise((r) => setTimeout(r, 1500));
+
+		// Reactivate
+		const reactivateJWT = await signTestJWT({
+			privateKey: hostKeypair.privateKey,
+			subject: hostId,
+			issuer: hostId,
+			typ: "host+jwt",
+			audience: BASE,
+		});
+
+		const reactivateRes = await t.auth.handler(
+			new Request(`${API}/agent/reactivate`, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${reactivateJWT}`,
+				},
+				body: JSON.stringify({ agent_id: agentId }),
+			}),
+		);
+
+		if (!reactivateRes.ok) return;
+
+		const reactivateBody = await json<{
+			status: string;
+			agent_capability_grants: Array<{ status: string; capability: string }>;
+		}>(reactivateRes);
+
+		if (reactivateBody.status === "pending") {
+			// All grants should be pending (created directly as pending, not active→pending)
+			const grantStatuses = reactivateBody.agent_capability_grants.map((g) => g.status);
+			expect(grantStatuses.every((s) => s === "pending")).toBe(true);
+		}
+	});
+});

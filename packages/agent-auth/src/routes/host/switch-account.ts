@@ -6,7 +6,6 @@ import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import type {
 	Agent,
-	AgentCapabilityGrant,
 	AgentHost,
 	ResolvedAgentAuthOptions,
 } from "../../types";
@@ -91,21 +90,11 @@ export function switchHostAccount(opts: ResolvedAgentAuthOptions) {
 						updatedAt: now,
 					},
 				});
-
-				const grants =
-					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-						model: TABLE.grant,
-						where: [{ field: "agentId", value: agent.id }],
-					});
-				for (const g of grants) {
-					if (g.status === "active" || g.status === "pending") {
-						await ctx.context.adapter.update({
-							model: TABLE.grant,
-							where: [{ field: "id", value: g.id }],
-							update: { status: "revoked", updatedAt: now },
-						});
-					}
-				}
+				await ctx.context.adapter.update({
+					model: TABLE.grant,
+					where: [{ field: "agentId", value: agent.id }],
+					update: { status: "revoked", updatedAt: now },
+				});
 				agentsRevoked++;
 			}
 

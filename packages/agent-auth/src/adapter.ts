@@ -93,26 +93,6 @@ export function getAgentAuthAdapter(
 			where: [{ field: "kid", value: kid }],
 		});
 
-	const findHostByKey = async (
-		publicKey: Record<string, unknown>,
-	): Promise<AgentHost | null> => {
-		const kid =
-			typeof publicKey.kid === "string" ? publicKey.kid : null;
-		if (kid) {
-			const byKid = await adapter.findOne<AgentHost>({
-				model: TABLE.host,
-				where: [{ field: "kid", value: kid }],
-			});
-			if (byKid) return byKid;
-		}
-		return adapter.findOne<AgentHost>({
-			model: TABLE.host,
-			where: [
-				{ field: "publicKey", value: JSON.stringify(publicKey) },
-			],
-		});
-	};
-
 	const findHostsByEnrollmentTokenHash = (hash: string) =>
 		adapter.findMany<AgentHost>({
 			model: TABLE.host,
@@ -171,12 +151,18 @@ export function getAgentAuthAdapter(
 			where: [{ field: "id", value: id }],
 		});
 
-	const deleteGrantsByAgent = async (agentId: string) => {
-		const existing = await findGrantsByAgent(agentId);
-		for (const g of existing) {
-			await deleteGrant(g.id);
-		}
-	};
+	const deleteGrantsByAgent = (agentId: string) =>
+		adapter.delete({
+			model: TABLE.grant,
+			where: [{ field: "agentId", value: agentId }],
+		});
+
+	const revokeGrantsByAgent = (agentId: string, now: Date) =>
+		adapter.update({
+			model: TABLE.grant,
+			where: [{ field: "agentId", value: agentId }],
+			update: { status: "revoked", updatedAt: now },
+		});
 
 	const createGrantRows = async (
 		agentId: string,
@@ -262,40 +248,6 @@ export function getAgentAuthAdapter(
 			update: data,
 		});
 
-	const checkSharedOrg = async (
-		userA: string,
-		userB: string,
-	): Promise<boolean> => {
-		try {
-			const membershipsA = await adapter.findMany<{
-				organizationId: string;
-			}>({
-				model: "member",
-				where: [{ field: "userId", value: userA }],
-			});
-			if (membershipsA.length === 0) return false;
-
-			for (const m of membershipsA) {
-				const membershipsB = await adapter.findMany<{
-					organizationId: string;
-				}>({
-					model: "member",
-					where: [
-						{ field: "userId", value: userB },
-						{
-							field: "organizationId",
-							value: m.organizationId,
-						},
-					],
-				});
-				if (membershipsB.length > 0) return true;
-			}
-			return false;
-		} catch {
-			return false;
-		}
-	};
-
 	/**
 	 * Transparent reactivation (§2.5).
 	 *
@@ -359,7 +311,6 @@ export function getAgentAuthAdapter(
 
 		findHostById,
 		findHostByKid,
-		findHostByKey,
 		findHostsByEnrollmentTokenHash,
 		findHostsForUser,
 		createHost,
@@ -370,6 +321,7 @@ export function getAgentAuthAdapter(
 		updateGrant,
 		deleteGrant,
 		deleteGrantsByAgent,
+		revokeGrantsByAgent,
 		createGrantRows,
 
 		findApprovalRequestById,
@@ -378,7 +330,6 @@ export function getAgentAuthAdapter(
 		createApprovalRequest,
 		updateApprovalRequest,
 
-		checkSharedOrg,
 		transparentReactivation,
 	};
 }

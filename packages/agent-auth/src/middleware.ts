@@ -282,15 +282,17 @@ export function createAgentAuthBeforeHook(
 					new Date(agent.createdAt).getTime() +
 					opts.absoluteLifetime * 1000;
 				if (Date.now() >= absExpiry) {
+					const revokedAt = new Date();
 					ctx.context.runInBackground(
-						db
-							.updateAgent(agent.id, {
+						Promise.all([
+							db.updateAgent(agent.id, {
 								status: "revoked",
 								publicKey: "",
 								kid: null,
-								updatedAt: new Date(),
-							})
-							.catch(logBackgroundError("revoke-expired-agent")),
+								updatedAt: revokedAt,
+							}),
+							db.revokeGrantsByAgent(agent.id, revokedAt),
+						]).catch(logBackgroundError("revoke-expired-agent")),
 					);
 					throw agentError(
 						"FORBIDDEN",
