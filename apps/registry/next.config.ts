@@ -5,7 +5,6 @@ const config: NextConfig = {
 	serverExternalPackages: [
 		"onnxruntime-node",
 		"@huggingface/transformers",
-		"better-sqlite3",
 	],
 };
 

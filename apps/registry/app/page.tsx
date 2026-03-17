@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import Link from "next/link";
-import { BetterAuthLogo } from "@/components/icons/logo";
+import { AgentAuthLogo } from "@/components/icons/logo";
 import { ProviderCard } from "@/components/provider-card";
 import { SearchBar } from "@/components/search-bar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -17,10 +17,10 @@ export default async function LandingPage() {
 	return (
 		<div className="min-h-dvh flex flex-col">
 			<nav className="shrink-0 flex items-center border-b border-foreground/[0.06]">
-				<Link href="/" className="flex items-center gap-2 px-5 sm:px-6 py-3">
-					<BetterAuthLogo className="h-4 w-4" />
+				<Link href="/" className="flex items-center gap-2.5 px-5 sm:px-6 py-3">
+					<AgentAuthLogo className="h-3 w-auto" />
 					<p className="select-none font-mono text-xs uppercase tracking-wider text-foreground/70">
-						Better Auth
+						Agent-Auth
 					</p>
 					<span className="text-foreground/20 text-[10px] font-mono">/</span>
 					<p className="select-none font-mono text-[10px] uppercase tracking-wider text-foreground/40">
@@ -100,7 +100,7 @@ export default async function LandingPage() {
 						<path d="M20 8V0H12" stroke="currentColor" strokeWidth="1" />
 					</svg>
 					<span className="absolute top-3.5 left-8 sm:top-5 sm:left-9 text-[7px] font-mono text-foreground/15 tracking-[0.2em] uppercase">
-						registry.betterauth.com
+						agent-auth.directory
 					</span>
 				</div>
 
@@ -213,11 +213,11 @@ export default async function LandingPage() {
 			<footer className="border-t border-foreground/[0.06] px-5 sm:px-6 py-5">
 				<div className="flex items-center justify-between">
 					<span className="text-[10px] text-foreground/30 font-mono">
-						Better Auth — Agent Auth Registry
+						AGENT-AUTH — Registry
 					</span>
 					<div className="flex items-center gap-3 text-[10px] font-mono text-foreground/30">
 						<Link
-							href="https://github.com/better-auth/better-auth"
+							href="https://github.com/agent-auth"
 							target="_blank"
 							rel="noopener noreferrer"
 							className="hover:text-foreground/50 transition-colors"
@@ -226,7 +226,7 @@ export default async function LandingPage() {
 						</Link>
 						<span className="text-foreground/15">/</span>
 						<Link
-							href="https://www.better-auth.com/docs"
+							href="https://agent-auth.directory/docs"
 							target="_blank"
 							rel="noopener noreferrer"
 							className="hover:text-foreground/50 transition-colors"

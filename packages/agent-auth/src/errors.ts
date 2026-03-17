@@ -231,7 +231,7 @@ export const AGENT_AUTH_ERROR_CODES = {
 	},
 	CONSTRAINT_VIOLATED: {
 		code: "constraint_violated",
-		message: "Execution arguments violate grant constraints",
+		message: "One or more capability constraints were violated",
 	},
 	EXECUTE_NOT_CONFIGURED: {
 		code: "execute_not_configured",

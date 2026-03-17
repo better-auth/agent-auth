@@ -496,6 +496,20 @@ type CreateFromOpenAPIOptions = {
 	 * ```
 	 */
 	approvalStrength?: ApprovalStrengthFilter;
+	/**
+	 * Set the `location` field on every capability derived from the spec (§2.15).
+	 *
+	 * When a capability has a `location`, the client sends the execute request
+	 * to that URL and sets the JWT `aud` claim to match. When omitted, the
+	 * client falls back to the server's `default_location` from discovery
+	 * (which points to the built-in `/capability/execute` endpoint).
+	 *
+	 * @example
+	 * ```ts
+	 * location: "https://api.example.com/agent/execute"
+	 * ```
+	 */
+	location?: string;
 };
 
 /** Resolve `approvalStrength` for a single parsed capability. */
@@ -604,6 +618,7 @@ export function createFromOpenAPI(
 				opts.approvalStrength,
 			);
 			if (strength) cap.approvalStrength = strength;
+			if (opts.location) cap.location = opts.location;
 			return cap;
 		},
 	);
