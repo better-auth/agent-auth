@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+	getAgentAuthTools,
 	toOpenAITools,
 	toAnthropicTools,
 	filterTools,
 	type AgentAuthTool,
 	type ToolParameters,
 } from "../tools";
+import type { AgentAuthClient } from "../client";
 
 function makeTool(
 	name: string,
@@ -221,5 +223,30 @@ describe("filterTools", () => {
 			exclude: ["alpha"],
 		});
 		expect(result.map((t) => t.name)).toEqual(["alpha"]);
+	});
+});
+
+// ─── Tool definitions — location model (§2.15) ─────────────
+
+describe("execute_capability tool definition", () => {
+	const stubClient = {} as AgentAuthClient;
+	const tools = getAgentAuthTools(stubClient);
+	const executeTool = tools.find((t) => t.name === "execute_capability");
+
+	it("execute_capability tool exists", () => {
+		expect(executeTool).toBeDefined();
+	});
+
+	it("does NOT expose a 'location' parameter", () => {
+		const props = executeTool!.parameters.properties as Record<
+			string,
+			unknown
+		>;
+		expect(props).not.toHaveProperty("location");
+	});
+
+	it("has agent_id and capability as required params", () => {
+		expect(executeTool!.parameters.required).toContain("agent_id");
+		expect(executeTool!.parameters.required).toContain("capability");
 	});
 });
