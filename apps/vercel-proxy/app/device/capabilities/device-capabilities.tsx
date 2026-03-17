@@ -137,9 +137,11 @@ export default function DeviceCapabilities({
 				body: JSON.stringify(body),
 			});
 			const data = await res.json();
+			const errorCode = data.error;
+			const errorMessage = data.error_description ?? "Action failed";
 
 			// Check body-level codes first (Better Auth may return 200 for error responses)
-			if (data.code === "fresh_session_required") {
+			if (errorCode === "fresh_session_required") {
 				setReauthInfo({
 					max_age: data.max_age,
 					session_age: data.session_age,
@@ -148,7 +150,7 @@ export default function DeviceCapabilities({
 				return;
 			}
 
-			if (data.code === "webauthn_required" && data.webauthn_options) {
+			if (errorCode === "webauthn_required" && data.webauthn_options) {
 				try {
 					const assertion = await startAuthentication({
 						optionsJSON: data.webauthn_options,
@@ -165,7 +167,7 @@ export default function DeviceCapabilities({
 				return;
 			}
 
-			if (data.code === "webauthn_not_enrolled") {
+			if (errorCode === "webauthn_not_enrolled") {
 				setError(
 					"You need to register a passkey (fingerprint/face) before you can approve these capabilities. Go to your account settings to add one.",
 				);
@@ -173,8 +175,8 @@ export default function DeviceCapabilities({
 				return;
 			}
 
-			if (!res.ok || data.code) {
-				setError(data.message || "Action failed");
+			if (!res.ok || errorCode) {
+				setError(errorMessage);
 				setActionState("idle");
 				return;
 			}

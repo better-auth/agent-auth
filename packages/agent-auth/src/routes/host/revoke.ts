@@ -6,6 +6,7 @@ import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import type {
 	Agent,
+	AgentCapabilityGrant,
 	AgentHost,
 	HostSession,
 	ResolvedAgentAuthOptions,
@@ -129,11 +130,18 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 						updatedAt: now,
 					},
 				});
-				await ctx.context.adapter.update({
-					model: TABLE.grant,
-					where: [{ field: "agentId", value: agent.id }],
-					update: { status: "revoked", updatedAt: now },
-				});
+				const grants =
+					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+						model: TABLE.grant,
+						where: [{ field: "agentId", value: agent.id }],
+					});
+				for (const grant of grants) {
+					await ctx.context.adapter.update({
+						model: TABLE.grant,
+						where: [{ field: "id", value: grant.id }],
+						update: { status: "revoked", updatedAt: now },
+					});
+				}
 			}
 
 			emit(opts, {

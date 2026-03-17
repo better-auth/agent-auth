@@ -151,18 +151,22 @@ export function getAgentAuthAdapter(
 			where: [{ field: "id", value: id }],
 		});
 
-	const deleteGrantsByAgent = (agentId: string) =>
-		adapter.delete({
-			model: TABLE.grant,
-			where: [{ field: "agentId", value: agentId }],
-		});
+	const deleteGrantsByAgent = async (agentId: string) => {
+		const existing = await findGrantsByAgent(agentId);
+		for (const grant of existing) {
+			await deleteGrant(grant.id);
+		}
+	};
 
-	const revokeGrantsByAgent = (agentId: string, now: Date) =>
-		adapter.update({
-			model: TABLE.grant,
-			where: [{ field: "agentId", value: agentId }],
-			update: { status: "revoked", updatedAt: now },
-		});
+	const revokeGrantsByAgent = async (agentId: string, now: Date) => {
+		const existing = await findGrantsByAgent(agentId);
+		for (const grant of existing) {
+			await updateGrant(grant.id, {
+				status: "revoked",
+				updatedAt: now,
+			});
+		}
+	};
 
 	const createGrantRows = (
 		agentId: string,
