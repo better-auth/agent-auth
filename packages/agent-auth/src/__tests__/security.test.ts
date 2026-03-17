@@ -745,6 +745,20 @@ describe("verifyAudience — location model", () => {
 			),
 		).toBe(true);
 	});
+
+	it("accepts the full baseURL as audience", () => {
+		expect(verifyAudience("http://localhost:3000/api/auth", baseURL)).toBe(true);
+	});
+
+	it("accepts proxy full base URL as audience", () => {
+		const headers = new Headers({
+			host: "proxy.example.com",
+			"x-forwarded-proto": "https",
+		});
+		expect(
+			verifyAudience("https://proxy.example.com/api/auth", baseURL, headers, true),
+		).toBe(true);
+	});
 });
 
 describe("getCapabilityLocation", () => {

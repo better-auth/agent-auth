@@ -21,55 +21,51 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 			},
 		},
 		async (ctx) => {
-			const baseUrl = new URL(ctx.context.baseURL);
-			const issuer = baseUrl.origin;
-			const basePath = baseUrl.pathname.replace(/\/$/, "");
+			const issuer = ctx.context.baseURL.replace(/\/$/, "");
 
 			const endpoints: Record<string, string> = {
-				register: `${basePath}/agent/register`,
-				capabilities: `${basePath}/capability/list`,
-				execute: `${basePath}/capability/execute`,
-				request_capability: `${basePath}/agent/request-capability`,
-				status: `${basePath}/agent/status`,
-				revoke: `${basePath}/agent/revoke`,
-				reactivate: `${basePath}/agent/reactivate`,
-				revoke_host: `${basePath}/host/revoke`,
-				rotate_key: `${basePath}/agent/rotate-key`,
-				rotate_host_key: `${basePath}/host/rotate-key`,
-				switch_account: `${basePath}/host/switch-account`,
-				introspect: `${basePath}/agent/introspect`,
-				describe_capability: `${basePath}/capability/describe`,
-				device_authorization: `${basePath}/device/code`,
+				register: `${issuer}/agent/register`,
+				capabilities: `${issuer}/capability/list`,
+				execute: `${issuer}/capability/execute`,
+				request_capability: `${issuer}/agent/request-capability`,
+				status: `${issuer}/agent/status`,
+				revoke: `${issuer}/agent/revoke`,
+				reactivate: `${issuer}/agent/reactivate`,
+				revoke_host: `${issuer}/host/revoke`,
+				rotate_key: `${issuer}/agent/rotate-key`,
+				rotate_host_key: `${issuer}/host/rotate-key`,
+				switch_account: `${issuer}/host/switch-account`,
+				introspect: `${issuer}/agent/introspect`,
+				describe_capability: `${issuer}/capability/describe`,
+				device_authorization: `${issuer}/device/code`,
 			};
 
 			if (opts.approvalMethods.includes("ciba")) {
-				endpoints.ciba_authorize = `${basePath}/agent/ciba/authorize`;
+				endpoints.ciba_authorize = `${issuer}/agent/ciba/authorize`;
 			}
 
-		const proofOfPresenceMethods: string[] = [];
-		if (opts.proofOfPresence?.enabled) {
-			proofOfPresenceMethods.push("webauthn");
-		}
+			const proofOfPresenceMethods: string[] = [];
+			if (opts.proofOfPresence?.enabled) {
+				proofOfPresenceMethods.push("webauthn");
+			}
 
-		const defaultLocation = new URL(endpoints.execute, issuer).toString();
-
-		return ctx.json({
-			version: "1.0-draft",
-			provider_name: opts.providerName ?? "agent-auth",
-			description:
-				opts.providerDescription ??
-				"Agent Auth enabled service",
-			issuer,
-			default_location: defaultLocation,
-			algorithms: opts.allowedKeyAlgorithms,
-			modes: opts.modes,
-			approval_methods: opts.approvalMethods,
-			...(proofOfPresenceMethods.length > 0
-				? { proof_of_presence_methods: proofOfPresenceMethods }
-				: {}),
-			endpoints,
-			...(opts.jwksUri ? { jwks_uri: opts.jwksUri } : {}),
-		});
+			return ctx.json({
+				version: "1.0-draft",
+				provider_name: opts.providerName ?? "agent-auth",
+				description:
+					opts.providerDescription ??
+					"Agent Auth enabled service",
+				issuer,
+				default_location: endpoints.execute,
+				algorithms: opts.allowedKeyAlgorithms,
+				modes: opts.modes,
+				approval_methods: opts.approvalMethods,
+				...(proofOfPresenceMethods.length > 0
+					? { proof_of_presence_methods: proofOfPresenceMethods }
+					: {}),
+				endpoints,
+				...(opts.jwksUri ? { jwks_uri: opts.jwksUri } : {}),
+			});
 		},
 	);
 }
