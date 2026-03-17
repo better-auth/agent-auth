@@ -116,26 +116,15 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 			const constraintArgs = (args ?? {}) as Record<string, ConstraintPrimitive | undefined>;
 			const result = validateConstraints(activeGrant.constraints, constraintArgs);
 			if (result.unknownOperators.length > 0) {
-				throw new APIError("BAD_REQUEST", {
-					error: ERR.UNKNOWN_CONSTRAINT_OPERATOR.code,
-					message: `Unknown constraint operators: ${result.unknownOperators.join(", ")}`,
-					operators: result.unknownOperators,
-				});
+				throw agentError("BAD_REQUEST", ERR.UNKNOWN_CONSTRAINT_OPERATOR, `Unknown constraint operators: ${result.unknownOperators.join(", ")}`, undefined, { operators: result.unknownOperators });
 			}
 			if (result.violations.length > 0) {
-				throw new APIError("FORBIDDEN", {
-					error: ERR.CONSTRAINT_VIOLATED.code,
-					message: ERR.CONSTRAINT_VIOLATED.message,
-					violations: result.violations,
-				});
+				throw agentError("FORBIDDEN", ERR.CONSTRAINT_VIOLATED, undefined, undefined, { violations: result.violations });
 			}
 		}
 
 		if (!opts.onExecute) {
-				throw new APIError("INTERNAL_SERVER_ERROR", {
-					error: ERR.EXECUTE_NOT_CONFIGURED.code,
-					message: ERR.EXECUTE_NOT_CONFIGURED.message,
-				});
+				throw agentError("INTERNAL_SERVER_ERROR", ERR.EXECUTE_NOT_CONFIGURED);
 			}
 
 			const startTime = Date.now();

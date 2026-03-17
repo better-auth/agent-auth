@@ -1,6 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import { sessionMiddleware } from "better-auth/api";
+
 import * as z from "zod";
 import { TABLE } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
@@ -91,19 +92,13 @@ export function approveCapability(
 						where: [{ field: "id", value: approvalId }],
 					});
 				if (!approvalRequest || !approvalRequest.agentId) {
-					throw APIError.from(
-						"NOT_FOUND",
-						ERR.CAPABILITY_REQUEST_NOT_FOUND,
-					);
+					throw agentError("NOT_FOUND", ERR.CAPABILITY_REQUEST_NOT_FOUND);
 				}
 				agentId = approvalRequest.agentId;
 			} else if (directAgentId) {
 				agentId = directAgentId;
 			} else {
-				throw new APIError("BAD_REQUEST", {
-					message:
-						"Either agent_id or approval_id is required.",
-				});
+				throw agentError("BAD_REQUEST", ERR.INVALID_REQUEST, "Either agent_id or approval_id is required.");
 			}
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
@@ -112,17 +107,11 @@ export function approveCapability(
 			});
 
 			if (!agent) {
-				throw APIError.from(
-					"NOT_FOUND",
-					ERR.AGENT_NOT_FOUND,
-				);
+				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
 			if (agent.userId && agent.userId !== session.user.id) {
-				throw APIError.from(
-					"FORBIDDEN",
-					ERR.CAPABILITY_REQUEST_OWNER_MISMATCH,
-				);
+				throw agentError("FORBIDDEN", ERR.CAPABILITY_REQUEST_OWNER_MISMATCH);
 			}
 
 			// Resolve device_authorization approval requests for user_code verification
@@ -181,10 +170,7 @@ export function approveCapability(
 			const agentIsPending = agent.status === "pending";
 
 			if (pendingGrants.length === 0 && !agentIsPending) {
-				throw APIError.from(
-					"PRECONDITION_FAILED",
-					ERR.CAPABILITY_REQUEST_ALREADY_RESOLVED,
-				);
+				throw agentError("PRECONDITION_FAILED", ERR.CAPABILITY_REQUEST_ALREADY_RESOLVED);
 			}
 
 			if (action === "deny") {
@@ -264,8 +250,8 @@ export function approveCapability(
 				if (age > freshWindow) {
 					return ctx.json(
 						{
-							code: "fresh_session_required",
-							message:
+							error: "fresh_session_required",
+							error_description:
 								"A fresh authentication session is required for this operation. Please re-authenticate and try again.",
 							max_age: freshWindow,
 							session_age: Math.floor(age),
@@ -321,8 +307,8 @@ export function approveCapability(
 				if (passkeys.length === 0) {
 					return ctx.json(
 						{
-							code: "webauthn_not_enrolled",
-							message:
+							error: "webauthn_not_enrolled",
+							error_description:
 								"No passkeys registered. Register a passkey before approving capabilities that require proof of physical presence.",
 						},
 						{ status: 403 },
@@ -343,8 +329,8 @@ export function approveCapability(
 
 					return ctx.json(
 						{
-							code: "webauthn_required",
-							message:
+							error: "webauthn_required",
+							error_description:
 								"This approval requires proof of physical presence. Complete the WebAuthn challenge.",
 							webauthn_options: options,
 						},
@@ -358,10 +344,7 @@ export function approveCapability(
 				);
 
 				if (!expectedChallenge) {
-					throw new APIError("FORBIDDEN", {
-						message:
-							"WebAuthn challenge expired or not found. Request a new challenge.",
-					});
+					throw agentError("FORBIDDEN", ERR.WEBAUTHN_VERIFICATION_FAILED, "WebAuthn challenge expired or not found. Request a new challenge.");
 				}
 
 				const assertionResponse =
@@ -371,9 +354,7 @@ export function approveCapability(
 				);
 
 				if (!matchingPasskey) {
-					throw new APIError("FORBIDDEN", {
-						message: "WebAuthn credential not recognized.",
-					});
+					throw agentError("FORBIDDEN", ERR.WEBAUTHN_VERIFICATION_FAILED, "WebAuthn credential not recognized.");
 				}
 
 				try {
@@ -385,9 +366,7 @@ export function approveCapability(
 					);
 
 					if (!verification.verified) {
-						throw new APIError("FORBIDDEN", {
-							message: "WebAuthn verification failed.",
-						});
+						throw agentError("FORBIDDEN", ERR.WEBAUTHN_VERIFICATION_FAILED, "WebAuthn verification failed.");
 					}
 
 					await ctx.context.adapter.update({
@@ -402,10 +381,7 @@ export function approveCapability(
 					});
 				} catch (error) {
 					if (error instanceof APIError) throw error;
-					throw new APIError("FORBIDDEN", {
-						message:
-							"WebAuthn assertion verification failed.",
-					});
+					throw agentError("FORBIDDEN", ERR.WEBAUTHN_VERIFICATION_FAILED, "WebAuthn assertion verification failed.");
 				}
 			}
 		}
@@ -416,9 +392,7 @@ export function approveCapability(
 				opts.blockedCapabilities,
 			);
 			if (blocked.length > 0) {
-				throw new APIError("BAD_REQUEST", {
-					message: `Blocked capabilities: ${blocked.join(", ")}`,
-				});
+				throw agentError("BAD_REQUEST", ERR.CAPABILITY_BLOCKED, `Blocked capabilities: ${blocked.join(", ")}`);
 			}
 		}
 

@@ -146,10 +146,8 @@ describe("WebAuthn Proof of Presence", () => {
 				},
 				sessionCookie,
 			);
-			const body = await json<{ code: string; message: string }>(
-				approveRes,
-			);
-			expect(body.code).toBe("webauthn_not_enrolled");
+			const body = await json<{ error: string }>(approveRes);
+			expect(body.error).toBe("webauthn_not_enrolled");
 			if (!approveRes.ok) {
 				expect(approveRes.status).toBe(403);
 			}

@@ -84,6 +84,24 @@ beforeAll(async () => {
 	testUserId = user.id;
 });
 
+describe("RFC 6749 §5.2 Error Envelope", () => {
+	it("error responses use RFC 6749 §5.2 envelope", async () => {
+		const res = await client.api("/device/code", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ agent_id: "nonexistent" }),
+		});
+		expect(res.ok).toBe(false);
+		const body = await json<Record<string, unknown>>(res);
+		expect(body).toHaveProperty("error");
+		expect(body).toHaveProperty("error_description");
+		expect(body).not.toHaveProperty("message");
+		expect(body).not.toHaveProperty("code");
+		expect(typeof body.error).toBe("string");
+		expect(typeof body.error_description).toBe("string");
+	});
+});
+
 describe("Host Management", () => {
 	let createdHostId: string;
 
