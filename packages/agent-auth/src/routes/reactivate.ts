@@ -93,16 +93,24 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 					new Date(agent.createdAt).getTime() +
 					opts.absoluteLifetime * 1000;
 				if (Date.now() >= absoluteExpiry) {
-					await ctx.context.adapter.update({
-						model: TABLE.agent,
-						where: [{ field: "id", value: agent.id }],
-						update: {
-							status: "revoked",
-							publicKey: "",
-							kid: null,
-							updatedAt: new Date(),
-						},
-					});
+					const revokedAt = new Date();
+					await Promise.all([
+						ctx.context.adapter.update({
+							model: TABLE.agent,
+							where: [{ field: "id", value: agent.id }],
+							update: {
+								status: "revoked",
+								publicKey: "",
+								kid: null,
+								updatedAt: revokedAt,
+							},
+						}),
+						ctx.context.adapter.update({
+							model: TABLE.grant,
+							where: [{ field: "agentId", value: agent.id }],
+							update: { status: "revoked", updatedAt: revokedAt },
+						}),
+					]);
 					throw agentError(
 						"FORBIDDEN",
 						ERR.ABSOLUTE_LIFETIME_EXCEEDED,
@@ -124,24 +132,27 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				host.defaultCapabilities,
 			);
 
+			const now = new Date();
+			const isHostLinked = !!host.userId;
+			const needsApproval =
+				!isHostLinked && baseCapabilityIds.length > 0;
+
 			// Revoke all existing grants and re-grant host defaults
 			await createGrantRows(
 				ctx.context.adapter,
 				agent.id,
 				baseCapabilityIds,
 				agent.userId,
-				{ clearExisting: true },
 				{
+					clearExisting: true,
+					status: needsApproval ? "pending" : "active",
+				},
+				needsApproval ? undefined : {
 					pluginOpts: opts,
 					hostId: agent.hostId,
 					userId: agent.userId,
 				},
 			);
-
-			const now = new Date();
-			const isHostLinked = !!host.userId;
-			const needsApproval =
-				!isHostLinked && baseCapabilityIds.length > 0;
 
 			const newStatus = needsApproval ? "pending" : "active";
 			const expiresAt =
@@ -160,23 +171,6 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 					updatedAt: now,
 				},
 			});
-
-			if (needsApproval) {
-				const pendingGrants =
-					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-						model: TABLE.grant,
-						where: [{ field: "agentId", value: agent.id }],
-					});
-				for (const g of pendingGrants) {
-					if (g.status === "active") {
-						await ctx.context.adapter.update({
-							model: TABLE.grant,
-							where: [{ field: "id", value: g.id }],
-							update: { status: "pending", updatedAt: now },
-						});
-					}
-				}
-			}
 
 			const grants =
 				await ctx.context.adapter.findMany<AgentCapabilityGrant>({

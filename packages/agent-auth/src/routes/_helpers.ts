@@ -142,7 +142,7 @@ export async function checkSharedOrg(
 }
 
 export async function createGrantRows(
-	adapter: AdapterCreate & AdapterDelete & AdapterFindMany,
+	adapter: AdapterCreate & AdapterDelete,
 	agentId: string,
 	capabilityIds: string[],
 	grantedBy: string | null,
@@ -160,16 +160,10 @@ export async function createGrantRows(
 	constraintsMap?: Map<string, CapabilityConstraints>,
 ): Promise<void> {
 	if (grantOpts?.clearExisting) {
-		const existing = await adapter.findMany<{ id: string }>({
+		await adapter.delete({
 			model: TABLE.grant,
 			where: [{ field: "agentId", value: agentId }],
 		});
-		for (const g of existing) {
-			await adapter.delete({
-				model: TABLE.grant,
-				where: [{ field: "id", value: g.id }],
-			});
-		}
 	}
 
 	const status = grantOpts?.status ?? "active";
@@ -563,15 +557,11 @@ export async function claimAutonomousAgents(
 			.filter((g) => g.status === "active")
 			.map((g) => g.capability);
 
-		for (const g of grants) {
-			if (g.status === "active" || g.status === "pending") {
-				await adapter.update({
-					model: TABLE.grant,
-					where: [{ field: "id", value: g.id }],
-					update: { status: "revoked", updatedAt: now },
-				});
-			}
-		}
+		await adapter.update({
+			model: TABLE.grant,
+			where: [{ field: "agentId", value: agent.id }],
+			update: { status: "revoked", updatedAt: now },
+		});
 
 		await adapter.update({
 			model: TABLE.agent,
@@ -729,20 +719,11 @@ async function revokeAgentsForUserOnHost(
 		if (agent.id === params.excludeAgentId) continue;
 		if (agent.status === "revoked" || agent.status === "rejected") continue;
 
-		const grants = await adapter.findMany<AgentCapabilityGrant>({
+		await adapter.update({
 			model: TABLE.grant,
 			where: [{ field: "agentId", value: agent.id }],
+			update: { status: "revoked", updatedAt: now },
 		});
-
-		for (const g of grants) {
-			if (g.status === "active" || g.status === "pending") {
-				await adapter.update({
-					model: TABLE.grant,
-					where: [{ field: "id", value: g.id }],
-					update: { status: "denied", updatedAt: now },
-				});
-			}
-		}
 
 		await adapter.update({
 			model: TABLE.agent,
