@@ -127,6 +127,9 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 						name: c.name,
 						description: c.description,
 					};
+					if (c.location) {
+						result.location = c.location;
+					}
 					if (c.approvalStrength) {
 						result.approval_strength = c.approvalStrength;
 					}

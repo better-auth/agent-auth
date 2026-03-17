@@ -23,7 +23,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const baseUrl = new URL(ctx.context.baseURL);
 			const issuer = baseUrl.origin;
-			const basePath = baseUrl.pathname.replace(/\/$/, "") || "/api/auth";
+			const basePath = baseUrl.pathname.replace(/\/$/, "");
 
 			const endpoints: Record<string, string> = {
 				register: `${basePath}/agent/register`,
@@ -51,6 +51,8 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 			proofOfPresenceMethods.push("webauthn");
 		}
 
+		const defaultLocation = new URL(endpoints.execute, issuer).toString();
+
 		return ctx.json({
 			version: "1.0-draft",
 			provider_name: opts.providerName ?? "agent-auth",
@@ -58,6 +60,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				opts.providerDescription ??
 				"Agent Auth enabled service",
 			issuer,
+			default_location: defaultLocation,
 			algorithms: opts.allowedKeyAlgorithms,
 			modes: opts.modes,
 			approval_methods: opts.approvalMethods,

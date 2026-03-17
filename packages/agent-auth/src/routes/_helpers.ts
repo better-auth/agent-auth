@@ -463,25 +463,46 @@ export async function validateCapabilitiesExist(
 	}
 }
 
+/**
+ * Verify JWT `aud` claim (§4.3).
+ *
+ * Accepts the server's origin (for non-execution JWTs), the full
+ * execute endpoint URL (for execution JWTs where `aud` is the
+ * resolved location per §2.15), and any per-capability `location`
+ * URLs configured on the server.
+ */
 export function verifyAudience(
 	audValues: unknown,
 	baseURL: string,
 	headers?: Headers | null,
 	trustProxy?: boolean,
+	capabilityLocations?: string[],
 ): boolean {
-	const configuredOrigin = new URL(baseURL).origin;
-	const acceptedOrigins = new Set([configuredOrigin]);
+	const parsedBase = new URL(baseURL);
+	const configuredOrigin = parsedBase.origin;
+	const accepted = new Set([configuredOrigin]);
+
+	const basePath = parsedBase.pathname.replace(/\/$/, "");
+	accepted.add(new URL(`${basePath}/capability/execute`, configuredOrigin).toString());
+
 	const reqHost = headers?.get("host");
 	if (reqHost) {
 		const proto = trustProxy
-			? (headers?.get("x-forwarded-proto") ?? new URL(baseURL).protocol.replace(":", ""))
-			: new URL(baseURL).protocol.replace(":", "");
-		acceptedOrigins.add(`${proto}://${reqHost}`);
+			? (headers?.get("x-forwarded-proto") ?? parsedBase.protocol.replace(":", ""))
+			: parsedBase.protocol.replace(":", "");
+		const reqOrigin = `${proto}://${reqHost}`;
+		accepted.add(reqOrigin);
+		accepted.add(new URL(`${basePath}/capability/execute`, reqOrigin).toString());
+	}
+	if (capabilityLocations) {
+		for (const loc of capabilityLocations) {
+			accepted.add(loc);
+		}
 	}
 	const values = Array.isArray(audValues)
 		? audValues
 		: [audValues];
-	return values.some((a) => acceptedOrigins.has(String(a)));
+	return values.some((a) => accepted.has(String(a)));
 }
 
 /**

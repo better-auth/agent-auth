@@ -6,6 +6,7 @@ import { getAgentAuthAdapter } from "./adapter";
 import { TABLE } from "./constants";
 import { emit } from "./emit";
 import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES } from "./errors";
+import { verifyAudience } from "./routes/_helpers";
 import { parseCapabilityIds } from "./utils/capabilities";
 import { verifyJWT, hashRequestBody } from "./utils/crypto";
 import type { JtiCacheStore } from "./utils/jti-cache";
@@ -109,30 +110,23 @@ export function createAgentAuthBeforeHook(
 				);
 			}
 
-			// Validate aud (common to both token types)
+			// Validate aud (common to both token types) — §4.3
 			if (!decoded.aud) {
 				throw agentError(
 					"UNAUTHORIZED",
 					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 				);
 			}
-			const configuredOrigin = new URL(
-				ctx.context.baseURL,
-			).origin;
-			const acceptedOrigins = new Set([configuredOrigin]);
-			const reqHost = ctx.headers?.get("host");
-			if (reqHost) {
-				const proto = opts.trustProxy
-					? (ctx.headers?.get("x-forwarded-proto") ?? new URL(ctx.context.baseURL).protocol.replace(":", ""))
-					: new URL(ctx.context.baseURL).protocol.replace(":", "");
-				acceptedOrigins.add(`${proto}://${reqHost}`);
-			}
-			const audValues = Array.isArray(decoded.aud)
-				? decoded.aud
-				: [decoded.aud];
+			const capabilityLocations = (opts.capabilities ?? [])
+				.filter((c) => c.location)
+				.map((c) => c.location!);
 			if (
-				!audValues.some((a) =>
-					acceptedOrigins.has(String(a)),
+				!verifyAudience(
+					decoded.aud,
+					ctx.context.baseURL,
+					ctx.headers,
+					opts.trustProxy,
+					capabilityLocations,
 				)
 			) {
 				throw agentError(

@@ -440,6 +440,13 @@ export class AgentAuthClient {
 	async signJwt(opts: {
 		agentId: string;
 		capabilities?: string[];
+		/**
+		 * Override the JWT `aud` claim (§4.3).
+		 *
+		 * For execution requests, set this to the resolved location URL.
+		 * For non-execution requests (status, listing), omit to use issuer.
+		 */
+		audience?: string;
 		/** HTTP method for DPoP request binding (§5.3). */
 		htm?: string;
 		/** HTTP target URI for DPoP request binding (§5.3). */
@@ -474,7 +481,7 @@ export class AgentAuthClient {
 		const token = await signAgentJWT({
 			agentKeypair: conn.agentKeypair,
 			agentId: conn.agentId,
-			audience: conn.issuer,
+			audience: opts.audience ?? conn.issuer,
 			capabilities: opts.capabilities,
 			htm: opts.htm,
 			htu: opts.htu,
@@ -723,22 +730,24 @@ export class AgentAuthClient {
 		agentId: string;
 		capability: string;
 		arguments?: Record<string, unknown>;
+		/** Per-capability location override (§2.15). */
+		location?: string;
 	}): Promise<ExecuteCapabilityResponse> {
 		const conn = await this.requireConnection(opts.agentId);
 		const config = await this.requireConfig(conn.issuer);
 
+		const executeLocation = this.resolveExecuteLocation(
+			config,
+			opts.location,
+		);
+
 		const token = await this.signJwt({
 			agentId: opts.agentId,
 			capabilities: [opts.capability],
+			audience: executeLocation,
 		});
 
-		const url = this.resolveEndpoint(
-			config,
-			"execute",
-			"/capability/execute",
-		);
-
-		const res = await this.fetchFn(url, {
+		const res = await this.fetchFn(executeLocation, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
@@ -1012,6 +1021,21 @@ export class AgentAuthClient {
 	): string {
 		const path = config.endpoints[key] ?? fallback;
 		return new URL(path, config.issuer).toString();
+	}
+
+	/**
+	 * Resolve the execution location for a capability (§2.15).
+	 *
+	 * Priority: capability `location` > provider `default_location`
+	 * > `{issuer}{endpoints.execute}`.
+	 */
+	private resolveExecuteLocation(
+		config: ProviderConfig,
+		capabilityLocation?: string,
+	): string {
+		if (capabilityLocation) return capabilityLocation;
+		if (config.default_location) return config.default_location;
+		return this.resolveEndpoint(config, "execute", "/capability/execute");
 	}
 
 	private async waitForApproval(

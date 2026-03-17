@@ -27,6 +27,13 @@ export interface Capability {
 	name: string;
 	description: string;
 	/**
+	 * The URL where this capability is executed (§2.15).
+	 * The client sends the execute request to this URL and sets the
+	 * JWT `aud` claim to match it. If absent, the client uses the
+	 * server's `default_location` from discovery.
+	 */
+	location?: string;
+	/**
 	 * JSON Schema describing the `arguments` accepted by
 	 * `POST /capabilities/execute` (§6.11).
 	 */
@@ -104,6 +111,12 @@ export interface ProviderConfig {
 	provider_name: string;
 	description: string;
 	issuer: string;
+	/**
+	 * Default URL where capability execution requests are sent (§2.15).
+	 * Capabilities without their own `location` are executed here.
+	 * If absent, derived as `{issuer}{endpoints.execute}`.
+	 */
+	default_location?: string;
 	algorithms: string[];
 	modes: AgentMode[];
 	approval_methods: string[];

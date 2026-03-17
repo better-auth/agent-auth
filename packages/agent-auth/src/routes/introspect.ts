@@ -99,9 +99,12 @@ export function introspect(
 
 			if (!payload) return ctx.json(inactive);
 
+			const capabilityLocations = (opts.capabilities ?? [])
+				.filter((c) => c.location)
+				.map((c) => c.location!);
 			if (
 				payload.aud &&
-				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers, opts.trustProxy)
+				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers, opts.trustProxy, capabilityLocations)
 			) {
 				return ctx.json(inactive);
 			}
