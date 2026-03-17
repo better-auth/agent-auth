@@ -1,15 +1,15 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
-import { decodeJwt, decodeProtectedHeader } from "jose";
+import { decodeJwt, decodeProtectedHeader, calculateJwkThumbprint } from "jose";
 import * as z from "zod";
-import { TABLE } from "../../constants";
+import { TABLE, CLOCK_SKEW_TOLERANCE_SEC } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { verifyJWT } from "../../utils/crypto";
 import type { JwksCacheStore } from "../../utils/jwks-cache";
 import { MemoryJwksCache } from "../../utils/jwks-cache";
 import type { JtiCacheStore } from "../../utils/jti-cache";
-import type { AgentHost, AgentJWK, ResolvedAgentAuthOptions } from "../../types";
+import type { Agent, AgentHost, AgentJWK, ResolvedAgentAuthOptions } from "../../types";
 import { validateKeyAlgorithm } from "../_helpers";
 
 export function rotateHostKey(
@@ -120,7 +120,7 @@ export function rotateHostKey(
 					throw agentError("UNAUTHORIZED", ERR.JWT_REPLAY);
 				}
 				if (jtiCache) {
-					await jtiCache.add(jtiKey, opts.jwtMaxAge);
+					await jtiCache.add(jtiKey, opts.jwtMaxAge + CLOCK_SKEW_TOLERANCE_SEC);
 				}
 			}
 
@@ -132,24 +132,48 @@ export function rotateHostKey(
 
 			const kid = (publicKey.kid as string | undefined) ?? null;
 
+			// §8.7: Host ID is derived from JWK thumbprint — must update on rotation
+			const newThumbprint = await calculateJwkThumbprint(
+				publicKey as Parameters<typeof calculateJwkThumbprint>[0],
+			);
+			const oldHostId = host.id;
+			const newHostId = newThumbprint;
+
 			await ctx.context.adapter.update({
 				model: TABLE.host,
-				where: [{ field: "id", value: host.id }],
+				where: [{ field: "id", value: oldHostId }],
 				update: {
+					id: newHostId,
 					publicKey: JSON.stringify(publicKey),
 					kid,
 					updatedAt: new Date(),
 				},
 			});
 
+			// Cascade hostId change to all agents under this host
+			if (newHostId !== oldHostId) {
+				const agents = await ctx.context.adapter.findMany<Agent>({
+					model: TABLE.agent,
+					where: [{ field: "hostId", value: oldHostId }],
+				});
+				for (const agent of agents) {
+					await ctx.context.adapter.update({
+						model: TABLE.agent,
+						where: [{ field: "id", value: agent.id }],
+						update: { hostId: newHostId },
+					});
+				}
+			}
+
 			emit(opts, {
 				type: "host.key_rotated",
-				hostId: host.id,
+				hostId: newHostId,
 				actorType: "system",
+				metadata: { previousHostId: oldHostId },
 			}, ctx);
 
 			return ctx.json({
-				host_id: host.id,
+				host_id: newHostId,
 				status: "active" as const,
 			});
 		},

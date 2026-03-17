@@ -1,5 +1,6 @@
-import { getTestInstance } from "better-auth/test";
-import { exportJWK, generateKeyPair, importJWK, SignJWT } from "jose";
+import { getTestInstance, signInWithTestUser } from "better-auth/test";
+import { exportJWK, generateKeyPair, importJWK, SignJWT, calculateJwkThumbprint } from "jose";
+import { expect } from "vitest";
 import { agentAuth as _agentAuth } from "../index";
 import { agentAuthClient } from "../client";
 import type { AgentAuthOptions, AgentJWK } from "../types";
@@ -164,4 +165,112 @@ export function createTestClient(authHandler: (req: Request) => Promise<Response
 	}
 
 	return { api, authedPost, authedGet, registerAgentViaHost };
+}
+
+/**
+ * Assert that a response carries a spec-compliant error body.
+ * Handles Better Auth's inconsistent status propagation by checking
+ * both the response status and the body's `error` field.
+ */
+export async function expectError(
+	res: Response,
+	errorCode: string,
+	expectedStatus?: number,
+): Promise<Record<string, unknown>> {
+	const body = await json<Record<string, unknown>>(res);
+	if (expectedStatus) {
+		expect(res.status).toBe(expectedStatus);
+	} else {
+		expect(res.ok).toBe(false);
+	}
+	expect(body.error).toBe(errorCode);
+	return body;
+}
+
+/**
+ * Set up a complete test environment with signed-in user and client.
+ * Reduces boilerplate in test files.
+ */
+export async function createTestContext(pluginOpts?: AgentAuthOptions) {
+	const t = await getTestInstance(
+		{
+			plugins: [agentAuth(pluginOpts)],
+		},
+		{
+			clientOptions: { plugins: [agentAuthClientPlugin()] },
+		},
+	);
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const auth = t.auth as any;
+	const client = createTestClient((req: Request) => auth.handler(req));
+
+	const { headers } = await signInWithTestUser(t);
+	const sessionCookie = headers.get("set-cookie") ?? "";
+	const sessionRes = await client.api("/get-session", {
+		method: "GET",
+		headers: { cookie: sessionCookie },
+	});
+	const sessionBody = await json<Record<string, unknown>>(sessionRes);
+	const userId = (sessionBody as { user?: { id?: string } }).user?.id ?? "";
+
+	async function createHost(opts?: {
+		capabilities?: string[];
+		name?: string;
+	}): Promise<{
+		hostId: string;
+		hostKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
+	}> {
+		const hostKeypair = await generateTestKeypair();
+		const hostRes = await client.authedPost(
+			"/host/create",
+			{
+				name: opts?.name ?? "Test Host",
+				public_key: hostKeypair.publicKey,
+				default_capabilities: opts?.capabilities ?? [],
+			},
+			sessionCookie,
+		);
+		const hostBody = await json<{ id: string }>(hostRes);
+		return { hostId: hostBody.id, hostKeypair };
+	}
+
+	async function registerAgent(opts: {
+		hostId: string;
+		hostKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
+		capabilities?: string[];
+		name?: string;
+		mode?: "delegated" | "autonomous";
+	}): Promise<{
+		agentId: string;
+		agentKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
+		body: Record<string, unknown>;
+	}> {
+		const agentKeypair = await generateTestKeypair();
+		const { agentId, body } = await client.registerAgentViaHost({
+			hostKeypair: opts.hostKeypair,
+			agentKeypair,
+			hostId: opts.hostId,
+			name: opts.name,
+			capabilities: opts.capabilities,
+			mode: opts.mode,
+		});
+		return { agentId, agentKeypair, body };
+	}
+
+	return {
+		auth,
+		client,
+		sessionCookie,
+		userId,
+		createHost,
+		registerAgent,
+	};
+}
+
+/**
+ * Compute the JWK thumbprint for a public key, matching
+ * how the system derives host IDs from keys.
+ */
+export async function computeThumbprint(publicKey: AgentJWK): Promise<string> {
+	return calculateJwkThumbprint(publicKey as Parameters<typeof calculateJwkThumbprint>[0]);
 }

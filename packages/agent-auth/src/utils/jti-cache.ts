@@ -91,8 +91,3 @@ export class JtiCacheProxy implements JtiCacheStore {
 		return this.inner.add(jti, maxAgeSec);
 	}
 }
-
-/** @deprecated Use {@link MemoryJtiCache} instead. */
-export const JtiReplayCache = MemoryJtiCache;
-/** @deprecated Use {@link JtiCacheStore} instead. */
-export type JtiReplayCache = MemoryJtiCache;

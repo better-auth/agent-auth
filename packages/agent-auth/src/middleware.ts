@@ -3,7 +3,7 @@ import { type AuthMiddleware, createAuthMiddleware } from "@better-auth/core/api
 import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { getAgentAuthAdapter } from "./adapter";
-import { TABLE } from "./constants";
+import { TABLE, CLOCK_SKEW_TOLERANCE_SEC } from "./constants";
 import { emit } from "./emit";
 import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES } from "./errors";
 import { verifyAudience, getCapabilityLocation } from "./routes/_helpers";
@@ -251,6 +251,20 @@ export function createAgentAuthBeforeHook(
 				);
 			}
 
+			// §4.5 steps 4-5: Verify iss matches the agent's host
+			if (agent.hostId) {
+				const issFromJwt = typeof decoded.iss === "string" ? decoded.iss : null;
+				if (issFromJwt && issFromJwt !== agent.hostId) {
+					const hostByIss = await db.findHostById(issFromJwt);
+					if (!hostByIss || hostByIss.id !== agent.hostId) {
+						throw agentError(
+							"UNAUTHORIZED",
+							AGENT_AUTH_ERROR_CODES.INVALID_JWT,
+						);
+					}
+				}
+			}
+
 			if (agent.status === "revoked") {
 				throw agentError(
 					"FORBIDDEN",
@@ -388,7 +402,7 @@ export function createAgentAuthBeforeHook(
 					AGENT_AUTH_ERROR_CODES.JWT_REPLAY,
 				);
 			}
-			await jtiCache.add(jtiKey, opts.jwtMaxAge);
+			await jtiCache.add(jtiKey, opts.jwtMaxAge + CLOCK_SKEW_TOLERANCE_SEC);
 
 			// Request binding verification (§3.3)
 			if (payload.htm || payload.htu || payload.ath) {

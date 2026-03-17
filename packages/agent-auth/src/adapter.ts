@@ -1,6 +1,6 @@
 import { TABLE } from "./constants";
 import { parseCapabilityIds } from "./utils/capabilities";
-import { resolveGrantExpiresAt } from "./utils/grant-ttl";
+import { createGrantRows as createGrantRowsHelper } from "./routes/_helpers";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -164,7 +164,7 @@ export function getAgentAuthAdapter(
 			update: { status: "revoked", updatedAt: now },
 		});
 
-	const createGrantRows = async (
+	const createGrantRows = (
 		agentId: string,
 		capabilityIds: string[],
 		grantedBy: string | null,
@@ -177,39 +177,15 @@ export function getAgentAuthAdapter(
 			hostId: string | null;
 			userId: string | null;
 		},
-	): Promise<void> => {
-		if (grantOpts?.clearExisting) {
-			await deleteGrantsByAgent(agentId);
-		}
-
-		const status = grantOpts?.status ?? "active";
-		const now = new Date();
-		for (const cap of capabilityIds) {
-			const expiresAt =
-				status === "active" && ttlContext
-					? await resolveGrantExpiresAt(opts, cap, {
-							agentId,
-							hostId: ttlContext.hostId,
-							userId: ttlContext.userId,
-						})
-					: null;
-		await adapter.create({
-			model: TABLE.grant,
-			data: {
-				agentId,
-				capability: cap,
-				constraints: null,
-				grantedBy,
-				deniedBy: null,
-				expiresAt,
-				status,
-				reason: grantOpts?.reason ?? null,
-				createdAt: now,
-				updatedAt: now,
-			},
-		});
-		}
-	};
+	): Promise<void> =>
+		createGrantRowsHelper(
+			adapter,
+			agentId,
+			capabilityIds,
+			grantedBy,
+			{ ...grantOpts },
+			ttlContext ? { pluginOpts: opts, ...ttlContext } : undefined,
+		);
 
 	const findApprovalRequestById = (id: string) =>
 		adapter.findOne<ApprovalRequest>({

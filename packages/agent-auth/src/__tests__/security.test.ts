@@ -262,12 +262,12 @@ describe("Algorithm Security", () => {
 		expect(res.ok).toBe(false);
 	});
 
-	it("verifyAgentJWT propagates non-JOSE errors instead of returning null", async () => {
-		const { verifyAgentJWT } = await import("../utils/crypto");
+	it("verifyJWT propagates non-JOSE errors instead of returning null", async () => {
+		const { verifyJWT } = await import("../utils/crypto");
 		const badKey = { kty: "OKP", crv: "Ed25519", x: "INVALID" } as AgentJWK;
 
 		await expect(
-			verifyAgentJWT({
+			verifyJWT({
 				jwt: "not.a.jwt",
 				publicKey: badKey,
 				maxAge: 60,

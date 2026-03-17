@@ -134,6 +134,28 @@ export function narrowConstraints(
 			continue;
 		}
 		if (isPrimitive(proposedVal as ConstraintPrimitive)) {
+			const sv = serverVal as ConstraintOperators;
+			const pv = proposedVal as ConstraintPrimitive;
+			if (sv.eq !== undefined && pv !== sv.eq) {
+				result[field] = serverVal;
+				continue;
+			}
+			if (sv.in !== undefined && !sv.in.includes(pv)) {
+				result[field] = serverVal;
+				continue;
+			}
+			if (sv.not_in !== undefined && sv.not_in.includes(pv)) {
+				result[field] = serverVal;
+				continue;
+			}
+			if (sv.min !== undefined && (typeof pv !== "number" || pv < sv.min)) {
+				result[field] = serverVal;
+				continue;
+			}
+			if (sv.max !== undefined && (typeof pv !== "number" || pv > sv.max)) {
+				result[field] = serverVal;
+				continue;
+			}
 			continue;
 		}
 		const merged: ConstraintOperators = { ...(proposedVal as ConstraintOperators) };

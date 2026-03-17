@@ -4,6 +4,7 @@ import { TABLE, DEFAULTS } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { hashToken } from "../../utils/approval";
+import { sanitizeDisplayText, DISPLAY_LIMITS } from "../../utils/sanitize";
 import type {
 	ApprovalRequest,
 	HostSession,
@@ -53,9 +54,11 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 			const {
 				login_hint: loginHint,
 				capabilities: capabilityIds,
-				binding_message: bindingMessage,
+				binding_message: rawBindingMessage,
 				agent_id: agentId,
 			} = ctx.body;
+
+			const bindingMessage = rawBindingMessage ? sanitizeDisplayText(rawBindingMessage, DISPLAY_LIMITS.bindingMessage) : undefined;
 
 			const user =
 				await ctx.context.internalAdapter.findUserByEmail(loginHint);

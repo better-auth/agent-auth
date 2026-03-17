@@ -7,6 +7,13 @@ export const TABLE = {
 	approval: "approvalRequest",
 } as const;
 
+/**
+ * Buffer added to JTI cache TTL to account for clock skew between servers.
+ * JTI entries are cached for `jwtMaxAge + CLOCK_SKEW_TOLERANCE_SEC` to prevent
+ * replay within the skew window.
+ */
+export const CLOCK_SKEW_TOLERANCE_SEC = 30;
+
 export const DEFAULTS = {
 	jwtMaxAge: 60,
 	agentSessionTTL: 3600,

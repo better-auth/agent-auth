@@ -18,8 +18,10 @@ function isBlockedHostname(hostname: string): boolean {
 	if (BLOCKED_HOSTNAMES.has(hostname)) return true;
 	const bare = hostname.replace(/^\[|\]$/g, "");
 	if (bare === "::1" || bare === "0:0:0:0:0:0:0:1") return true;
-	if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname))
+	if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.)/.test(hostname))
 		return true;
+	// IPv6 link-local (fe80::/10) and unique-local (fc00::/7)
+	if (/^fe[89ab]/i.test(bare) || /^f[cd]/i.test(bare)) return true;
 	if (hostname.endsWith(".local") || hostname.endsWith(".internal"))
 		return true;
 	return false;
@@ -207,8 +209,3 @@ export class JwksCacheProxy implements JwksCacheStore {
 		return this.inner.clear();
 	}
 }
-
-/** @deprecated Use {@link MemoryJwksCache} instead. */
-export const JWKSCache = MemoryJwksCache;
-/** @deprecated Use {@link JwksCacheStore} instead. */
-export type JWKSCache = MemoryJwksCache;

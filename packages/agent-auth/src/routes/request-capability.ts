@@ -4,6 +4,7 @@ import { TABLE } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { resolveGrantExpiresAt } from "../utils/grant-ttl";
+import { sanitizeDisplayText, DISPLAY_LIMITS } from "../utils/sanitize";
 import {
 	findBlockedCapabilities,
 	hasCapability,
@@ -76,11 +77,14 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 
 			const {
 			capabilities: rawCapabilities,
-			reason,
+			reason: rawReason,
 			preferred_method: preferredMethod,
 			login_hint: loginHint,
-			binding_message: bindingMessage,
+			binding_message: rawBindingMessage,
 		} = ctx.body;
+
+		const reason = rawReason ? sanitizeDisplayText(rawReason, DISPLAY_LIMITS.reason) : undefined;
+		const bindingMessage = rawBindingMessage ? sanitizeDisplayText(rawBindingMessage, DISPLAY_LIMITS.bindingMessage) : undefined;
 
 		const normalizedCaps = normalizeCapabilityRequests(
 			rawCapabilities as Array<string | { name: string; constraints?: Constraints }>,

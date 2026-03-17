@@ -2,11 +2,12 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
-import { TABLE } from "../constants";
+import { TABLE, CLOCK_SKEW_TOLERANCE_SEC } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { hasCapability, parseCapabilityIds } from "../utils/capabilities";
 import { verifyJWT } from "../utils/crypto";
+import { sanitizeDisplayText, DISPLAY_LIMITS } from "../utils/sanitize";
 import type { JwksCacheStore } from "../utils/jwks-cache";
 import { MemoryJwksCache } from "../utils/jwks-cache";
 import type { JtiCacheStore } from "../utils/jti-cache";
@@ -74,16 +75,21 @@ export function register(
 		},
 		async (ctx) => {
 		const {
-			name,
+			name: rawName,
 			capabilities: rawCapabilities,
-			reason,
+			reason: rawReason,
 			mode: rawMode,
 			preferred_method: preferredMethod,
-			host_name: bodyHostName,
+			host_name: rawHostName,
 			login_hint: loginHint,
-			binding_message: bindingMessage,
+			binding_message: rawBindingMessage,
 			force_approval: forceApproval,
 		} = ctx.body;
+
+		const name = sanitizeDisplayText(rawName, DISPLAY_LIMITS.name);
+		const reason = rawReason ? sanitizeDisplayText(rawReason, DISPLAY_LIMITS.reason) : undefined;
+		const bodyHostName = rawHostName ? sanitizeDisplayText(rawHostName, DISPLAY_LIMITS.hostName) : undefined;
+		const bindingMessage = rawBindingMessage ? sanitizeDisplayText(rawBindingMessage, DISPLAY_LIMITS.bindingMessage) : undefined;
 
 		const normalizedCaps = rawCapabilities
 			? normalizeCapabilityRequests(rawCapabilities as Array<string | { name: string; constraints?: Constraints }>)
@@ -240,20 +246,20 @@ export function register(
 					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
-				if (payload.aud) {
-					if (
-						!verifyAudience(
-							payload.aud,
-							ctx.context.baseURL,
-							ctx.headers,
-							opts.trustProxy,
-						)
-					) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_JWT,
-						);
-					}
+				// §4.2: aud is required on all host JWTs
+				if (
+					!payload.aud ||
+					!verifyAudience(
+						payload.aud,
+						ctx.context.baseURL,
+						ctx.headers,
+						opts.trustProxy,
+					)
+				) {
+					throw agentError(
+						"UNAUTHORIZED",
+						ERR.INVALID_JWT,
+					);
 				}
 
 				// JTI replay (§5.6) — partitioned by host identity
@@ -272,7 +278,7 @@ export function register(
 						);
 					}
 					if (jtiCache) {
-						await jtiCache.add(jtiKey, opts.jwtMaxAge);
+						await jtiCache.add(jtiKey, opts.jwtMaxAge + CLOCK_SKEW_TOLERANCE_SEC);
 					}
 				}
 
@@ -400,20 +406,20 @@ export function register(
 					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
-				if (payload.aud) {
-					if (
-						!verifyAudience(
-							payload.aud,
-							ctx.context.baseURL,
-							ctx.headers,
-							opts.trustProxy,
-						)
-					) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_JWT,
-						);
-					}
+				// §4.2: aud is required on all host JWTs
+				if (
+					!payload.aud ||
+					!verifyAudience(
+						payload.aud,
+						ctx.context.baseURL,
+						ctx.headers,
+						opts.trustProxy,
+					)
+				) {
+					throw agentError(
+						"UNAUTHORIZED",
+						ERR.INVALID_JWT,
+					);
 				}
 
 				// JTI replay (§5.6) — partitioned by sub (host identity)
@@ -432,7 +438,7 @@ export function register(
 						);
 					}
 					if (jtiCache) {
-						await jtiCache.add(jtiKey, opts.jwtMaxAge);
+						await jtiCache.add(jtiKey, opts.jwtMaxAge + CLOCK_SKEW_TOLERANCE_SEC);
 					}
 				}
 
