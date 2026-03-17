@@ -231,15 +231,11 @@ export const AGENT_AUTH_ERROR_CODES = {
 	},
 	CONSTRAINT_VIOLATED: {
 		code: "constraint_violated",
-		message: "Execution arguments violate grant constraints",
+		message: "One or more capability constraints were violated",
 	},
 	EXECUTE_NOT_CONFIGURED: {
 		code: "execute_not_configured",
 		message: "Server has not configured a capability execution handler",
-	},
-	CONSTRAINT_VIOLATED: {
-		code: "constraint_violated",
-		message: "One or more capability constraints were violated",
 	},
 	UNKNOWN_CONSTRAINT_OPERATOR: {
 		code: "unknown_constraint_operator",

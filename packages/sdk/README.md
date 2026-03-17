@@ -1,6 +1,6 @@
 # @auth/agent
 
-Client SDK for the [Agent Auth Protocol](https://github.com/nicepkg/agent-auth-protocol) — agent identity, registration, and capability-based authorization.
+Client SDK for the [Agent Auth Protocol](https://github.com/better-auth/agent-auth-protocol) — agent identity, registration, and capability-based authorization.
 
 ## Installation
 
