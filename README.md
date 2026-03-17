@@ -158,15 +158,20 @@ onExecute: async ({ capability }) => {
 }
 ```
 
-## Example Apps
+## Apps
 
 | App | Description |
 |-----|-------------|
-| [`apps/vercel-proxy`](apps/vercel-proxy/) | Vercel API proxy with device authorization flow |
-| [`apps/github-proxy`](apps/github-proxy/) | GitHub API proxy |
-| [`apps/gmail-proxy`](apps/gmail-proxy/) | Gmail API proxy |
-| [`apps/cloudflare-proxy`](apps/cloudflare-proxy/) | Cloudflare API proxy |
 | [`apps/registry`](apps/registry/) | Provider registry — browse and submit Agent Auth providers |
+
+## Examples
+
+| Example | Description |
+|---------|-------------|
+| [`examples/vercel-proxy`](examples/vercel-proxy/) | Vercel API proxy with device authorization flow |
+| [`examples/github-proxy`](examples/github-proxy/) | GitHub API proxy |
+| [`examples/gmail-proxy`](examples/gmail-proxy/) | Gmail API proxy |
+| [`examples/cloudflare-proxy`](examples/cloudflare-proxy/) | Cloudflare API proxy |
 
 ## Development
 

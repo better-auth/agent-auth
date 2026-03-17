@@ -133,7 +133,6 @@ export function buildCli(): Command {
 		.option("--mode <mode>", "agent mode (delegated|autonomous)", "delegated")
 		.option("--name <name>", "agent name")
 		.option("--reason <reason>", "reason for requesting capabilities")
-		.option("--force-new", "skip identity reuse and always register a new agent")
 		.option("--preferred-method <method>", "preferred approval method (e.g. device_authorization, ciba)")
 		.option("--login-hint <hint>", "login hint for CIBA approval (e.g. user email)")
 		.option("--binding-message <msg>", "binding message shown during approval")
@@ -146,7 +145,6 @@ export function buildCli(): Command {
 					mode: opts.mode,
 					name: opts.name,
 					reason: opts.reason,
-					forceNew: opts.forceNew,
 					preferredMethod: opts.preferredMethod,
 					loginHint: opts.loginHint,
 					bindingMessage: opts.bindingMessage,
@@ -239,25 +237,6 @@ export function buildCli(): Command {
 			}),
 		);
 
-	program
-		.command("connections <issuer>")
-		.description("List agent connections for a provider")
-		.action((issuer: string) =>
-			run(async () => {
-				const conns = await client().listConnections(issuer);
-				json(
-					conns.map((c) => ({
-						agentId: c.agentId,
-						hostId: c.hostId,
-						providerName: c.providerName,
-						issuer: c.issuer,
-						mode: c.mode,
-						capabilityGrants: c.capabilityGrants,
-						createdAt: c.createdAt,
-					})),
-				);
-			}),
-		);
 
 	program
 		.command("connection <agent-id>")

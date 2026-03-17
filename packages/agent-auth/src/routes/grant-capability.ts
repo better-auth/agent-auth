@@ -14,6 +14,8 @@ import type {
 import {
 	validateCapabilityIds,
 	validateCapabilitiesExist,
+	capabilityItemZ,
+	normalizeCapabilities,
 } from "./_helpers";
 
 export function grantCapability(opts: ResolvedAgentAuthOptions) {
@@ -26,9 +28,9 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 					.string()
 					.meta({ description: "Agent to grant capabilities to" }),
 				capabilities: z
-					.array(z.string())
+					.array(capabilityItemZ)
 					.min(1)
-					.meta({ description: "Capability names to grant" }),
+					.meta({ description: "Capability names (strings) or objects with constraints: { name, constraints? }" }),
 				ttl: z.number().positive().optional().meta({
 					description:
 						"Grant TTL in seconds. Overrides the plugin-level resolveGrantTTL.",
@@ -47,9 +49,11 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 
 			const {
 				agent_id: agentId,
-				capabilities: capabilityIds,
+				capabilities: rawCapabilities,
 				ttl: explicitTTL,
 			} = ctx.body;
+
+			const { ids: capabilityIds, constraintsMap } = normalizeCapabilities(rawCapabilities);
 
 			const agent = await ctx.context.adapter.findOne<Agent>({
 				model: TABLE.agent,
@@ -108,16 +112,22 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 					explicitTTL,
 				);
 
+			const constraints = constraintsMap.get(capabilityId) ?? null;
+
 				if (pendingGrant) {
+					const grantUpdate: Record<string, unknown> = {
+						status: "active",
+						grantedBy: session.user.id,
+						expiresAt,
+						updatedAt: now,
+					};
+					if (constraints !== null) {
+						grantUpdate.constraints = constraints;
+					}
 					await ctx.context.adapter.update({
 						model: TABLE.grant,
 						where: [{ field: "id", value: pendingGrant.id }],
-						update: {
-							status: "active",
-							grantedBy: session.user.id,
-							expiresAt,
-							updatedAt: now,
-						},
+						update: grantUpdate,
 					});
 					grantIds.push(pendingGrant.id);
 				} else {
@@ -136,12 +146,12 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 						data: {
 							agentId,
 							capability: capabilityId,
-						constraints: null,
-						grantedBy: session.user.id,
-						deniedBy: null,
-						expiresAt,
-						status: "active",
-						reason: null,
+							constraints,
+							grantedBy: session.user.id,
+							deniedBy: null,
+							expiresAt,
+							status: "active",
+							reason: null,
 							createdAt: now,
 							updatedAt: now,
 						},

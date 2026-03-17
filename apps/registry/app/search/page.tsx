@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { AgentAuthLogo } from "@/components/icons/logo";
+import { Nav } from "@/components/nav";
 import { ProviderCard } from "@/components/provider-card";
 import { SearchBar } from "@/components/search-bar";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 interface SearchResult {
 	protocol_version: string;
@@ -20,7 +19,9 @@ interface SearchResult {
 }
 
 async function searchProviders(intent: string) {
-	const base = process.env.NEXT_PUBLIC_REGISTRY_URL ?? "https://agent-auth.directory";
+	const base =
+		process.env.NEXT_PUBLIC_REGISTRY_URL ??
+		`http://localhost:${process.env.PORT ?? "4200"}`;
 	const res = await fetch(
 		`${base}/api/search?intent=${encodeURIComponent(intent)}&limit=20`,
 		{ cache: "no-store" },
@@ -41,41 +42,15 @@ export default async function SearchPage({
 
 	return (
 		<div className="min-h-dvh flex flex-col">
-			<nav className="shrink-0 flex items-center border-b border-foreground/[0.06]">
-				<Link href="/" className="flex items-center gap-2.5 px-5 sm:px-6 py-3">
-					<AgentAuthLogo className="h-3.5 w-auto" />
-					<p className="select-none font-mono text-xs uppercase tracking-wider text-foreground/70">
-						Agent-Auth
-					</p>
-				</Link>
-				<div className="ml-auto flex items-center gap-2 px-5 sm:px-6">
-					<Link
-						href="/providers"
-						className="text-[11px] font-mono text-foreground/45 hover:text-foreground/70 transition-colors"
-					>
-						Browse
-					</Link>
-					<span className="text-foreground/15 text-[10px] select-none">/</span>
-					<Link
-						href="/submit"
-						className="text-[11px] font-mono text-foreground/45 hover:text-foreground/70 transition-colors"
-					>
-						Submit
-					</Link>
-					<span className="text-foreground/15 text-[10px] select-none ml-2">
-						|
-					</span>
-					<ThemeToggle />
-				</div>
-			</nav>
+			<Nav />
 
-			<div className="border-b border-foreground/[0.06] px-5 sm:px-6 py-4">
+			<div className="border-b border-foreground/[0.06] px-4 sm:px-6 py-4">
 				<div className="max-w-2xl mx-auto">
 					<SearchBar defaultValue={intent} autoFocus />
 				</div>
 			</div>
 
-			<div className="flex-1 px-5 sm:px-6 lg:px-8 py-8">
+			<div className="flex-1 px-4 sm:px-6 lg:px-8 py-8">
 				{intent && (
 					<div className="mb-6">
 						<p className="text-[11px] font-mono text-foreground/40">

@@ -10,8 +10,8 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AgentAuthLogo } from "@/components/icons/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { Nav } from "@/components/nav";
+import { useSession, signIn } from "@/lib/auth-client";
 
 interface SubmitResult {
 	id: string;
@@ -25,8 +25,22 @@ interface SubmitResult {
 	};
 }
 
+function GitHubIcon({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			fill="currentColor"
+			className={className}
+			aria-hidden="true"
+		>
+			<path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+		</svg>
+	);
+}
+
 export default function SubmitPage() {
 	const router = useRouter();
+	const { data: session, isPending } = useSession();
 	const [url, setUrl] = useState("");
 	const [displayName, setDisplayName] = useState("");
 	const [categories, setCategories] = useState("");
@@ -69,21 +83,14 @@ export default function SubmitPage() {
 		}
 	};
 
+	const isSignedIn = !isPending && session;
+	const isSignedOut = !isPending && !session;
+
 	return (
 		<div className="min-h-dvh flex flex-col">
-			<nav className="shrink-0 flex items-center border-b border-foreground/[0.06]">
-				<Link href="/" className="flex items-center gap-2.5 px-5 sm:px-6 py-3">
-					<AgentAuthLogo className="h-3.5 w-auto" />
-					<p className="select-none font-mono text-xs uppercase tracking-wider text-foreground/70">
-						Agent-Auth
-					</p>
-				</Link>
-				<div className="ml-auto flex items-center px-5 sm:px-6">
-					<ThemeToggle />
-				</div>
-			</nav>
+			<Nav />
 
-			<div className="flex-1 px-5 sm:px-6 lg:px-8 py-8 max-w-lg mx-auto w-full">
+			<div className="flex-1 px-4 sm:px-6 lg:px-8 py-8 max-w-lg mx-auto w-full">
 				<Link
 					href="/"
 					className="inline-flex items-center gap-1.5 text-[11px] font-mono text-foreground/40 hover:text-foreground/60 transition-colors mb-8"
@@ -105,13 +112,36 @@ export default function SubmitPage() {
 					</p>
 				</div>
 
-				{result ? (
+				{isPending ? (
+					<div className="flex items-center justify-center py-12">
+						<Loader2 className="h-5 w-5 animate-spin text-foreground/30" />
+					</div>
+				) : isSignedOut ? (
+					<div className="border border-foreground/[0.08] bg-foreground/[0.02] p-8 text-center space-y-4">
+						<p className="text-sm text-foreground/50">
+							Sign in with GitHub to submit a provider.
+						</p>
+						<button
+							onClick={() =>
+								signIn.social({ provider: "github" })
+							}
+							className="inline-flex items-center justify-center gap-2 bg-foreground text-background hover:opacity-90 px-5 py-2.5 transition-opacity text-xs font-mono uppercase tracking-wider"
+						>
+							<GitHubIcon className="h-4 w-4" />
+							Sign in with GitHub
+						</button>
+					</div>
+				) : result ? (
 					<div className="space-y-6">
 						<div className="border border-success/20 bg-success/5 p-5 space-y-3">
 							<div className="flex items-center gap-2 text-success">
 								<CheckCircle className="h-4 w-4" />
-								<span className="text-sm font-medium">Provider registered</span>
+								<span className="text-sm font-medium">Provider submitted</span>
 							</div>
+							<p className="text-[11px] text-foreground/45">
+								Your submission is pending review. It will appear in the public
+								registry once approved.
+							</p>
 							<div className="space-y-1.5">
 								<p className="text-xs font-mono text-foreground/60">
 									Name: {result.config.provider_name}
@@ -130,7 +160,7 @@ export default function SubmitPage() {
 							</div>
 						</div>
 
-						<div className="flex items-center gap-3">
+						<div className="flex flex-col sm:flex-row gap-3">
 							<button
 								onClick={() =>
 									router.push(
@@ -229,6 +259,9 @@ export default function SubmitPage() {
 								/.well-known/agent-configuration
 							</code>{" "}
 							endpoint to verify and populate provider details.
+							<br />
+							Submissions are not public by default and will be reviewed before
+							appearing in the registry.
 						</p>
 					</form>
 				)}

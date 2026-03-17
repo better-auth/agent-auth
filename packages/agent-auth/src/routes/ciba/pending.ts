@@ -1,6 +1,6 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { TABLE } from "../../constants";
-import type { Agent, ApprovalRequest } from "../../types";
+import type { Agent, AgentCapabilityGrant, ApprovalRequest } from "../../types";
 import { sessionMiddleware } from "better-auth/api";
 
 export function cibaPending() {
@@ -37,6 +37,7 @@ export function cibaPending() {
 			const results = await Promise.all(
 				active.map(async (r) => {
 					let agentName: string | null = null;
+					let grantConstraints: Record<string, unknown> | null = null;
 					if (r.agentId) {
 						const agent =
 							await ctx.context.adapter.findOne<Agent>({
@@ -44,6 +45,21 @@ export function cibaPending() {
 								where: [{ field: "id", value: r.agentId }],
 							});
 						agentName = agent?.name ?? null;
+
+						const pendingGrants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+							model: TABLE.grant,
+							where: [
+								{ field: "agentId", value: r.agentId },
+								{ field: "status", value: "pending" },
+							],
+						});
+						const withConstraints = pendingGrants.filter((g) => g.constraints);
+						if (withConstraints.length > 0) {
+							grantConstraints = {};
+							for (const g of withConstraints) {
+								(grantConstraints as Record<string, unknown>)[g.capability] = g.constraints;
+							}
+						}
 					}
 					return {
 						approval_id: r.id,
@@ -54,6 +70,7 @@ export function cibaPending() {
 						capabilities: r.capabilities
 							? r.capabilities.split(/\s+/).filter(Boolean)
 							: [],
+						capability_constraints: grantConstraints,
 						expires_in: Math.max(
 							0,
 							Math.floor(

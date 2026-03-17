@@ -4,17 +4,20 @@ import {
 	CheckCircle,
 	Clock,
 	ExternalLink,
+	EyeOff,
 	Globe,
 	Key,
 	Shield,
 	XCircle,
 } from "lucide-react";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AgentAuthLogo } from "@/components/icons/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { Nav } from "@/components/nav";
+import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { provider } from "@/lib/db/schema";
+import { safeJsonParse } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -34,27 +37,22 @@ export default async function ProviderDetailPage({
 
 	if (!row) notFound();
 
-	const modes = JSON.parse(row.modes) as string[];
-	const approvalMethods = JSON.parse(row.approvalMethods) as string[];
-	const algorithms = JSON.parse(row.algorithms) as string[];
-	const categories = JSON.parse(row.categories) as string[];
-	const endpoints = JSON.parse(row.endpoints) as Record<string, string>;
+	if (!row.public) {
+		const session = await auth.api.getSession({ headers: await headers() });
+		if (!session || row.submittedBy !== session.user.id) notFound();
+	}
+
+	const modes = safeJsonParse<string[]>(row.modes, []);
+	const approvalMethods = safeJsonParse<string[]>(row.approvalMethods, []);
+	const algorithms = safeJsonParse<string[]>(row.algorithms, []);
+	const categories = safeJsonParse<string[]>(row.categories, []);
+	const endpoints = safeJsonParse<Record<string, string>>(row.endpoints, {});
 
 	return (
-		<div className="h-dvh flex flex-col">
-			<nav className="shrink-0 flex items-center border-b border-foreground/[0.06]">
-				<Link href="/" className="flex items-center gap-2.5 px-5 sm:px-6 py-3">
-					<AgentAuthLogo className="h-3.5 w-auto" />
-					<p className="select-none font-mono text-xs uppercase tracking-wider text-foreground/70">
-						Agent-Auth
-					</p>
-				</Link>
-				<div className="ml-auto flex items-center px-5 sm:px-6">
-					<ThemeToggle />
-				</div>
-			</nav>
+		<div className="min-h-dvh flex flex-col">
+			<Nav />
 
-			<div className="flex-1 overflow-y-auto px-5 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto w-full">
+			<div className="flex-1 px-4 sm:px-6 lg:px-8 py-8 max-w-3xl mx-auto w-full">
 				<Link
 					href="/providers"
 					className="inline-flex items-center gap-1.5 text-[11px] font-mono text-foreground/40 hover:text-foreground/60 transition-colors mb-8"
@@ -63,20 +61,29 @@ export default async function ProviderDetailPage({
 					All Providers
 				</Link>
 
+				{!row.public && (
+					<div className="flex items-center gap-2 border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3 mb-6">
+						<EyeOff className="h-3.5 w-3.5 text-foreground/40 shrink-0" />
+						<p className="text-[11px] font-mono text-foreground/45">
+							This provider is not public. Only you can see this page.
+						</p>
+					</div>
+				)}
+
 				<div className="space-y-4 mb-10">
-					<div className="flex items-start justify-between gap-4">
-						<div>
+					<div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+						<div className="min-w-0">
 							<div className="flex items-center gap-2.5">
-								<h1 className="text-xl sm:text-2xl font-semibold text-foreground">
+								<h1 className="text-xl sm:text-2xl font-semibold text-foreground wrap-break-word">
 									{row.displayName}
 								</h1>
 								{row.verified ? (
-									<CheckCircle className="h-4 w-4 text-success" />
+									<CheckCircle className="h-4 w-4 text-success shrink-0" />
 								) : (
-									<XCircle className="h-4 w-4 text-foreground/25" />
+									<XCircle className="h-4 w-4 text-foreground/25 shrink-0" />
 								)}
 							</div>
-							<p className="text-xs font-mono text-foreground/40 mt-1">
+							<p className="text-xs font-mono text-foreground/40 mt-1 break-all">
 								{row.name}
 							</p>
 						</div>
@@ -84,7 +91,7 @@ export default async function ProviderDetailPage({
 							href={row.url}
 							target="_blank"
 							rel="noopener noreferrer"
-							className="shrink-0 inline-flex items-center gap-1.5 border border-foreground/[0.12] bg-foreground/[0.04] hover:bg-foreground/[0.08] hover:border-foreground/[0.20] px-3 py-1.5 transition-all text-[11px] font-mono text-foreground/60"
+							className="shrink-0 self-start inline-flex items-center gap-1.5 border border-foreground/[0.12] bg-foreground/[0.04] hover:bg-foreground/[0.08] hover:border-foreground/[0.20] px-3 py-1.5 transition-all text-[11px] font-mono text-foreground/60"
 						>
 							<ExternalLink className="h-3 w-3" />
 							Visit
@@ -175,14 +182,14 @@ export default async function ProviderDetailPage({
 					<h3 className="text-[11px] font-mono uppercase tracking-wider text-foreground/40 mb-3">
 						Endpoints
 					</h3>
-					<div className="border border-foreground/[0.06] divide-y divide-foreground/[0.06]">
+					<div className="border border-foreground/[0.06] divide-y divide-foreground/[0.06] overflow-x-auto">
 						{Object.entries(endpoints).map(([key, value]) => (
 							<div
 								key={key}
-								className="flex items-center justify-between px-4 py-2.5 text-xs font-mono"
+								className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 sm:gap-4 px-4 py-2.5 text-xs font-mono"
 							>
-								<span className="text-foreground/50">{key}</span>
-								<span className="text-foreground/30">{value}</span>
+								<span className="text-foreground/50 shrink-0">{key}</span>
+								<span className="text-foreground/30 break-all">{value}</span>
 							</div>
 						))}
 					</div>
@@ -193,7 +200,7 @@ export default async function ProviderDetailPage({
 						Quick Start
 					</h3>
 					<div className="space-y-3">
-						<div className="border border-foreground/[0.06] bg-foreground/[0.02] p-4">
+						<div className="border border-foreground/[0.06] bg-foreground/[0.02] p-3 sm:p-4 overflow-x-auto">
 							<p className="text-[10px] font-mono uppercase tracking-wider text-foreground/30 mb-2">
 								Discovery
 							</p>
@@ -201,7 +208,7 @@ export default async function ProviderDetailPage({
 								{`curl ${row.url}/.well-known/agent-configuration`}
 							</code>
 						</div>
-						<div className="border border-foreground/[0.06] bg-foreground/[0.02] p-4">
+						<div className="border border-foreground/[0.06] bg-foreground/[0.02] p-3 sm:p-4 overflow-x-auto">
 							<p className="text-[10px] font-mono uppercase tracking-wider text-foreground/30 mb-2">
 								Register an Agent
 							</p>

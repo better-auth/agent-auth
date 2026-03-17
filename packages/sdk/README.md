@@ -204,7 +204,7 @@ Built-in: `MemoryStorage` (default, non-persistent). For long-running apps, impl
 | Method group | Description |
 |---|---|
 | `getHostIdentity` / `setHostIdentity` / `deleteHostIdentity` | Host keypair and identity |
-| `getAgentConnection` / `setAgentConnection` / `deleteAgentConnection` / `listAgentConnections` | Per-agent connection state |
+| `getAgentConnection` / `setAgentConnection` / `deleteAgentConnection` | Per-agent connection state |
 | `getProviderConfig` / `setProviderConfig` / `listProviderConfigs` | Cached provider discovery docs |
 
 > The CLI package (`@auth/agent-cli`) includes a file-based `FileStorage` implementation with optional encryption at rest — see [`packages/cli/src/storage.ts`](../cli/src/storage.ts) for a reference implementation.

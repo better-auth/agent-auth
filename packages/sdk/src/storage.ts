@@ -42,16 +42,6 @@ export class MemoryStorage implements Storage {
 		this.agents.delete(agentId);
 	}
 
-	async listAgentConnections(issuer: string): Promise<AgentConnection[]> {
-		const result: AgentConnection[] = [];
-		for (const conn of this.agents.values()) {
-			if (conn.issuer === issuer) {
-				result.push(conn);
-			}
-		}
-		return result;
-	}
-
 	async getProviderConfig(issuer: string): Promise<ProviderConfig | null> {
 		return this.providers.get(issuer) ?? null;
 	}
