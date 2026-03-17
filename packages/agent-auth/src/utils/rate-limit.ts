@@ -43,6 +43,15 @@ export function buildRateLimits(overrides: AgentAuthOptions["rateLimit"]) {
 		},
 		{
 			pathMatcher(path: string) {
+				return path === "/agent/ciba/authorize";
+			},
+			window:
+				overrides?.["/agent/ciba/authorize"]?.window ?? DEFAULT_WINDOW,
+			max:
+				overrides?.["/agent/ciba/authorize"]?.max ?? SENSITIVE_MAX,
+		},
+		{
+			pathMatcher(path: string) {
 				return path.startsWith("/agent/") || path.startsWith("/capability/");
 			},
 			window: DEFAULT_WINDOW,
