@@ -1190,6 +1190,26 @@ describe("Location model — middleware audience integration", () => {
 		const body = await json<{ data: { result: string } }>(res);
 		expect(body.data.result).toBe("executed");
 	});
+
+	it("execute succeeds with default execute endpoint aud when capability has no location", async () => {
+		const { agentId, keypair } = await registerLocAgent(["read"]);
+		// "read" has no custom location — aud should be the default execute endpoint
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: `${API}/capability/execute`,
+			capabilities: ["read"],
+		});
+
+		const res = await locApi("/capability/execute", {
+			method: "POST",
+			headers: { authorization: `Bearer ${jwt}` },
+			body: JSON.stringify({ capability: "read", arguments: {} }),
+		});
+		expect(res.ok).toBe(true);
+		const body = await json<{ data: { result: string } }>(res);
+		expect(body.data.result).toBe("executed");
+	});
 });
 
 describe("Location model — introspect audience integration", () => {

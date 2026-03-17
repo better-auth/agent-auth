@@ -734,8 +734,8 @@ export class AgentAuthClient {
 		const conn = await this.requireConnection(opts.agentId);
 		const config = await this.requireConfig(conn.issuer);
 
-		const capLocation = await this.resolveCapabilityLocation(
-			conn.issuer,
+		const capLocation = this.resolveCapabilityLocationFromConfig(
+			config,
 			opts.capability,
 		);
 		const executeLocation = this.resolveExecuteLocation(
@@ -1041,16 +1041,15 @@ export class AgentAuthClient {
 	}
 
 	/**
-	 * Look up a capability's `location` from the cached provider config
-	 * or capability listing. Returns `undefined` if no per-capability
-	 * location is set — the caller falls back to `default_location`.
+	 * Look up a capability's `location` from an already-fetched provider
+	 * config. Returns `undefined` if the capability has no custom location
+	 * — the caller falls back to `default_location`.
 	 */
-	private async resolveCapabilityLocation(
-		issuer: string,
+	private resolveCapabilityLocationFromConfig(
+		config: ProviderConfig,
 		capabilityName: string,
-	): Promise<string | undefined> {
-		const config = await this.storage.getProviderConfig(issuer);
-		if (config?.capabilities) {
+	): string | undefined {
+		if (config.capabilities) {
 			const cap = config.capabilities.find((c) => c.name === capabilityName);
 			if (cap?.location) return cap.location;
 		}

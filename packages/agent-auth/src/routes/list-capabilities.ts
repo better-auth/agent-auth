@@ -123,7 +123,13 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 
 			return ctx.json({
 				capabilities: page.map((c) => {
-					const result: Record<string, unknown> = {
+					const result: {
+						name: string;
+						description: string;
+						location?: string;
+						approval_strength?: string;
+						grant_status?: string;
+					} = {
 						name: c.name,
 						description: c.description,
 					};
