@@ -1,6 +1,6 @@
 import { generateKeypair, signAgentJWT, signHostJWT } from "./crypto";
 import { discoverProvider, lookupByUrl, searchRegistryFull } from "./discovery";
-import { detectHostName } from "./host-name";
+import { detectHostName, detectTool } from "./host-name";
 import { MemoryStorage } from "./storage";
 import type {
 	AgentAuthClientOptions,
@@ -26,21 +26,21 @@ import type {
 import { AgentAuthSDKError } from "./types";
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-			return;
-		}
-		const timer = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			"abort",
-			() => {
-				clearTimeout(timer);
-				reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-			},
-			{ once: true },
-		);
-	});
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 }
 
 /**
@@ -1343,4 +1343,3 @@ export class AgentAuthClient {
 		return "Call list_capabilities to see available capabilities for this provider.";
 	}
 }
- 

@@ -2,23 +2,23 @@ import type { AgentAuthClient } from "./client";
 import type { CapabilityRequestItem } from "./types";
 
 export interface ToolParameters {
-	type: "object";
-	properties: Record<string, Record<string, unknown>>;
-	required?: string[];
+  type: "object";
+  properties: Record<string, Record<string, unknown>>;
+  required?: string[];
 }
 
 export interface ToolContext {
-	signal?: AbortSignal;
+  signal?: AbortSignal;
 }
 
 export interface AgentAuthTool {
-	name: string;
-	description: string;
-	parameters: ToolParameters;
-	execute: (
-		args: Record<string, unknown>,
-		context?: ToolContext,
-	) => Promise<unknown>;
+  name: string;
+  description: string;
+  parameters: ToolParameters;
+  execute: (
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ) => Promise<unknown>;
 }
 
 /**
@@ -29,63 +29,61 @@ export interface AgentAuthTool {
  * handler. Adapters (MCP, Vercel AI SDK, OpenAI function calling,
  * LangChain, etc.) can consume these directly.
  */
-export function getAgentAuthTools(
-	client: AgentAuthClient,
-): AgentAuthTool[] {
-	return [
-		// ── Step 1: Find a provider ──
+export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
+  return [
+    // ── Step 1: Find a provider ──
 
-		{
-			name: "list_providers",
-			description:
-				"Step 1a — ALWAYS call this first. Lists providers that have already been discovered, connected, or pre-configured. Check here before searching or discovering. If the provider you need is already listed, skip straight to Step 2.",
-			parameters: { type: "object", properties: {} },
-			async execute() {
-				return client.listProviders();
-			},
-		},
+    {
+      name: "list_providers",
+      description:
+        "Step 1a — ALWAYS call this first. Lists providers that have already been discovered, connected, or pre-configured. Check here before searching or discovering. If the provider you need is already listed, skip straight to Step 2.",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return client.listProviders();
+      },
+    },
 
-		{
-			name: "search_providers",
-			description:
-				"Step 1b: Search the registry for providers by name or intent. Call this when list_providers doesn't have what you need. Use the provider name (e.g. 'vercel', 'github') or describe what you want to do (e.g. 'deploy web apps'). Found providers are automatically cached so you can use them immediately.",
-			parameters: {
-				type: "object",
-				properties: {
-					intent: {
-						type: "string",
-						description:
-							"Provider name or what you want to do (e.g. 'vercel', 'deploy web apps', 'send emails')",
-					},
-				},
-				required: ["intent"],
-			},
-			async execute(args) {
-				return client.searchProviders(args.intent as string);
-			},
-		},
+    {
+      name: "search_providers",
+      description:
+        "Step 1b: Search the registry for providers by name or intent. Call this when list_providers doesn't have what you need. Use the provider name (e.g. 'vercel', 'github') or describe what you want to do (e.g. 'deploy web apps'). Found providers are automatically cached so you can use them immediately.",
+      parameters: {
+        type: "object",
+        properties: {
+          intent: {
+            type: "string",
+            description:
+              "Provider name or what you want to do (e.g. 'vercel', 'deploy web apps', 'send emails')",
+          },
+        },
+        required: ["intent"],
+      },
+      async execute(args) {
+        return client.searchProviders(args.intent as string);
+      },
+    },
 
-		{
-			name: "discover_provider",
-			description:
-				"Step 1c — Last resort. Look up a provider by URL. When a registry is configured (default), this only resolves providers through the registry — it will NOT fetch from arbitrary URLs. Only use this if list_providers and search_providers didn't find what you need.",
-			parameters: {
-				type: "object",
-				properties: {
-					url: {
-						type: "string",
-						description:
-							"Service URL or domain to look up (e.g. https://api.example.com, vercel.com)",
-					},
-				},
-				required: ["url"],
-			},
-			async execute(args) {
-				return client.discoverProvider(args.url as string);
-			},
-		},
+    {
+      name: "discover_provider",
+      description:
+        "Look up a provider by URL. IMPORTANT: Do NOT call this alongside search_providers — always wait for search_providers results first. Only use this if BOTH list_providers and search_providers have already been called and neither returned the provider you need. When a registry is configured (default), this only resolves providers through the registry — it will NOT fetch from arbitrary URLs.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description:
+              "Service URL or domain to look up (e.g. https://api.example.com)",
+          },
+        },
+        required: ["url"],
+      },
+      async execute(args) {
+        return client.discoverProvider(args.url as string);
+      },
+    },
 
-		// ── Step 2: Browse capabilities ──
+    // ── Step 2: Browse capabilities ──
 
 		{
 			name: "list_capabilities",
@@ -161,7 +159,7 @@ export function getAgentAuthTools(
 		},
 	},
 
-		// ── Step 3: Connect an agent ──
+    // ── Step 3: Connect an agent ──
 
 		{
 		name: "connect_agent",
@@ -239,60 +237,58 @@ export function getAgentAuthTools(
 		},
 	},
 
-		// ── Step 4: Use the agent ──
+    // ── Step 4: Use the agent ──
 
-		{
-			name: "execute_capability",
-			description:
-				"Step 4: Execute a capability on behalf of an agent. Requires an agent_id from connect_agent. Signs a scoped JWT and sends the request to the provider.",
-			parameters: {
-				type: "object",
-				properties: {
-					agent_id: {
-						type: "string",
-						description: "Agent ID returned by connect_agent",
-					},
-					capability: {
-						type: "string",
-						description: "Capability to execute",
-					},
-					arguments: {
-						type: "object",
-						description:
-							"Arguments for the capability, conforming to its input schema",
-					},
-				},
-				required: ["agent_id", "capability"],
-			},
-			async execute(args) {
-				return client.executeCapability({
-					agentId: args.agent_id as string,
-					capability: args.capability as string,
-					arguments: args.arguments as
-						| Record<string, unknown>
-						| undefined,
-				});
-			},
-		},
+    {
+      name: "execute_capability",
+      description:
+        "Step 4: Execute a capability on behalf of an agent. Requires an agent_id from connect_agent. Signs a scoped JWT and sends the request to the provider.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: {
+            type: "string",
+            description: "Agent ID returned by connect_agent",
+          },
+          capability: {
+            type: "string",
+            description: "Capability to execute",
+          },
+          arguments: {
+            type: "object",
+            description:
+              "Arguments for the capability, conforming to its input schema",
+          },
+        },
+        required: ["agent_id", "capability"],
+      },
+      async execute(args) {
+        return client.executeCapability({
+          agentId: args.agent_id as string,
+          capability: args.capability as string,
+          arguments: args.arguments as Record<string, unknown> | undefined,
+        });
+      },
+    },
 
-		{
-			name: "agent_status",
-			description:
-				"Check the status of an agent (active, pending, expired, revoked) and its capability grants. Requires an agent_id from connect_agent.",
-			parameters: {
-				type: "object",
-				properties: {
-					agent_id: {
-						type: "string",
-						description: "Agent ID returned by connect_agent",
-					},
-				},
-				required: ["agent_id"],
-			},
-			async execute(args) {
-				return client.agentStatus(args.agent_id as string);
-			},
-		},
+    {
+      name: "agent_status",
+      description:
+        "Check the status of an agent (active, pending, expired, revoked) and its capability grants. Requires an agent_id from connect_agent.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: {
+            type: "string",
+            description: "Agent ID returned by connect_agent",
+          },
+        },
+        required: ["agent_id"],
+      },
+      async execute(args) {
+        return client.agentStatus(args.agent_id as string);
+      },
+    },
 
 		{
 			name: "sign_jwt",
@@ -387,118 +383,117 @@ export function getAgentAuthTools(
 		},
 	},
 
-		{
-			name: "disconnect_agent",
-			description:
-				"Disconnect and revoke an agent. Requires an agent_id from connect_agent.",
-			parameters: {
-				type: "object",
-				properties: {
-					agent_id: {
-						type: "string",
-						description: "Agent ID returned by connect_agent",
-					},
-				},
-				required: ["agent_id"],
-			},
-			async execute(args) {
-				await client.disconnectAgent(args.agent_id as string);
-				return { ok: true, agentId: args.agent_id };
-			},
-		},
+    {
+      name: "disconnect_agent",
+      description:
+        "Disconnect and revoke an agent. Requires an agent_id from connect_agent.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: {
+            type: "string",
+            description: "Agent ID returned by connect_agent",
+          },
+        },
+        required: ["agent_id"],
+      },
+      async execute(args) {
+        await client.disconnectAgent(args.agent_id as string);
+        return { ok: true, agentId: args.agent_id };
+      },
+    },
 
-		{
-			name: "reactivate_agent",
-			description:
-				"Reactivate an expired agent. Requires an agent_id from connect_agent.",
-			parameters: {
-				type: "object",
-				properties: {
-					agent_id: {
-						type: "string",
-						description: "Agent ID returned by connect_agent",
-					},
-				},
-				required: ["agent_id"],
-			},
-			async execute(args, ctx) {
-				return client.reactivateAgent(args.agent_id as string, {
-					signal: ctx?.signal,
-				});
-			},
-		},
+    {
+      name: "reactivate_agent",
+      description:
+        "Reactivate an expired agent. Requires an agent_id from connect_agent.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: {
+            type: "string",
+            description: "Agent ID returned by connect_agent",
+          },
+        },
+        required: ["agent_id"],
+      },
+      async execute(args, ctx) {
+        return client.reactivateAgent(args.agent_id as string, {
+          signal: ctx?.signal,
+        });
+      },
+    },
 
-		// ── Host management ──
+    // ── Host management ──
 
-		{
-			name: "enroll_host",
-			description:
-				"Enroll a host using a one-time enrollment token. Only needed when the host was pre-registered without a public key.",
-			parameters: {
-				type: "object",
-				properties: {
-					provider: {
-						type: "string",
-						description: "Provider URL, issuer, or name",
-					},
-					enrollment_token: {
-						type: "string",
-						description: "One-time enrollment token",
-					},
-					name: {
-						type: "string",
-						description: "Host name",
-					},
-				},
-				required: ["provider", "enrollment_token"],
-			},
-			async execute(args) {
-				return client.enrollHost({
-					provider: args.provider as string,
-					enrollmentToken: args.enrollment_token as string,
-					name: args.name as string | undefined,
-				});
-			},
-		},
+    {
+      name: "enroll_host",
+      description:
+        "Enroll a host using a one-time enrollment token. Only needed when the host was pre-registered without a public key.",
+      parameters: {
+        type: "object",
+        properties: {
+          provider: {
+            type: "string",
+            description: "Provider URL, issuer, or name",
+          },
+          enrollment_token: {
+            type: "string",
+            description: "One-time enrollment token",
+          },
+          name: {
+            type: "string",
+            description: "Host name",
+          },
+        },
+        required: ["provider", "enrollment_token"],
+      },
+      async execute(args) {
+        return client.enrollHost({
+          provider: args.provider as string,
+          enrollmentToken: args.enrollment_token as string,
+          name: args.name as string | undefined,
+        });
+      },
+    },
 
-		{
-			name: "rotate_agent_key",
-			description:
-				"Rotate an agent's keypair. Requires an agent_id from connect_agent.",
-			parameters: {
-				type: "object",
-				properties: {
-					agent_id: {
-						type: "string",
-						description: "Agent ID returned by connect_agent",
-					},
-				},
-				required: ["agent_id"],
-			},
-			async execute(args) {
-				return client.rotateAgentKey(args.agent_id as string);
-			},
-		},
+    {
+      name: "rotate_agent_key",
+      description:
+        "Rotate an agent's keypair. Requires an agent_id from connect_agent.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: {
+            type: "string",
+            description: "Agent ID returned by connect_agent",
+          },
+        },
+        required: ["agent_id"],
+      },
+      async execute(args) {
+        return client.rotateAgentKey(args.agent_id as string);
+      },
+    },
 
-		{
-			name: "rotate_host_key",
-			description:
-				"Rotate the host keypair for a provider.",
-			parameters: {
-				type: "object",
-				properties: {
-					issuer: {
-						type: "string",
-						description: "Provider issuer URL",
-					},
-				},
-				required: ["issuer"],
-			},
-			async execute(args) {
-				return client.rotateHostKey(args.issuer as string);
-			},
-		},
-	];
+    {
+      name: "rotate_host_key",
+      description: "Rotate the host keypair for a provider.",
+      parameters: {
+        type: "object",
+        properties: {
+          issuer: {
+            type: "string",
+            description: "Provider issuer URL",
+          },
+        },
+        required: ["issuer"],
+      },
+      async execute(args) {
+        return client.rotateHostKey(args.issuer as string);
+      },
+    },
+  ];
 }
 
 // ─── Tool Filtering ─────────────────────────────────────────
@@ -585,12 +580,12 @@ export interface OpenAIToolDefinition {
 }
 
 export interface OpenAITools {
-	definitions: OpenAIToolDefinition[];
-	execute: (
-		name: string,
-		args: Record<string, unknown>,
-		context?: ToolContext,
-	) => Promise<unknown>;
+  definitions: OpenAIToolDefinition[];
+  execute: (
+    name: string,
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ) => Promise<unknown>;
 }
 
 export interface OpenAIToolsOptions {
@@ -677,12 +672,12 @@ export function toOpenAITools(
 }
 
 export interface AISDKTool {
-	description: string;
-	parameters: unknown;
-	execute: (
-		args: Record<string, unknown>,
-		context?: ToolContext,
-	) => Promise<unknown>;
+  description: string;
+  parameters: unknown;
+  execute: (
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ) => Promise<unknown>;
 }
 
 export interface AISDKToolsOptions {

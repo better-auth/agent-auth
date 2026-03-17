@@ -14,9 +14,10 @@ import type {
 	AgentHost,
 	AgentSession,
 	ApprovalRequest,
+	Constraints,
 	ResolvedAgentAuthOptions,
 } from "../types";
-import type { CapabilityConstraints } from "../types";
+import { normalizeCapabilityRequests } from "../types";
 import {
 	buildApprovalInfo,
 	capabilityItemZ,
@@ -25,8 +26,16 @@ import {
 	validateCapabilitiesExist,
 } from "./_helpers";
 
+const capabilityRequestItem = z.union([
+	z.string(),
+	z.object({
+		name: z.string(),
+		constraints: z.record(z.string(), z.unknown()).optional(),
+	}),
+]);
+
 /**
- * POST /agent/request-capability (§6.4).
+ * POST /agent/request-capability (§5.4).
  *
  * Requests additional capabilities for an existing agent.
  * Auto-approves capabilities within the host's default set;
@@ -37,13 +46,15 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 		"/agent/request-capability",
 		{
 			method: "POST",
-		body: z.object({
-			capabilities: z.array(capabilityItemZ).min(1),
-			reason: z.string().optional(),
-			preferred_method: z.string().optional(),
-			login_hint: z.string().optional(),
-			binding_message: z.string().optional(),
-		}),
+			body: z.object({
+				capabilities: z.array(capabilityItemZ).min(1),
+				reason: z.string().optional(),
+				preferred_method: z
+					.enum(["device_authorization", "ciba"])
+					.optional(),
+				login_hint: z.string().optional(),
+				binding_message: z.string().optional(),
+			}),
 			requireHeaders: true,
 			metadata: {
 				openapi: {
@@ -63,8 +74,22 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				);
 			}
 
-			const { capabilities: rawCapabilities, reason, preferred_method: preferredMethod, login_hint: loginHint, binding_message: bindingMessage } = ctx.body;
-		const { ids: capabilityIds, constraintsMap } = normalizeCapabilities(rawCapabilities);
+			const {
+			capabilities: rawCapabilities,
+			reason,
+			preferred_method: preferredMethod,
+			login_hint: loginHint,
+			binding_message: bindingMessage,
+		} = ctx.body;
+
+		const normalizedCaps = normalizeCapabilityRequests(
+			rawCapabilities as Array<string | { name: string; constraints?: Constraints }>,
+		);
+		const capabilityIds = normalizedCaps.map((c) => c.name);
+		const constraintsMap = new Map<string, Constraints | null>();
+		for (const c of normalizedCaps) {
+			constraintsMap.set(c.name, c.constraints);
+		}
 
 			// Validate blocked (§10.6)
 			if (opts.blockedCapabilities.length > 0) {
@@ -242,13 +267,11 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				needsApproval = newOnly;
 			}
 
-			if (needsApproval.length > 0 && !hostUserId && agentSession.agent.mode === "autonomous") {
-				throw agentError(
-					"FORBIDDEN",
-					ERR.CAPABILITY_DENIED,
-					"Requested capabilities are not pre-authorized for this autonomous host.",
-				);
+		if (needsApproval.length > 0 && agentSession.agent.mode === "autonomous") {
+			if (!hostUserId) {
+				needsApproval = [];
 			}
+		}
 
 		// Auto-approve
 		for (const capId of autoApprove) {
@@ -266,11 +289,12 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				data: {
 					agentId: agentSession.agent.id,
 					capability: capId,
+					constraints: constraintsMap.get(capId) ?? null,
 					grantedBy: agentSession.host?.userId ?? null,
+					deniedBy: null,
 					expiresAt,
 					status: "active",
 					reason: reason ?? null,
-					constraints: constraintsMap.get(capId) ?? null,
 					createdAt: now,
 					updatedAt: now,
 				},
@@ -322,11 +346,12 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 				data: {
 					agentId: agentSession.agent.id,
 					capability: capId,
+					constraints: constraintsMap.get(capId) ?? null,
 					grantedBy: agentSession.host?.userId ?? null,
+					deniedBy: null,
 					expiresAt: null,
 					status: "pending",
 					reason: reason ?? null,
-					constraints: constraintsMap.get(capId) ?? null,
 					createdAt: now,
 					updatedAt: now,
 				},

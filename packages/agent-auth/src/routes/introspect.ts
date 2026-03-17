@@ -148,7 +148,6 @@ export function introspect(
 				}
 			}
 
-			// §5.12: introspect MUST return compact grants (capability + status only)
 			return ctx.json({
 				active: true,
 				agent_id: agent.id,

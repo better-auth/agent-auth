@@ -36,9 +36,14 @@ export interface Capability {
 	location?: string;
 	/**
 	 * JSON Schema describing the `arguments` accepted by
-	 * `POST /capability/execute` (§6.11).
+	 * `POST /capability/execute` (§5.11).
 	 */
 	input?: Record<string, unknown>;
+	/**
+	 * JSON Schema describing the shape of the data returned when
+	 * this capability executes successfully (§2.12).
+	 */
+	output?: Record<string, unknown>;
 	/**
 	 * Required approval strength for this capability (§8.11).
 	 *
@@ -179,6 +184,9 @@ export type ConstraintValue = ConstraintPrimitive | ConstraintOperators;
  */
 export type CapabilityConstraints = Record<string, ConstraintValue>;
 
+/** Backward-compatible alias used throughout the codebase. */
+export type Constraints = CapabilityConstraints;
+
 /**
  * Normalized capability request after parsing `string | { name, constraints }`.
  */
@@ -192,9 +200,10 @@ export interface AgentCapabilityGrant {
 	id: string;
 	agentId: string;
 	capability: string;
-	grantedBy: string | null;
-	reason: string | null;
 	constraints: CapabilityConstraints | null;
+	grantedBy: string | null;
+	deniedBy: string | null;
+	reason: string | null;
 	expiresAt: Date | null;
 	status: GrantStatus;
 	createdAt: Date;
@@ -245,6 +254,7 @@ export interface AgentSession {
 		mode: AgentMode;
 		capabilityGrants: Array<{
 			capability: string;
+			constraints: Constraints | null;
 			grantedBy: string | null;
 			status: string;
 		}>;
@@ -772,6 +782,25 @@ export interface AgentAuthCapabilityExecutionEvent extends AgentAuthEventBase {
 }
 
 export type AgentAuthEvent = AgentAuthAuditEvent | AgentAuthCapabilityExecutionEvent;
+
+/**
+ * A capability request element — §5.3.
+ * Either a plain capability name (string) or an object with
+ * a name and optional constraints for scoped grants.
+ */
+export type CapabilityRequest = string | { name: string; constraints?: Constraints };
+
+/**
+ * Parse a mixed capabilities array into normalized entries.
+ */
+export function normalizeCapabilityRequests(
+	capabilities: CapabilityRequest[],
+): Array<{ name: string; constraints: Constraints | null }> {
+	return capabilities.map((c) => {
+		if (typeof c === "string") return { name: c, constraints: null };
+		return { name: c.name, constraints: c.constraints ?? null };
+	});
+}
 
 /** Ed25519 JWK (or other supported key types). */
 export interface AgentJWK {

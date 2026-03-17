@@ -76,6 +76,43 @@ export default function HostsPage() {
 	const [filter, setFilter] = useState("all");
 	const [expanded, setExpanded] = useState<string | null>(null);
 	const [revoking, setRevoking] = useState<string | null>(null);
+	const [editingHost, setEditingHost] = useState<string | null>(null);
+	const [availableCaps, setAvailableCaps] = useState<{ name: string; description: string }[]>([]);
+	const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set());
+	const [savingCaps, setSavingCaps] = useState(false);
+	const [loadingCaps, setLoadingCaps] = useState(false);
+
+	const startEditingCaps = async (host: HostData) => {
+		setEditingHost(host.id);
+		setLoadingCaps(true);
+		setSelectedCaps(new Set(host.default_capabilities));
+		try {
+			const res = await fetch("/api/auth/capability/list?limit=500");
+			if (res.ok) {
+				const data = await res.json();
+				setAvailableCaps(data.capabilities ?? []);
+			}
+		} catch { /* ignore */ }
+		setLoadingCaps(false);
+	};
+
+	const saveCaps = async (hostId: string) => {
+		setSavingCaps(true);
+		try {
+			const res = await fetch("/api/auth/host/update", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ host_id: hostId, default_capabilities: [...selectedCaps] }),
+			});
+			if (res.ok) {
+				setHosts((prev) =>
+					prev.map((h) => h.id === hostId ? { ...h, default_capabilities: [...selectedCaps] } : h),
+				);
+			}
+		} catch { /* ignore */ }
+		setSavingCaps(false);
+		setEditingHost(null);
+	};
 
 	useEffect(() => {
 		setLoading(true);
@@ -291,28 +328,86 @@ export default function HostsPage() {
 												</div>
 											</div>
 
-											{host.default_capabilities
-												.length > 0 && (
-												<div className="mb-4">
-													<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
+											<div className="mb-4">
+												<div className="flex items-center justify-between mb-2">
+													<p className="text-[10px] uppercase tracking-widest text-muted">
 														Default Capabilities
 													</p>
-													<div className="space-y-1">
-														{host.default_capabilities.map(
-															(cap) => (
-																<div
-																	key={cap}
-																	className="rounded bg-background px-3 py-2"
-																>
-																	<code className="text-xs font-mono text-foreground">
-																		{cap}
-																	</code>
-																</div>
-															),
-														)}
-													</div>
+													{editingHost === host.id ? (
+														<div className="flex gap-1.5">
+															<button
+																onClick={() => saveCaps(host.id)}
+																disabled={savingCaps}
+																className="cursor-pointer rounded-lg bg-white px-3 py-1 text-[11px] font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+															>
+																{savingCaps ? "Saving..." : "Save"}
+															</button>
+															<button
+																onClick={() => setEditingHost(null)}
+																className="cursor-pointer rounded-lg border border-border px-3 py-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground"
+															>
+																Cancel
+															</button>
+														</div>
+													) : host.status === "active" ? (
+														<button
+															onClick={() => startEditingCaps(host)}
+															className="cursor-pointer rounded-lg border border-border px-3 py-1 text-[11px] font-medium text-muted transition-colors hover:text-foreground hover:bg-white/4"
+														>
+															Edit
+														</button>
+													) : null}
 												</div>
-											)}
+												{editingHost === host.id ? (
+													loadingCaps ? (
+														<div className="flex justify-center py-6"><Spinner /></div>
+													) : (
+														<div className="space-y-1 max-h-60 overflow-y-auto">
+															{availableCaps.map((cap) => {
+																const isSelected = selectedCaps.has(cap.name);
+																return (
+																	<label
+																		key={cap.name}
+																		className={`flex items-center gap-3 rounded px-3 py-2 cursor-pointer transition-colors ${
+																			isSelected ? "bg-emerald-500/10 ring-1 ring-emerald-500/20" : "bg-background hover:bg-white/4"
+																		}`}
+																	>
+																		<input
+																			type="checkbox"
+																			checked={isSelected}
+																			onChange={() => {
+																				setSelectedCaps((prev) => {
+																					const next = new Set(prev);
+																					if (next.has(cap.name)) next.delete(cap.name);
+																					else next.add(cap.name);
+																					return next;
+																				});
+																			}}
+																			className="h-3.5 w-3.5 rounded accent-emerald-500"
+																		/>
+																		<div className="flex-1 min-w-0">
+																			<code className="text-xs font-mono text-foreground truncate block">{cap.name}</code>
+																			{cap.description && (
+																				<p className="text-[11px] text-muted/50 truncate">{cap.description}</p>
+																			)}
+																		</div>
+																	</label>
+																);
+															})}
+														</div>
+													)
+												) : host.default_capabilities.length > 0 ? (
+													<div className="space-y-1">
+														{host.default_capabilities.map((cap) => (
+															<div key={cap} className="rounded bg-background px-3 py-2">
+																<code className="text-xs font-mono text-foreground">{cap}</code>
+															</div>
+														))}
+													</div>
+												) : (
+													<p className="text-xs text-muted/50 py-2">No default capabilities set.</p>
+												)}
+											</div>
 
 											{host.status === "active" && (
 												<button

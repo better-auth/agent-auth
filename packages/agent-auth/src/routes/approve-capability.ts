@@ -46,16 +46,17 @@ export function approveCapability(
 		"/agent/approve-capability",
 		{
 			method: "POST",
-		body: z.object({
-			agent_id: z.string().optional(),
-			approval_id: z.string().optional(),
-			action: z.enum(["approve", "deny"]),
-			capabilities: z.array(z.string()).optional(),
-			ttl: z.number().positive().optional(),
-			webauthn_response: z
-				.record(z.string(), z.unknown())
-				.optional(),
-		}),
+			body: z.object({
+				agent_id: z.string().optional(),
+				approval_id: z.string().optional(),
+				action: z.enum(["approve", "deny"]),
+				capabilities: z.array(z.string()).optional(),
+				ttl: z.number().positive().optional(),
+				reason: z.string().optional(),
+				webauthn_response: z
+					.record(z.string(), z.unknown())
+					.optional(),
+			}),
 			use: [sessionMiddleware],
 			metadata: {
 				openapi: {
@@ -67,14 +68,15 @@ export function approveCapability(
 		async (ctx) => {
 			const session = ctx.context.session;
 
-		const {
-			agent_id: directAgentId,
-			approval_id: approvalId,
-			action,
-			capabilities: userCapIds,
-			ttl: explicitTTL,
-			webauthn_response: webauthnResponse,
-		} = ctx.body;
+			const {
+				agent_id: directAgentId,
+				approval_id: approvalId,
+				action,
+				capabilities: userCapIds,
+				ttl: explicitTTL,
+				reason: denyReason,
+				webauthn_response: webauthnResponse,
+			} = ctx.body;
 
 			let agentId: string;
 			let approvalRequest: ApprovalRequest | null = null;
@@ -150,17 +152,26 @@ export function approveCapability(
 					});
 				}
 
+				const agentUpdate: Record<string, unknown> = { updatedAt: now };
 				if (agentIsPending) {
+					agentUpdate.status = "rejected";
+					agentUpdate.userId = session.user.id;
+				}
+				if (denyReason) {
+					const existing = agent.metadata ?? {};
+					agentUpdate.metadata = { ...existing, denyReason };
+				}
+				if (Object.keys(agentUpdate).length > 1) {
 					await ctx.context.adapter.update({
 						model: TABLE.agent,
 						where: [{ field: "id", value: agentId }],
-						update: {
-							status: "rejected",
-							userId: session.user.id,
-							updatedAt: now,
-						},
+						update: agentUpdate,
 					});
 				}
+
+				const errorDescription = denyReason
+					? `User denied the authorization request: ${denyReason}`
+					: "User denied the authorization request.";
 
 				const resolved =
 					await resolvePendingApprovalRequests(
@@ -172,8 +183,7 @@ export function approveCapability(
 					agent_id: agentId,
 					status: "denied",
 					error: "access_denied",
-					error_description:
-						"User denied the authorization request.",
+					error_description: errorDescription,
 				});
 
 				emit(opts, {
@@ -184,6 +194,7 @@ export function approveCapability(
 						capabilities: pendingGrants.map(
 							(g) => g.capability,
 						),
+						...(denyReason ? { reason: denyReason } : {}),
 					},
 				}, ctx);
 

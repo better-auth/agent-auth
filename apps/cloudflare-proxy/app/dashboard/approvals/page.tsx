@@ -54,17 +54,24 @@ export default function ApprovalsPage() {
 	const [loading, setLoading] = useState(true);
 	const [acting, setActing] = useState<string | null>(null);
 
-	const fetchRequests = useCallback(() => {
-		fetch("/api/auth/agent/ciba/pending")
-			.then((r) => (r.ok ? r.json() : { requests: [] }))
-			.then((data) => setRequests(data.requests ?? []))
-			.catch(() => {})
-			.finally(() => setLoading(false));
+	const fetchRequests = useCallback(async () => {
+		try {
+			const r = await fetch("/api/auth/agent/ciba/pending");
+			if (!r.ok) return;
+			const data = await r.json();
+			setRequests(data.requests ?? []);
+		} catch {
+			/* ignore */
+		} finally {
+			setLoading(false);
+		}
 	}, []);
 
 	useEffect(() => {
 		fetchRequests();
-		const interval = setInterval(fetchRequests, 5000);
+		const interval = setInterval(() => {
+			if (!document.hidden) fetchRequests();
+		}, 5000);
 		return () => clearInterval(interval);
 	}, [fetchRequests]);
 

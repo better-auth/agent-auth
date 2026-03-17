@@ -136,7 +136,9 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 						data: {
 							agentId,
 							capability: capabilityId,
+							constraints: null,
 							grantedBy: session.user.id,
+							deniedBy: null,
 							expiresAt,
 							status: "active",
 							reason: null,

@@ -207,19 +207,21 @@ export function getAgentAuthAdapter(
 							userId: ttlContext.userId,
 						})
 					: null;
-			await adapter.create({
-				model: TABLE.grant,
-				data: {
-					agentId,
-					capability: cap,
-					grantedBy,
-					expiresAt,
-					status,
-					reason: grantOpts?.reason ?? null,
-					createdAt: now,
-					updatedAt: now,
-				},
-			});
+		await adapter.create({
+			model: TABLE.grant,
+			data: {
+				agentId,
+				capability: cap,
+				constraints: null,
+				grantedBy,
+				deniedBy: null,
+				expiresAt,
+				status,
+				reason: grantOpts?.reason ?? null,
+				createdAt: now,
+				updatedAt: now,
+			},
+		});
 		}
 	};
 

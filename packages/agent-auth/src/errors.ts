@@ -229,6 +229,10 @@ export const AGENT_AUTH_ERROR_CODES = {
 		message:
 			"This server requires authentication to list capabilities. Connect an agent first, then retry with the agent JWT.",
 	},
+	CONSTRAINT_VIOLATED: {
+		code: "constraint_violated",
+		message: "Execution arguments violate grant constraints",
+	},
 	EXECUTE_NOT_CONFIGURED: {
 		code: "execute_not_configured",
 		message: "Server has not configured a capability execution handler",

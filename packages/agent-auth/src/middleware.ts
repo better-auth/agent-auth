@@ -69,6 +69,11 @@ export function createAgentAuthBeforeHook(
 	jtiCache: JtiCacheStore,
 	jwksCache?: JwksCacheStore,
 ): { matcher: (context: HookEndpointContext) => boolean; handler: AuthMiddleware } {
+	const OPTIONAL_AUTH_PATHS = new Set([
+		"/capability/list",
+		"/capability/describe",
+	]);
+
 	return {
 		matcher: (ctx: { path?: string; headers?: Headers }) => {
 			if (!ctx.path || ctx.path === "/agent/register") return false;
@@ -80,6 +85,7 @@ export function createAgentAuthBeforeHook(
 		},
 		handler: createAuthMiddleware(async (ctx) => {
 		const challenge = agentAuthChallenge(ctx.context.baseURL);
+		const isOptionalAuth = OPTIONAL_AUTH_PATHS.has(ctx.path ?? "");
 		try {
 			const db = getAgentAuthAdapter(
 				ctx.context.adapter as FullAdapter,
@@ -486,17 +492,18 @@ export function createAgentAuthBeforeHook(
 				);
 			}
 
-			const agentSession: AgentSession = {
-				type: agent.mode,
-				agent: {
-					id: agent.id,
-					name: agent.name,
-					mode: agent.mode,
-					capabilityGrants: effectiveGrants.map((g) => ({
-						capability: g.capability,
-						grantedBy: g.grantedBy,
-						status: g.status,
-					})),
+		const agentSession: AgentSession = {
+			type: agent.mode,
+			agent: {
+				id: agent.id,
+				name: agent.name,
+				mode: agent.mode,
+				capabilityGrants: effectiveGrants.map((g) => ({
+					capability: g.capability,
+					constraints: g.constraints ?? null,
+					grantedBy: g.grantedBy,
+					status: g.status,
+				})),
 					hostId: agent.hostId,
 					createdAt: agent.createdAt,
 					activatedAt: agent.activatedAt ?? null,
@@ -571,6 +578,9 @@ export function createAgentAuthBeforeHook(
 
 			return { context: ctx };
 		} catch (e) {
+			if (isOptionalAuth) {
+				return { context: ctx };
+			}
 			if (e instanceof APIError && (e.statusCode === 401 || e.status === "UNAUTHORIZED")) {
 				Object.assign(e.headers, challenge);
 			}

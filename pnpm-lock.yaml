@@ -113,6 +113,107 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  apps/gmail-proxy:
+    dependencies:
+      '@better-auth/agent-auth':
+        specifier: workspace:*
+        version: link:../../packages/agent-auth
+      better-auth:
+        specifier: ^1.5.4
+        version: 1.5.4(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(kysely@0.28.11)(mysql2@3.15.3)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)))(mongodb@7.1.0)(mysql2@3.15.3)(next@16.1.6(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(vitest@4.0.18(@types/node@20.19.37)(jiti@2.6.1)(lightningcss@1.31.1))
+      better-sqlite3:
+        specifier: ^12.6.2
+        version: 12.6.2
+      next:
+        specifier: 16.1.6
+        version: 16.1.6(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: 19.2.3
+        version: 19.2.3(react@19.2.3)
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4
+        version: 4.2.1
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/node':
+        specifier: ^20
+        version: 20.19.37
+      '@types/react':
+        specifier: ^19
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.2.3(@types/react@19.2.14)
+      eslint:
+        specifier: ^9
+        version: 9.39.4(jiti@2.6.1)
+      eslint-config-next:
+        specifier: 16.1.6
+        version: 16.1.6(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
+      tailwindcss:
+        specifier: ^4
+        version: 4.2.1
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
+  apps/onepassword-proxy:
+    dependencies:
+      '@1password/sdk':
+        specifier: ^0.4.0
+        version: 0.4.0
+      '@better-auth/agent-auth':
+        specifier: workspace:*
+        version: link:../../packages/agent-auth
+      better-auth:
+        specifier: ^1.5.4
+        version: 1.5.4(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(better-sqlite3@12.6.2)(drizzle-kit@0.31.9)(drizzle-orm@0.45.1(@electric-sql/pglite@0.3.15)(@prisma/client@7.4.2(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(typescript@5.9.3))(@types/better-sqlite3@7.6.13)(better-sqlite3@12.6.2)(kysely@0.28.11)(mysql2@3.15.3)(postgres@3.4.7)(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)))(mongodb@7.1.0)(mysql2@3.15.3)(next@16.1.6(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(prisma@7.4.2(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(vitest@4.0.18(@types/node@20.19.37)(jiti@2.6.1)(lightningcss@1.31.1))
+      better-sqlite3:
+        specifier: ^12.6.2
+        version: 12.6.2
+      next:
+        specifier: 16.1.6
+        version: 16.1.6(@babel/core@7.29.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: 19.2.3
+        version: 19.2.3(react@19.2.3)
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4
+        version: 4.2.1
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/node':
+        specifier: ^20
+        version: 20.19.37
+      '@types/react':
+        specifier: ^19
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.2.3(@types/react@19.2.14)
+      eslint:
+        specifier: ^9
+        version: 9.39.4(jiti@2.6.1)
+      eslint-config-next:
+        specifier: 16.1.6
+        version: 16.1.6(@typescript-eslint/parser@8.56.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
+      tailwindcss:
+        specifier: ^4
+        version: 4.2.1
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   apps/registry:
     dependencies:
       '@huggingface/transformers':
@@ -323,6 +424,12 @@ importers:
         version: 5.9.3
 
 packages:
+
+  '@1password/sdk-core@0.4.0':
+    resolution: {integrity: sha512-vjeI1o4wiONY+t1naA4dtUp6HktdLH1D2S+tN1Lh4l41S9XIUHxrljov9B5u6G+VHr7f2MUoxmzXA9zT3aokQQ==}
+
+  '@1password/sdk@0.4.0':
+    resolution: {integrity: sha512-RIypujc9R/UeUaobjyClTYokqRFpcaIkHq+EO/X9XoHId98Vg+SbjwGV+yygRC4MyHwYNo1KP1iEbZcqJ4ZTdw==}
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -4544,6 +4651,12 @@ packages:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
 snapshots:
+
+  '@1password/sdk-core@0.4.0': {}
+
+  '@1password/sdk@0.4.0':
+    dependencies:
+      '@1password/sdk-core': 0.4.0
 
   '@alloc/quick-lru@5.2.0': {}
 

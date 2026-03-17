@@ -35,7 +35,7 @@ export interface Capability {
 	location?: string;
 	/**
 	 * JSON Schema describing the `arguments` accepted by
-	 * `POST /capabilities/execute` (§6.11).
+	 * `POST /capability/execute` (§5.11).
 	 */
 	input?: Record<string, unknown>;
 	/**
@@ -43,6 +43,11 @@ export interface Capability {
 	 * `"webauthn"` requires physical presence (fingerprint, face, hardware key).
 	 */
 	approvalStrength?: ApprovalStrength;
+	/**
+	 * JSON Schema describing the shape of the data returned when
+	 * this capability executes successfully (§2.12).
+	 */
+	output?: Record<string, unknown>;
 	grant_status?: "granted" | "not_granted";
 	[key: string]: unknown;
 }
@@ -103,6 +108,10 @@ export interface CapabilityGrant {
 	status: "active" | "pending" | "denied" | "revoked";
 	granted_by?: string | null;
 	constraints?: CapabilityConstraints | null;
+	description?: string;
+	input?: Record<string, unknown>;
+	output?: Record<string, unknown>;
+	reason?: string;
 }
 
 /** Discovery response — §6.1. */

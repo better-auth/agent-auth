@@ -20,6 +20,7 @@ import type {
 	ApprovalRequest,
 	Capability,
 	CapabilityConstraints,
+	Constraints,
 	DefaultHostCapabilitiesContext,
 	NormalizedCapability,
 	ResolvedAgentAuthOptions,
@@ -149,6 +150,7 @@ export async function createGrantRows(
 		clearExisting?: boolean;
 		status?: "active" | "pending";
 		reason?: string | null;
+		constraintsMap?: Map<string, Constraints | null>;
 	},
 	ttlContext?: {
 		pluginOpts: ResolvedAgentAuthOptions;
@@ -185,17 +187,18 @@ export async function createGrantRows(
 						},
 					)
 				: null;
-		const constraints = constraintsMap?.get(cap) ?? null;
+		const constraints = grantOpts?.constraintsMap?.get(cap) ?? constraintsMap?.get(cap) ?? null;
 		await adapter.create({
 			model: TABLE.grant,
 			data: {
 				agentId,
 				capability: cap,
+				constraints,
 				grantedBy,
+				deniedBy: null,
 				expiresAt,
 				status,
 				reason: grantOpts?.reason ?? null,
-				constraints,
 				createdAt: now,
 				updatedAt: now,
 			},
@@ -206,48 +209,50 @@ export async function createGrantRows(
 /**
  * Format grants for API response — `agent_capability_grants` array (§6.5).
  *
- * Per §6.3/§6.5: active grants MUST include full capability details
- * (`description`, `input`, and any execution metadata). Pending and
- * denied grants include only `capability` and `status`.
+ * Active grants include full capability details (`description`, `input`, `output`)
+ * when `capabilityDefs` is provided, plus effective `constraints` when scoped.
+ * Pending grants include only `capability` and `status`.
+ * Denied grants include `capability`, `status`, and optional `reason`.
+ *
+ * Set `compact: true` for introspect responses (§5.12) which return
+ * only `capability` and `status` — no details, no constraints.
  */
 export function formatGrantsResponse(
 	grants: AgentCapabilityGrant[],
 	capabilityDefs?: Capability[],
+	opts?: { compact?: boolean },
 ): Array<Record<string, unknown>> {
-	const capMap = new Map<string, Capability>();
-	if (capabilityDefs) {
-		for (const c of capabilityDefs) capMap.set(c.name, c);
-	}
+	const defsMap = capabilityDefs
+		? new Map(capabilityDefs.map((c) => [c.name, c]))
+		: null;
 
 	return grants.map((g) => {
-		const base: Record<string, CapabilityConstraints | string | number | boolean | null | Record<string, string>> = {
+		const base: Record<string, unknown> = {
 			capability: g.capability,
 			status: g.status,
 		};
 
+		if (opts?.compact) return base;
+
 		if (g.status === "active") {
 			if (g.grantedBy) base.granted_by = g.grantedBy;
-			if (g.expiresAt)
-				base.expires_at = new Date(g.expiresAt).toISOString();
 			if (g.constraints) base.constraints = g.constraints;
+			if (g.expiresAt) base.expires_at = new Date(g.expiresAt).toISOString();
 
-			const def = capMap.get(g.capability);
-			if (def) {
-				if (def.description) base.description = def.description;
-				const { name: _, description: _d, input: _i, grant_status: _gs, ...extra } = def;
-				for (const [k, v] of Object.entries(extra)) {
-					if (v !== undefined) base[k] = v as string;
-				}
+			if (defsMap && defsMap.has(g.capability)) {
+				const def = defsMap.get(g.capability)!;
+				base.description = def.description;
+				if (def.input) base.input = def.input;
+				if (def.output) base.output = def.output;
 			}
+		}
+
+		if (g.status === "denied" && g.reason) {
+			base.reason = g.reason;
 		}
 
 		return base;
 	});
-}
-
-function stripGrantStatus(cap: Capability): Omit<Capability, "grant_status"> {
-	const { grant_status, ...rest } = cap;
-	return rest;
 }
 
 /** Filter grants to only active, non-expired ones. */
@@ -594,7 +599,11 @@ export async function claimAutonomousAgents(
 
 /**
  * Activate a pending agent and link its host to the approving user
- * if the host is unclaimed. Shared by device-auth and CIBA approval paths.
+ * if the host is unclaimed or owned by a different user.
+ *
+ * When the host is already linked to a different user, all agents on
+ * that host belonging to the previous user are revoked and the host
+ * is transferred to the new approving user.
  */
 export async function activatePendingAgent(
 	adapter: AdapterFindOne & AdapterFindMany & AdapterUpdate,
@@ -631,34 +640,121 @@ export async function activatePendingAgent(
 			model: TABLE.host,
 			where: [{ field: "id", value: params.agent.hostId }],
 		});
-		if (host && !host.userId) {
+
+		if (host && host.userId !== params.userId) {
+			const previousUserId = host.userId ?? null;
+
+			if (previousUserId) {
+				await revokeAgentsForUserOnHost(adapter, opts, ctx, {
+					hostId: host.id,
+					userId: previousUserId,
+					excludeAgentId: params.agentId,
+				});
+			}
+
 			await claimAutonomousAgents(adapter, opts, ctx, {
 				hostId: host.id,
 				userId: params.userId,
 			});
+
 			await opts.onHostClaimed?.({
 				ctx,
 				hostId: host.id,
 				userId: params.userId,
-				previousUserId: null,
+				previousUserId,
 			});
+
+			const hostUpdate: Record<string, unknown> = {
+				userId: params.userId,
+				status: "active",
+				activatedAt: now,
+				updatedAt: now,
+			};
+
+			const newDefaultCaps = await resolveDefaultHostCapabilities(opts, {
+				ctx,
+				mode: "delegated",
+				userId: params.userId,
+				hostId: host.id,
+				hostName: host.name,
+			});
+			hostUpdate.defaultCapabilities = newDefaultCaps;
+
 			await adapter.update({
 				model: TABLE.host,
 				where: [{ field: "id", value: host.id }],
-				update: {
-					userId: params.userId,
-					status: "active",
-					activatedAt: now,
-					updatedAt: now,
-				},
+				update: hostUpdate,
 			});
+
 			emit(opts, {
 				type: "host.claimed",
 				actorId: params.userId,
 				hostId: host.id,
-				metadata: { previousUserId: null },
+				metadata: { previousUserId },
 			}, ctx);
 		}
+	}
+}
+
+/**
+ * Revoke all active/pending agents on a host that belong to a specific user.
+ * Used when a host is being transferred to a new user.
+ */
+async function revokeAgentsForUserOnHost(
+	adapter: AdapterFindMany & AdapterUpdate,
+	opts: ResolvedAgentAuthOptions,
+	ctx: GenericEndpointContext,
+	params: {
+		hostId: string;
+		userId: string;
+		excludeAgentId?: string;
+	},
+): Promise<void> {
+	const agents = await adapter.findMany<Agent>({
+		model: TABLE.agent,
+		where: [
+			{ field: "hostId", value: params.hostId },
+			{ field: "userId", value: params.userId },
+		],
+	});
+
+	const now = new Date();
+
+	for (const agent of agents) {
+		if (agent.id === params.excludeAgentId) continue;
+		if (agent.status === "revoked" || agent.status === "rejected") continue;
+
+		const grants = await adapter.findMany<AgentCapabilityGrant>({
+			model: TABLE.grant,
+			where: [{ field: "agentId", value: agent.id }],
+		});
+
+		for (const g of grants) {
+			if (g.status === "active" || g.status === "pending") {
+				await adapter.update({
+					model: TABLE.grant,
+					where: [{ field: "id", value: g.id }],
+					update: { status: "denied", updatedAt: now },
+				});
+			}
+		}
+
+		await adapter.update({
+			model: TABLE.agent,
+			where: [{ field: "id", value: agent.id }],
+			update: {
+				status: "revoked",
+				updatedAt: now,
+			},
+		});
+
+		emit(opts, {
+			type: "agent.revoked",
+			actorId: params.userId,
+			agentId: agent.id,
+			hostId: params.hostId,
+			metadata: { reason: "host_transferred" },
+		}, ctx);
 	}
 }
 

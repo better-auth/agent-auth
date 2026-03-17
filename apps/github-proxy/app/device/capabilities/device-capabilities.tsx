@@ -75,8 +75,9 @@ export default function DeviceCapabilities({
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [actionState, setActionState] = useState<
-		"idle" | "approving" | "denying" | "done"
+		"idle" | "approving" | "confirming_deny" | "denying" | "done"
 	>("idle");
+	const [denyReason, setDenyReason] = useState("");
 	const [result, setResult] = useState<{
 		status: string;
 		added?: string[];
@@ -110,10 +111,14 @@ export default function DeviceCapabilities({
 	const handleAction = async (action: "approve" | "deny") => {
 		setActionState(action === "approve" ? "approving" : "denying");
 		try {
+			const body: Record<string, unknown> = { agent_id: agentId, action };
+			if (action === "deny" && denyReason.trim()) {
+				body.reason = denyReason.trim();
+			}
 			const res = await fetch("/api/auth/agent/approve-capability", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ agent_id: agentId, action }),
+				body: JSON.stringify(body),
 			});
 			const data = await res.json();
 			if (!res.ok) {
@@ -448,17 +453,39 @@ export default function DeviceCapabilities({
 						</div>
 
 						<div className="border-t border-border px-5 py-4">
+							{actionState === "confirming_deny" ? (
+								<div className="flex flex-col gap-3">
+									<input
+										type="text"
+										placeholder="Reason for denying (optional)"
+										value={denyReason}
+										onChange={(e) => setDenyReason(e.target.value)}
+										className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
+										autoFocus
+									/>
+									<div className="flex gap-3">
+										<button
+											onClick={() => { setActionState("idle"); setDenyReason(""); }}
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-sm font-medium text-foreground transition-colors hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-50"
+										>
+											Cancel
+										</button>
+										<button
+											onClick={() => handleAction("deny")}
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-gh-danger/30 bg-gh-danger/10 text-sm font-medium text-gh-danger transition-colors hover:bg-gh-danger/20 disabled:pointer-events-none disabled:opacity-50"
+										>
+											Deny Access
+										</button>
+									</div>
+								</div>
+							) : (
 							<div className="flex gap-3">
 								<button
-									onClick={() => handleAction("deny")}
+									onClick={() => setActionState("confirming_deny")}
 									disabled={actionState !== "idle"}
 									className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-sm font-medium text-foreground transition-colors hover:border-gh-danger/50 hover:text-gh-danger disabled:pointer-events-none disabled:opacity-50"
 								>
-									{actionState === "denying" ? (
-										<Spinner />
-									) : (
-										"Deny"
-									)}
+									Deny
 								</button>
 								<button
 									onClick={() => handleAction("approve")}
@@ -472,6 +499,7 @@ export default function DeviceCapabilities({
 									)}
 								</button>
 							</div>
+							)}
 						</div>
 					</div>
 

@@ -207,6 +207,12 @@ export const agentSchema = () =>
 					required: true,
 					input: false,
 				},
+			deniedBy: {
+				type: "string",
+				references: { model: "user", field: "id", onDelete: "cascade" },
+				required: false,
+				input: false,
+			},
 				grantedBy: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },

@@ -78,8 +78,9 @@ export default function DeviceCapabilities({
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [actionState, setActionState] = useState<
-		"idle" | "approving" | "denying" | "done" | "reauth_required"
+		"idle" | "approving" | "confirming_deny" | "denying" | "done" | "reauth_required"
 	>("idle");
+	const [denyReason, setDenyReason] = useState("");
 	const [result, setResult] = useState<{
 		status: string;
 		added?: string[];
@@ -127,7 +128,9 @@ export default function DeviceCapabilities({
 			if (webauthnResponse) {
 				body.webauthn_response = webauthnResponse;
 			}
-
+			if (action === "deny" && denyReason.trim()) {
+				body.reason = denyReason.trim();
+			}
 			const res = await fetch("/api/auth/agent/approve-capability", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -577,69 +580,93 @@ export default function DeviceCapabilities({
 							)}
 						</div>
 
-					<div className="border-t border-border px-5 py-4">
-						{agentInfo?.webauthn?.required && (
-							<div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-								<svg
-									className="h-4 w-4 shrink-0 text-amber-400"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke="currentColor"
-								>
-									<path
-										strokeLinecap="round"
-										strokeLinejoin="round"
-										strokeWidth={2}
-										d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"
+						<div className="border-t border-border px-5 py-4">
+							{agentInfo?.webauthn?.required && (
+								<div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+									<svg
+										className="h-4 w-4 shrink-0 text-amber-400"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+									>
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"
+										/>
+									</svg>
+									<p className="text-xs text-amber-300">
+										{agentInfo.approvalContext === "host_approval"
+											? "New host connection — biometric verification (fingerprint/Face ID) required."
+											: "New capability request — biometric verification (fingerprint/Face ID) required."}
+									</p>
+								</div>
+							)}
+							{actionState === "confirming_deny" ? (
+								<div className="flex flex-col gap-3">
+									<input
+										type="text"
+										placeholder="Reason for denying (optional)"
+										value={denyReason}
+										onChange={(e) => setDenyReason(e.target.value)}
+										className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 outline-none focus:border-foreground/20"
+										autoFocus
 									/>
-								</svg>
-								<p className="text-xs text-amber-300">
-									{agentInfo.approvalContext === "host_approval"
-										? "New host connection — biometric verification (fingerprint/Face ID) required."
-										: "New capability request — biometric verification (fingerprint/Face ID) required."}
-								</p>
-							</div>
-						)}
-						<div className="flex gap-3">
-							<button
-								onClick={() => handleAction("deny")}
-								disabled={actionState !== "idle"}
-								className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:border-red-500/30 hover:text-red-400 disabled:pointer-events-none disabled:opacity-50"
-							>
-								{actionState === "denying" ? (
-									<Spinner />
-								) : (
-									"Deny"
-								)}
-							</button>
-							<button
-								onClick={() => handleAction("approve")}
-								disabled={actionState !== "idle"}
-								className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-white text-sm font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-							>
-								{actionState === "approving" ? (
-									<Spinner />
-								) : (
-									<>
-										{agentInfo?.webauthn?.required && (
-											<svg
-												className="h-4 w-4"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke="currentColor"
-											>
-												<path
-													strokeLinecap="round"
-													strokeLinejoin="round"
-													strokeWidth={2}
-													d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"
-												/>
-											</svg>
+									<div className="flex gap-3">
+										<button
+											onClick={() => { setActionState("idle"); setDenyReason(""); }}
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+										>
+											Cancel
+										</button>
+										<button
+											onClick={() => handleAction("deny")}
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:pointer-events-none disabled:opacity-50"
+										>
+											Deny Access
+										</button>
+									</div>
+								</div>
+							) : (
+								<div className="flex gap-3">
+									<button
+										onClick={() => setActionState("confirming_deny")}
+										disabled={actionState !== "idle"}
+										className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:border-red-500/30 hover:text-red-400 disabled:pointer-events-none disabled:opacity-50"
+									>
+										Deny
+									</button>
+									<button
+										onClick={() => handleAction("approve")}
+										disabled={actionState !== "idle"}
+										className="flex h-10 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg bg-white text-sm font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+									>
+										{actionState === "approving" ? (
+											<Spinner />
+										) : (
+											<>
+												{agentInfo?.webauthn?.required && (
+													<svg
+														className="h-4 w-4"
+														fill="none"
+														viewBox="0 0 24 24"
+														stroke="currentColor"
+													>
+														<path
+															strokeLinecap="round"
+															strokeLinejoin="round"
+															strokeWidth={2}
+															d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"
+														/>
+													</svg>
+												)}
+												Approve
+											</>
 										)}
-										Approve
-									</>
-								)}
-							</button>
+									</button>
+								</div>
+							)}
 						</div>
 					</div>
 					</div>

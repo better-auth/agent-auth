@@ -12,10 +12,10 @@ import type {
 import { formatGrantsResponse } from "./_helpers";
 
 /**
- * GET /agent/status
+ * GET /agent/status (§5.5).
  *
- * Returns the current status of an agent and its capability grants (§6.5).
- * Supports agent JWT (self-query) or host JWT (requires ?agentId=...).
+ * Returns the current status of an agent and its capability grants.
+ * Supports agent JWT (self-query) or host JWT (requires ?agent_id=...).
  */
 export function agentStatus(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -83,6 +83,7 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 				status: agent.status,
 				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
 				mode: agent.mode,
+				user_id: agent.userId,
 				activated_at: agent.activatedAt
 					? new Date(agent.activatedAt).toISOString()
 					: null,

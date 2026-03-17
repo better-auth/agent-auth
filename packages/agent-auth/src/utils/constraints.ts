@@ -107,3 +107,61 @@ export function validateConstraints(
 		unknownOperators,
 	};
 }
+
+/**
+ * Intersect (narrow) constraints — §2.13.
+ * When both agent-proposed and server-imposed constraints exist for the same
+ * field, the tightest constraint wins.
+ */
+export function narrowConstraints(
+	proposed: CapabilityConstraints | null,
+	serverPolicy: CapabilityConstraints | null,
+): CapabilityConstraints | null {
+	if (!proposed && !serverPolicy) return null;
+	if (!proposed) return serverPolicy;
+	if (!serverPolicy) return proposed;
+
+	const result: CapabilityConstraints = { ...proposed };
+
+	for (const [field, serverVal] of Object.entries(serverPolicy)) {
+		const proposedVal = result[field];
+		if (proposedVal === undefined) {
+			result[field] = serverVal;
+			continue;
+		}
+		if (isPrimitive(serverVal as ConstraintPrimitive)) {
+			result[field] = serverVal;
+			continue;
+		}
+		if (isPrimitive(proposedVal as ConstraintPrimitive)) {
+			continue;
+		}
+		const merged: ConstraintOperators = { ...(proposedVal as ConstraintOperators) };
+		const sv = serverVal as ConstraintOperators;
+		if (sv.max !== undefined) {
+			merged.max =
+				merged.max !== undefined
+					? Math.min(merged.max, sv.max)
+					: sv.max;
+		}
+		if (sv.min !== undefined) {
+			merged.min =
+				merged.min !== undefined
+					? Math.max(merged.min, sv.min)
+					: sv.min;
+		}
+		if (sv.in !== undefined) {
+			merged.in = merged.in
+				? merged.in.filter((v) => sv.in!.includes(v))
+				: sv.in;
+		}
+		if (sv.not_in !== undefined) {
+			merged.not_in = merged.not_in
+				? [...new Set([...merged.not_in, ...sv.not_in])]
+				: sv.not_in;
+		}
+		result[field] = merged;
+	}
+
+	return result;
+}

@@ -2,7 +2,11 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import {
+	agentError,
+	agentAuthChallenge,
+	AGENT_AUTH_ERROR_CODES as ERR,
+} from "../errors";
 import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
 import { validateConstraints } from "../utils/constraints";

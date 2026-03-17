@@ -123,28 +123,32 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 
 			return ctx.json({
 				capabilities: page.map((c) => {
-					const result: {
-						name: string;
-						description: string;
-						location?: string;
-						approval_strength?: string;
-						grant_status?: string;
-					} = {
-						name: c.name,
-						description: c.description,
+					const { input, approvalStrength, ...summary } = c;
+					const constrainableFields =
+						input &&
+						typeof input === "object" &&
+						input.properties &&
+						typeof input.properties === "object"
+							? Object.keys(
+									input.properties as Record<string, unknown>,
+								)
+							: undefined;
+					return {
+						...summary,
+						...(constrainableFields && constrainableFields.length > 0
+							? { constrainable_fields: constrainableFields }
+							: {}),
+						...(approvalStrength
+							? { approval_strength: approvalStrength }
+							: {}),
+						...(grantedCapabilityIds
+							? {
+									grant_status: grantedCapabilityIds.has(c.name)
+										? ("granted" as const)
+										: ("not_granted" as const),
+								}
+							: {}),
 					};
-					if (c.location) {
-						result.location = c.location;
-					}
-					if (c.approvalStrength) {
-						result.approval_strength = c.approvalStrength;
-					}
-					if (grantedCapabilityIds) {
-						result.grant_status = grantedCapabilityIds.has(c.name)
-							? "granted"
-							: "not_granted";
-					}
-					return result;
 				}),
 				has_more: hasMore,
 				...(hasMore

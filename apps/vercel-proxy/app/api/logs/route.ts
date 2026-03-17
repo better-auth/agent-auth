@@ -3,6 +3,12 @@ import { db } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
+const SCOPE_CLAUSE = `(
+  actorId = ?
+  OR agentId IN (SELECT id FROM agent WHERE userId = ?)
+  OR hostId IN (SELECT id FROM agentHost WHERE userId = ?)
+)`;
+
 export async function GET(req: Request) {
 	const session = await auth.api.getSession({
 		headers: await headers(),
@@ -11,6 +17,7 @@ export async function GET(req: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
+	const userId = session.user.id;
 	const url = new URL(req.url);
 	const limit = Math.min(
 		parseInt(url.searchParams.get("limit") ?? "50"),
@@ -20,9 +27,8 @@ export async function GET(req: Request) {
 	const type = url.searchParams.get("type");
 	const agentId = url.searchParams.get("agent_id");
 
-	let query = "SELECT * FROM event_log";
-	const params: (string | number)[] = [];
-	const conditions: string[] = [];
+	const conditions: string[] = [SCOPE_CLAUSE];
+	const params: (string | number)[] = [userId, userId, userId];
 
 	const isPrefix = type?.endsWith(".");
 	if (type) {
@@ -40,18 +46,15 @@ export async function GET(req: Request) {
 		params.push(agentId);
 	}
 
-	if (conditions.length > 0) {
-		query += ` WHERE ${conditions.join(" AND ")}`;
-	}
+	const where = ` WHERE ${conditions.join(" AND ")}`;
 
-	query += " ORDER BY id DESC LIMIT ? OFFSET ?";
+	const query = `SELECT * FROM event_log${where} ORDER BY id DESC LIMIT ? OFFSET ?`;
 	params.push(limit, offset);
 
 	const logs = db.prepare(query).all(...params) as Record<string, unknown>[];
 
-	const countParams: (string | number)[] = [];
-	let countQuery = "SELECT COUNT(*) as count FROM event_log";
-	const countConditions: string[] = [];
+	const countParams: (string | number)[] = [userId, userId, userId];
+	const countConditions: string[] = [SCOPE_CLAUSE];
 	if (type) {
 		if (isPrefix) {
 			countConditions.push("type LIKE ?");
@@ -65,9 +68,7 @@ export async function GET(req: Request) {
 		countConditions.push("agentId = ?");
 		countParams.push(agentId);
 	}
-	if (countConditions.length > 0) {
-		countQuery += ` WHERE ${countConditions.join(" AND ")}`;
-	}
+	const countQuery = `SELECT COUNT(*) as count FROM event_log WHERE ${countConditions.join(" AND ")}`;
 	const total = db
 		.prepare(countQuery)
 		.get(...countParams) as { count: number };

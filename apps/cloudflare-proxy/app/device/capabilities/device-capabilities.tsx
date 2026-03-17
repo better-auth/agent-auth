@@ -79,8 +79,9 @@ export default function DeviceCapabilities({
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [actionState, setActionState] = useState<
-		"idle" | "approving" | "denying" | "done"
+		"idle" | "approving" | "confirming_deny" | "denying" | "done"
 	>("idle");
+	const [denyReason, setDenyReason] = useState("");
 	const [result, setResult] = useState<{
 		status: string;
 		added?: string[];
@@ -114,10 +115,14 @@ export default function DeviceCapabilities({
 	const handleAction = async (action: "approve" | "deny") => {
 		setActionState(action === "approve" ? "approving" : "denying");
 		try {
+			const body: Record<string, unknown> = { agent_id: agentId, action };
+			if (action === "deny" && denyReason.trim()) {
+				body.reason = denyReason.trim();
+			}
 			const res = await fetch("/api/auth/agent/approve-capability", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ agent_id: agentId, action }),
+				body: JSON.stringify(body),
 			});
 			const data = await res.json();
 			if (!res.ok) {
@@ -456,30 +461,53 @@ export default function DeviceCapabilities({
 						</div>
 
 						<div className="border-t border-border px-5 py-4">
-							<div className="flex gap-3">
-								<button
-									onClick={() => handleAction("deny")}
-									disabled={actionState !== "idle"}
-									className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:border-red-500/30 hover:text-red-400 disabled:pointer-events-none disabled:opacity-50"
-								>
-									{actionState === "denying" ? (
-										<Spinner />
-									) : (
-										"Deny"
-									)}
-								</button>
-								<button
-									onClick={() => handleAction("approve")}
-									disabled={actionState !== "idle"}
-									className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg bg-white text-sm font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-								>
-									{actionState === "approving" ? (
-										<Spinner />
-									) : (
-										"Approve"
-									)}
-								</button>
-							</div>
+							{actionState === "confirming_deny" ? (
+								<div className="flex flex-col gap-3">
+									<input
+										type="text"
+										placeholder="Reason for denying (optional)"
+										value={denyReason}
+										onChange={(e) => setDenyReason(e.target.value)}
+										className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 outline-none focus:border-foreground/20"
+										autoFocus
+									/>
+									<div className="flex gap-3">
+										<button
+											onClick={() => { setActionState("idle"); setDenyReason(""); }}
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+										>
+											Cancel
+										</button>
+										<button
+											onClick={() => handleAction("deny")}
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:pointer-events-none disabled:opacity-50"
+										>
+											Deny Access
+										</button>
+									</div>
+								</div>
+							) : (
+								<div className="flex gap-3">
+									<button
+										onClick={() => setActionState("confirming_deny")}
+										disabled={actionState !== "idle"}
+										className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg border border-border text-sm font-medium text-muted transition-colors hover:border-red-500/30 hover:text-red-400 disabled:pointer-events-none disabled:opacity-50"
+									>
+										Deny
+									</button>
+									<button
+										onClick={() => handleAction("approve")}
+										disabled={actionState !== "idle"}
+										className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-lg bg-white text-sm font-medium text-black transition-all hover:bg-white/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+									>
+										{actionState === "approving" ? (
+											<Spinner />
+										) : (
+											"Approve"
+										)}
+									</button>
+								</div>
+							)}
 						</div>
 					</div>
 

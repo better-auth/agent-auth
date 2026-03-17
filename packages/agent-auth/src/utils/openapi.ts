@@ -20,12 +20,18 @@ interface OpenAPIRequestBody {
 	content?: Record<string, { schema?: Record<string, unknown> }>;
 }
 
+interface OpenAPIResponse {
+	description?: string;
+	content?: Record<string, { schema?: Record<string, unknown> }>;
+}
+
 interface OpenAPIOperation {
 	operationId?: string;
 	summary?: string;
 	description?: string;
 	parameters?: OpenAPIParameter[];
 	requestBody?: OpenAPIRequestBody;
+	responses?: Record<string, OpenAPIResponse>;
 }
 
 interface OpenAPIPathItem {
@@ -138,6 +144,25 @@ function buildInputSchema(
 	};
 }
 
+/**
+ * Extract the output JSON Schema from the operation's 200/201 response.
+ */
+function buildOutputSchema(
+	spec: OpenAPISpec,
+	op: OpenAPIOperation,
+): Record<string, unknown> | undefined {
+	if (!op.responses) return undefined;
+
+	const successResponse = op.responses["200"] ?? op.responses["201"];
+	if (!successResponse) return undefined;
+
+	const resolved = deref(spec, successResponse);
+	const jsonContent = resolved?.content?.["application/json"];
+	if (!jsonContent?.schema) return undefined;
+
+	return deref(spec, jsonContent.schema) as Record<string, unknown>;
+}
+
 /** Build a map from operationId → resolved operation metadata. */
 function buildOperationMap(
 	spec: OpenAPISpec,
@@ -205,12 +230,14 @@ function parseOpenAPICapabilities(spec: OpenAPISpec): ParsedCapability[] {
 			const parameters = mergeParams(spec, pathItem, op);
 			const requestBody = deref(spec, op.requestBody);
 			const input = buildInputSchema(spec, parameters, requestBody);
+			const output = buildOutputSchema(spec, op);
 
 			capabilities.push({
 				name: op.operationId,
 				description:
 					op.description ?? op.summary ?? op.operationId,
 				...(input ? { input } : {}),
+				...(output ? { output } : {}),
 				_method: method.toUpperCase(),
 			});
 		}

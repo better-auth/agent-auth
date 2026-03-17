@@ -15,8 +15,10 @@ import type {
 	AgentCapabilityGrant,
 	AgentHost,
 	AgentJWK,
+	Constraints,
 	ResolvedAgentAuthOptions,
 } from "../types";
+import { normalizeCapabilityRequests } from "../types";
 import {
 	buildApprovalInfo,
 	capabilityItemZ,
@@ -32,6 +34,14 @@ import {
 	verifyAudience,
 } from "./_helpers";
 
+const capabilityRequestItem = z.union([
+	z.string(),
+	z.object({
+		name: z.string(),
+		constraints: z.record(z.string(), z.unknown()).optional(),
+	}),
+]);
+
 const registerBodySchema = z.object({
 	name: z.string().min(1),
 	capabilities: z.array(capabilityItemZ).optional(),
@@ -41,6 +51,7 @@ const registerBodySchema = z.object({
 	host_name: z.string().optional(),
 	login_hint: z.string().optional(),
 	binding_message: z.string().optional(),
+	force_approval: z.boolean().optional(),
 });
 
 export function register(
@@ -62,20 +73,28 @@ export function register(
 			},
 		},
 		async (ctx) => {
-	const {
-		name,
-		capabilities: rawCapabilities,
-		reason,
-		mode: rawMode,
-		preferred_method: preferredMethod,
-		host_name: bodyHostName,
-		login_hint: loginHint,
-		binding_message: bindingMessage,
-	} = ctx.body;
+		const {
+			name,
+			capabilities: rawCapabilities,
+			reason,
+			mode: rawMode,
+			preferred_method: preferredMethod,
+			host_name: bodyHostName,
+			login_hint: loginHint,
+			binding_message: bindingMessage,
+			force_approval: forceApproval,
+		} = ctx.body;
 
-	const { ids: requestedCapIds, constraintsMap } = rawCapabilities
-		? normalizeCapabilities(rawCapabilities)
-		: { ids: undefined as string[] | undefined, constraintsMap: new Map() };
+		const normalizedCaps = rawCapabilities
+			? normalizeCapabilityRequests(rawCapabilities as Array<string | { name: string; constraints?: Constraints }>)
+			: null;
+		const requestedCapIds = normalizedCaps?.map((c) => c.name) ?? null;
+		const constraintsMap = new Map<string, Constraints | null>();
+		if (normalizedCaps) {
+			for (const c of normalizedCaps) {
+				constraintsMap.set(c.name, c.constraints);
+			}
+		}
 
 			// ---------- Require host JWT ----------
 			const authHeader = ctx.headers?.get("authorization");
@@ -275,6 +294,35 @@ export function register(
 				if (resolvedHostName && resolvedHostName !== hostRecord.name) {
 					bgUpdates.name = resolvedHostName;
 				}
+				if (
+					mode === "autonomous" &&
+					!hostRecord.userId &&
+					hostRecord.status === "pending"
+				) {
+					bgUpdates.status = "active";
+					bgUpdates.activatedAt = new Date();
+					hostRecord = {
+						...hostRecord,
+						status: "active",
+						activatedAt: bgUpdates.activatedAt,
+					} as AgentHost;
+
+					const dynCaps = await resolveDefaultHostCapabilities(opts, {
+						ctx,
+						mode,
+						userId: null,
+						hostId: hostRecord.id,
+						hostName: resolvedHostName ?? hostRecord.name,
+					});
+					if (dynCaps.length > 0) {
+						bgUpdates.defaultCapabilities = dynCaps;
+						hostDefaultCaps = dynCaps;
+						hostRecord = {
+							...hostRecord,
+							defaultCapabilities: dynCaps,
+						} as AgentHost;
+					}
+				}
 				if (Object.keys(bgUpdates).length > 0) {
 					ctx.context.runInBackground(
 						ctx.context.adapter
@@ -388,18 +436,75 @@ export function register(
 					}
 				}
 
-				const existingHost = await findHostByKey(
-					ctx.context.adapter,
-					resolvedHostPubKey,
+			const existingHost = await findHostByKey(
+				ctx.context.adapter,
+				resolvedHostPubKey,
+			);
+			if (existingHost) {
+				hostRecord = existingHost;
+				hostId = existingHost.id;
+				userId = existingHost.userId ?? null;
+				hostDefaultCaps = parseCapabilityIds(
+					existingHost.defaultCapabilities,
 				);
-				if (existingHost) {
-					hostRecord = existingHost;
-					hostId = existingHost.id;
-					userId = existingHost.userId ?? null;
-					hostDefaultCaps = parseCapabilityIds(
-						existingHost.defaultCapabilities,
+
+				const jwtHostName =
+					typeof decoded.host_name === "string"
+						? decoded.host_name
+						: null;
+				const resolvedName = jwtHostName ?? bodyHostName ?? null;
+				const bgUpdates: Record<string, unknown> = {};
+				if (resolvedName && resolvedName !== existingHost.name) {
+					bgUpdates.name = resolvedName;
+				}
+				if (hostJwksUrl && !existingHost.jwksUrl) {
+					bgUpdates.jwksUrl = hostJwksUrl;
+				}
+				if (
+					mode === "autonomous" &&
+					!existingHost.userId &&
+					existingHost.status === "pending"
+				) {
+					bgUpdates.status = "active";
+					bgUpdates.activatedAt = new Date();
+					hostRecord = {
+						...hostRecord,
+						status: "active",
+						activatedAt: bgUpdates.activatedAt,
+					} as AgentHost;
+
+					const dynCaps = await resolveDefaultHostCapabilities(opts, {
+						ctx,
+						mode,
+						userId: null,
+						hostId: existingHost.id,
+						hostName: resolvedName ?? existingHost.name,
+					});
+					if (dynCaps.length > 0) {
+						bgUpdates.defaultCapabilities = dynCaps;
+						hostDefaultCaps = dynCaps;
+						hostRecord = {
+							...hostRecord,
+							defaultCapabilities: dynCaps,
+						} as AgentHost;
+					}
+				}
+				if (Object.keys(bgUpdates).length > 0) {
+					bgUpdates.updatedAt = new Date();
+					hostRecord = { ...hostRecord, ...bgUpdates } as AgentHost;
+					ctx.context.runInBackground(
+						ctx.context.adapter
+							.update({
+								model: TABLE.host,
+								where: [
+									{ field: "id", value: existingHost.id },
+								],
+								update: bgUpdates,
+							})
+							.catch(() => {}),
 					);
-				} else {
+				}
+			} else {
 					const isAutonomous = mode === "autonomous";
 					const hostNow = new Date();
 					const hostKid = resolvedHostPubKey.kid ?? null;
@@ -488,47 +593,53 @@ export function register(
 			// ---------- Resolve capabilities ----------
 			const isHostPending = hostRecord?.status === "pending";
 
-			let resolvedCaps: string[];
-			let pendingCaps: string[] = [];
+		let resolvedCapNames: string[];
+		let pendingCapNames: string[] = [];
 
-			if (hostDefaultCaps !== null && hostDefaultCaps.length > 0) {
-				const budget = hostDefaultCaps;
-				if (requestedCapIds && requestedCapIds.length > 0) {
-					resolvedCaps = requestedCapIds.filter((c) =>
-						hasCapability(budget, c),
-					);
-					pendingCaps = requestedCapIds.filter(
-						(c) => !hasCapability(budget, c),
-					);
-				} else {
-					resolvedCaps = budget;
-				}
-			} else if (requestedCapIds && requestedCapIds.length > 0) {
-				if (
-					hostId &&
-					hostDefaultCaps !== null &&
-					(hostRecord?.status === "active" || isHostPending)
-				) {
-					resolvedCaps = [];
-					pendingCaps = requestedCapIds;
-				} else {
-					resolvedCaps = requestedCapIds;
-				}
-			} else {
-				resolvedCaps = [];
-			}
-
-			if (pendingCaps.length > 0 && !userId && mode === "autonomous") {
-				throw agentError(
-					"FORBIDDEN",
-					ERR.CAPABILITY_DENIED,
-					"Requested capabilities are not pre-authorized for this autonomous host.",
+		if (hostDefaultCaps !== null && hostDefaultCaps.length > 0) {
+			const budget = hostDefaultCaps;
+			if (requestedCapIds && requestedCapIds.length > 0) {
+				resolvedCapNames = requestedCapIds.filter((c) =>
+					hasCapability(budget, c),
 				);
+				pendingCapNames = requestedCapIds.filter(
+					(c) => !hasCapability(budget, c),
+				);
+			} else {
+				resolvedCapNames = budget;
 			}
+		} else if (requestedCapIds && requestedCapIds.length > 0) {
+			if (
+				hostId &&
+				hostDefaultCaps !== null &&
+				(hostRecord?.status === "active" || isHostPending)
+			) {
+				resolvedCapNames = [];
+				pendingCapNames = requestedCapIds;
+			} else {
+				resolvedCapNames = requestedCapIds;
+			}
+		} else {
+			resolvedCapNames = [];
+		}
 
-			const allRequestedCaps = [...resolvedCaps, ...pendingCaps];
-			validateCapabilityIds(allRequestedCaps, opts);
-			await validateCapabilitiesExist(allRequestedCaps, opts);
+		if (pendingCapNames.length > 0 && mode === "autonomous") {
+			if (!userId) {
+				pendingCapNames = [];
+			}
+		}
+
+		const allRequestedCaps = [...resolvedCapNames, ...pendingCapNames];
+		validateCapabilityIds(allRequestedCaps, opts);
+		await validateCapabilitiesExist(allRequestedCaps, opts);
+
+			// ---------- force_approval: move all resolved caps to pending ----------
+		if (forceApproval && resolvedCapNames.length > 0) {
+			pendingCapNames = [...resolvedCapNames, ...pendingCapNames];
+			resolvedCapNames = [];
+		}
+
+		const agentUserId = forceApproval ? null : userId;
 
 			// ---------- Idempotency check (§6.3) ----------
 			const agentPubKeyStr = publicKey ? JSON.stringify(publicKey) : "";
@@ -584,7 +695,7 @@ export function register(
 			const kid = publicKey
 				? ((publicKey.kid as string | undefined) ?? null)
 				: null;
-			const needsApproval = isHostPending || pendingCaps.length > 0;
+			const needsApproval = forceApproval || isHostPending || pendingCapNames.length > 0;
 			const agentStatus = needsApproval ? "pending" : "active";
 			const expiresAt =
 				!needsApproval && opts.agentSessionTTL > 0
@@ -598,7 +709,7 @@ export function register(
 				model: TABLE.agent,
 				data: {
 					name,
-					userId: userId ?? null,
+					userId: agentUserId ?? null,
 					hostId,
 					status: agentStatus,
 					mode,
@@ -617,29 +728,28 @@ export function register(
 		await createGrantRows(
 			ctx.context.adapter,
 			agent.id,
-			resolvedCaps,
-			userId,
+			resolvedCapNames,
+			agentUserId,
 			{
 				reason: reason ?? null,
 				...(isHostPending ? { status: "pending" } : {}),
+				constraintsMap,
 			},
-			isHostPending ? undefined : { pluginOpts: opts, hostId, userId },
-			constraintsMap,
+			isHostPending ? undefined : { pluginOpts: opts, hostId, userId: agentUserId },
 		);
 
-		if (pendingCaps.length > 0) {
+		if (pendingCapNames.length > 0) {
 			await createGrantRows(
 				ctx.context.adapter,
 				agent.id,
-				pendingCaps,
-				userId,
+				pendingCapNames,
+				agentUserId,
 				{
 					status: "pending",
 					reason:
-						reason ?? "Capability not pre-authorized by host",
+						reason ?? (forceApproval ? "Approval requested by agent" : "Capability not pre-authorized by host"),
+					constraintsMap,
 				},
-				undefined,
-				constraintsMap,
 			);
 		}
 
@@ -658,38 +768,39 @@ export function register(
 				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),
 			};
 
-			if (pendingCaps.length > 0 || isHostPending) {
-				const origin = new URL(ctx.context.baseURL).origin;
-				response.approval = await buildApprovalInfo(
-					opts,
-					ctx.context.adapter,
-					ctx.context.internalAdapter,
-					{
-						origin,
-						agentId: agent.id,
-						userId,
-						agentName: name,
-						hostId,
-						capabilities: [...resolvedCaps, ...pendingCaps],
-						preferredMethod,
-						loginHint,
-						bindingMessage,
-					},
-				);
-			}
-
-			emit(opts, {
-				type: "agent.created",
-				actorId: userId ?? undefined,
-				agentId: agent.id,
-				hostId: hostId ?? undefined,
-				metadata: {
-					name,
-					mode,
-					capabilities: resolvedCaps,
-					pendingCapabilities: pendingCaps,
+		if (needsApproval) {
+			const origin = new URL(ctx.context.baseURL).origin;
+			response.approval = await buildApprovalInfo(
+				opts,
+				ctx.context.adapter,
+				ctx.context.internalAdapter,
+				{
+					origin,
+					agentId: agent.id,
+					userId: agentUserId,
+					agentName: name,
+					hostId,
+					capabilities: [...resolvedCapNames, ...pendingCapNames],
+					preferredMethod,
+					loginHint,
+					bindingMessage,
 				},
-			}, ctx);
+			);
+		}
+
+		emit(opts, {
+			type: "agent.created",
+			actorId: agentUserId ?? undefined,
+			agentId: agent.id,
+			hostId: hostId ?? undefined,
+			metadata: {
+				name,
+				mode,
+				capabilities: resolvedCapNames,
+				pendingCapabilities: pendingCapNames,
+				...(forceApproval ? { forceApproval: true } : {}),
+			},
+		}, ctx);
 
 			return ctx.json(response);
 		},
