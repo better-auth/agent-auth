@@ -40,9 +40,7 @@ describe("hasCapability", () => {
 
 describe("hasAllCapabilities", () => {
 	it("returns true when all are covered", () => {
-		expect(hasAllCapabilities(["read", "write"], ["read", "write"])).toBe(
-			true,
-		);
+		expect(hasAllCapabilities(["read", "write"], ["read", "write"])).toBe(true);
 	});
 
 	it("returns false when some are missing", () => {
@@ -73,7 +71,7 @@ describe("mergeCapabilities", () => {
 	it("wildcard subsumes specific IDs", () => {
 		const result = mergeCapabilities(
 			["github.*"],
-			["github.create_issue", "github.list_issues"],
+			["github.create_issue", "github.list_issues"]
 		);
 		expect(result).toEqual(["github.*"]);
 	});
@@ -90,17 +88,17 @@ describe("findBlockedCapabilities", () => {
 	});
 
 	it("finds blocked capabilities", () => {
-		expect(
-			findBlockedCapabilities(["read", "admin"], ["admin"]),
-		).toEqual(["admin"]);
+		expect(findBlockedCapabilities(["read", "admin"], ["admin"])).toEqual([
+			"admin",
+		]);
 	});
 
 	it("wildcard block catches specific IDs", () => {
 		expect(
 			findBlockedCapabilities(
 				["github.create_issue", "slack.send"],
-				["github.*"],
-			),
+				["github.*"]
+			)
 		).toEqual(["github.create_issue"]);
 	});
 });

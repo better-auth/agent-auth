@@ -16,7 +16,7 @@ interface CacheEntry {
  * Capped at {@link MAX_ENTRIES} to prevent unbounded memory growth.
  */
 export class WebAuthnChallengeCache {
-	private store = new Map<string, CacheEntry>();
+	private readonly store = new Map<string, CacheEntry>();
 	private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
 	private key(userId: string, agentId: string): string {
@@ -28,12 +28,16 @@ export class WebAuthnChallengeCache {
 			// Evict oldest expired entries first, then oldest by insertion order
 			const now = Date.now();
 			for (const [k, v] of this.store) {
-				if (v.expiresAt < now) this.store.delete(k);
+				if (v.expiresAt < now) {
+					this.store.delete(k);
+				}
 			}
 			// If still at capacity, drop the oldest entry
 			if (this.store.size >= MAX_ENTRIES) {
 				const oldest = this.store.keys().next().value;
-				if (oldest) this.store.delete(oldest);
+				if (oldest) {
+					this.store.delete(oldest);
+				}
 			}
 		}
 		this.store.set(this.key(userId, agentId), {
@@ -46,18 +50,26 @@ export class WebAuthnChallengeCache {
 	consume(userId: string, agentId: string): string | null {
 		const k = this.key(userId, agentId);
 		const entry = this.store.get(k);
-		if (!entry) return null;
+		if (!entry) {
+			return null;
+		}
 		this.store.delete(k);
-		if (entry.expiresAt < Date.now()) return null;
+		if (entry.expiresAt < Date.now()) {
+			return null;
+		}
 		return entry.challenge;
 	}
 
 	private ensureSweep(): void {
-		if (this.sweepTimer) return;
+		if (this.sweepTimer) {
+			return;
+		}
 		this.sweepTimer = setInterval(() => {
 			const now = Date.now();
 			for (const [k, v] of this.store) {
-				if (v.expiresAt < now) this.store.delete(k);
+				if (v.expiresAt < now) {
+					this.store.delete(k);
+				}
 			}
 			if (this.store.size === 0 && this.sweepTimer) {
 				clearInterval(this.sweepTimer);

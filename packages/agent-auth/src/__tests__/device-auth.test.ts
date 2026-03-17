@@ -1,15 +1,15 @@
-import { describe, expect, it, beforeAll, vi } from "vitest";
 import { getTestInstance } from "better-auth/test";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import type { AgentJWK } from "../types";
 import {
 	agentAuth,
 	agentAuthClientPlugin,
-	generateTestKeypair,
-	signTestJWT,
-	json,
-	createTestClient,
 	BASE,
+	createTestClient,
+	generateTestKeypair,
+	json,
+	signTestJWT,
 } from "./helpers";
-import type { AgentJWK } from "../types";
 
 const TEST_CAPABILITIES = [
 	{ name: "check_balance", description: "Check account balance" },
@@ -35,7 +35,7 @@ beforeAll(async () => {
 				}),
 			],
 		},
-		{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 	);
 	auth = t.auth;
 	client = createTestClient((req) => auth.handler(req));
@@ -64,7 +64,7 @@ async function setupAgent(): Promise<{
 			public_key: hostKeypair.publicKey,
 			default_capabilities: ["check_balance"],
 		},
-		sessionCookie,
+		sessionCookie
 	);
 	const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -93,7 +93,7 @@ describe("user_code verification", () => {
 		const res = await client.authedPost(
 			"/agent/approve-capability",
 			{ agent_id: agentId, action: "approve", user_code: userCode },
-			sessionCookie,
+			sessionCookie
 		);
 
 		expect(res.ok).toBe(true);
@@ -107,7 +107,7 @@ describe("user_code verification", () => {
 		const res = await client.authedPost(
 			"/agent/approve-capability",
 			{ agent_id: agentId, action: "approve" },
-			sessionCookie,
+			sessionCookie
 		);
 
 		expect(res.ok).toBe(false);
@@ -121,7 +121,7 @@ describe("user_code verification", () => {
 		const res = await client.authedPost(
 			"/agent/approve-capability",
 			{ agent_id: agentId, action: "approve", user_code: "XXXX-YYYY" },
-			sessionCookie,
+			sessionCookie
 		);
 
 		expect(res.ok).toBe(false);
@@ -134,8 +134,12 @@ describe("user_code verification", () => {
 
 		const res = await client.authedPost(
 			"/agent/approve-capability",
-			{ agent_id: agentId, action: "approve", user_code: userCode.toLowerCase() },
-			sessionCookie,
+			{
+				agent_id: agentId,
+				action: "approve",
+				user_code: userCode.toLowerCase(),
+			},
+			sessionCookie
 		);
 
 		expect(res.ok).toBe(true);
@@ -149,7 +153,7 @@ describe("user_code verification", () => {
 		const res = await client.authedPost(
 			"/agent/approve-capability",
 			{ agent_id: agentId, action: "deny" },
-			sessionCookie,
+			sessionCookie
 		);
 
 		expect(res.ok).toBe(true);
@@ -170,7 +174,7 @@ describe("user_code verification", () => {
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 
 		const { headers } = await t.signInWithTestUser();
@@ -185,7 +189,7 @@ describe("user_code verification", () => {
 				public_key: hostKeypair.publicKey,
 				default_capabilities: ["check_balance"],
 			},
-			cookie,
+			cookie
 		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -201,7 +205,7 @@ describe("user_code verification", () => {
 		const res = await cibaClient.authedPost(
 			"/agent/approve-capability",
 			{ agent_id: agentId, action: "approve" },
-			cookie,
+			cookie
 		);
 
 		expect(res.ok).toBe(true);
@@ -225,7 +229,7 @@ describe("Approval expiry", () => {
 			const res = await client.authedPost(
 				"/agent/approve-capability",
 				{ agent_id: agentId, action: "approve", user_code: userCode },
-				sessionCookie,
+				sessionCookie
 			);
 
 			expect(res.ok).toBe(false);
@@ -310,7 +314,7 @@ describe("/device/code endpoint", () => {
 		const approveRes = await client.authedPost(
 			"/agent/approve-capability",
 			{ agent_id: agentId, action: "approve", user_code },
-			sessionCookie,
+			sessionCookie
 		);
 
 		expect(approveRes.ok).toBe(true);
@@ -324,7 +328,7 @@ describe("/device/code endpoint", () => {
 		await client.authedPost(
 			"/agent/approve-capability",
 			{ agent_id: agentId, action: "approve", user_code: userCode },
-			sessionCookie,
+			sessionCookie
 		);
 
 		const hostJWT = await signTestJWT({
@@ -356,7 +360,7 @@ describe("/device/code endpoint", () => {
 				public_key: wrongHostKeypair.publicKey,
 				default_capabilities: [],
 			},
-			sessionCookie,
+			sessionCookie
 		);
 		const { hostId: wrongHostId } = await json<{ hostId: string }>(createRes);
 

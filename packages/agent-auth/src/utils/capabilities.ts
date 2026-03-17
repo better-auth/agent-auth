@@ -17,7 +17,9 @@
  * "acme.get_balance" and the granted ID is "get_balance", it matches.
  */
 function capabilityCovers(granted: string, required: string): boolean {
-	if (granted === required || granted === "*") return true;
+	if (granted === required || granted === "*") {
+		return true;
+	}
 	if (granted.endsWith(".*")) {
 		const prefix = granted.slice(0, -1);
 		return required.startsWith(prefix);
@@ -25,7 +27,9 @@ function capabilityCovers(granted: string, required: string): boolean {
 	const dotIdx = required.indexOf(".");
 	if (dotIdx !== -1) {
 		const unprefixed = required.slice(dotIdx + 1);
-		if (granted === unprefixed) return true;
+		if (granted === unprefixed) {
+			return true;
+		}
 		if (granted.endsWith(".*")) {
 			const prefix = granted.slice(0, -1);
 			return unprefixed.startsWith(prefix);
@@ -35,17 +39,14 @@ function capabilityCovers(granted: string, required: string): boolean {
 }
 
 /** Check if a set of granted capabilities covers a single required one. */
-export function hasCapability(
-	granted: string[],
-	required: string,
-): boolean {
+export function hasCapability(granted: string[], required: string): boolean {
 	return granted.some((g) => capabilityCovers(g, required));
 }
 
 /** Check if a set of granted capabilities covers ALL required ones. */
 export function hasAllCapabilities(
 	granted: string[],
-	required: string[],
+	required: string[]
 ): boolean {
 	return required.every((r) => hasCapability(granted, r));
 }
@@ -53,7 +54,7 @@ export function hasAllCapabilities(
 /** Check if all `capabilityIds` are covered by `allowed`. */
 export function isSubsetOf(
 	capabilityIds: string[],
-	allowed: string[],
+	allowed: string[]
 ): boolean {
 	return capabilityIds.every((s) => hasCapability(allowed, s));
 }
@@ -65,7 +66,9 @@ export function isSubsetOf(
 export function mergeCapabilities(...sets: string[][]): string[] {
 	const all = [...new Set(sets.flat())];
 	return all.filter((id) => {
-		if (id.endsWith(".*") || id === "*") return true;
+		if (id.endsWith(".*") || id === "*") {
+			return true;
+		}
 		return !all.some((other) => other !== id && capabilityCovers(other, id));
 	});
 }
@@ -73,11 +76,13 @@ export function mergeCapabilities(...sets: string[][]): string[] {
 /** Returns blocked capability IDs found in the list. */
 export function findBlockedCapabilities(
 	capabilityIds: string[],
-	blocked: string[],
+	blocked: string[]
 ): string[] {
-	if (blocked.length === 0) return [];
+	if (blocked.length === 0) {
+		return [];
+	}
 	return capabilityIds.filter((s) =>
-		blocked.some((b) => capabilityCovers(b, s)),
+		blocked.some((b) => capabilityCovers(b, s))
 	);
 }
 
@@ -86,11 +91,17 @@ export function findBlockedCapabilities(
  * Handles arrays, JSON strings, and double-encoded strings.
  */
 export function parseCapabilityIds(value: unknown): string[] {
-	if (Array.isArray(value)) return value;
-	if (typeof value !== "string" || !value) return [];
+	if (Array.isArray(value)) {
+		return value;
+	}
+	if (typeof value !== "string" || !value) {
+		return [];
+	}
 	try {
 		let parsed: unknown = JSON.parse(value);
-		if (typeof parsed === "string") parsed = JSON.parse(parsed);
+		if (typeof parsed === "string") {
+			parsed = JSON.parse(parsed);
+		}
 		return Array.isArray(parsed) ? parsed : [];
 	} catch {
 		return [];

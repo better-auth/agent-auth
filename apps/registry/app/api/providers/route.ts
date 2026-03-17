@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db } from "@/lib/db/index";
 import { provider } from "@/lib/db/schema";
 import type { ProviderConfig } from "@/lib/discover";
 import { discoverProvider } from "@/lib/discover";
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 	const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
 	const limit = Math.min(
 		100,
-		Math.max(1, Number(searchParams.get("limit") ?? "50")),
+		Math.max(1, Number(searchParams.get("limit") ?? "50"))
 	);
 	const offset = (page - 1) * limit;
 
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 				error: "A provider with this URL is already registered",
 				provider: existing[0]?.name,
 			},
-			{ status: 409 },
+			{ status: 409 }
 		);
 	}
 
@@ -84,7 +84,7 @@ export async function POST(request: Request) {
 	if (!config) {
 		return Response.json(
 			{ error: "Could not discover Agent Auth configuration at this URL" },
-			{ status: 422 },
+			{ status: 422 }
 		);
 	}
 
@@ -121,6 +121,6 @@ export async function POST(request: Request) {
 			name: config.provider_name,
 			config: toProviderConfig({ ...row, jwksUri: row.jwksUri }),
 		},
-		{ status: 201 },
+		{ status: 201 }
 	);
 }

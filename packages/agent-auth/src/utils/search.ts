@@ -35,9 +35,11 @@ function globToRegex(pattern: string): RegExp {
  */
 function parseRegex(query: string): RegExp | null {
 	const m = query.match(REGEX_PREFIX);
-	if (!m) return null;
+	if (!m) {
+		return null;
+	}
 	try {
-		return new RegExp(m[1], m[2]);
+		return new RegExp(m[1]!, m[2]);
 	} catch {
 		return null;
 	}
@@ -48,10 +50,7 @@ function parseRegex(query: string): RegExp | null {
  * Tests against both the capability name and description.
  * Name matches are ranked above description-only matches.
  */
-function matchPattern(
-	re: RegExp,
-	capabilities: Capability[],
-): Capability[] {
+function matchPattern(re: RegExp, capabilities: Capability[]): Capability[] {
 	const nameMatches: Capability[] = [];
 	const descMatches: Capability[] = [];
 
@@ -83,20 +82,30 @@ function matchPattern(
  */
 export function matchQuery(
 	query: string,
-	capabilities: Capability[],
+	capabilities: Capability[]
 ): Capability[] {
-	if (capabilities.length === 0) return [];
+	if (capabilities.length === 0) {
+		return [];
+	}
 
 	const raw = query.trim();
-	if (!raw) return capabilities;
+	if (!raw) {
+		return capabilities;
+	}
 
 	const regex = parseRegex(raw);
-	if (regex) return matchPattern(regex, capabilities);
+	if (regex) {
+		return matchPattern(regex, capabilities);
+	}
 
-	if (GLOB_CHARS.test(raw)) return matchPattern(globToRegex(raw), capabilities);
+	if (GLOB_CHARS.test(raw)) {
+		return matchPattern(globToRegex(raw), capabilities);
+	}
 
 	const terms = raw.toLowerCase().split(/\s+/).filter(Boolean);
-	if (terms.length === 0) return capabilities;
+	if (terms.length === 0) {
+		return capabilities;
+	}
 
 	const scored: Array<{ cap: Capability; score: number }> = [];
 
@@ -112,9 +121,7 @@ export function matchQuery(
 		for (const term of terms) {
 			const inName =
 				nameLower.includes(term) ||
-				nameTokens.some(
-					(t) => t.startsWith(term) || term.startsWith(t),
-				);
+				nameTokens.some((t) => t.startsWith(term) || term.startsWith(t));
 			const inDesc = descLower.includes(term);
 
 			if (inName) {
@@ -127,7 +134,9 @@ export function matchQuery(
 			}
 		}
 
-		if (!allFound) continue;
+		if (!allFound) {
+			continue;
+		}
 
 		const score = nameHits * 2 + descHits;
 		scored.push({ cap, score });

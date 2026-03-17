@@ -3,19 +3,23 @@ import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import type {
+	AgentHost,
+	AgentJWK,
+	ResolvedAgentAuthOptions,
+} from "../../types";
 import { verifyJWT } from "../../utils/crypto";
+import type { JtiCacheStore } from "../../utils/jti-cache";
 import type { JwksCacheStore } from "../../utils/jwks-cache";
 import { MemoryJwksCache } from "../../utils/jwks-cache";
-import type { JtiCacheStore } from "../../utils/jti-cache";
-import type { AgentHost, AgentJWK, ResolvedAgentAuthOptions } from "../../types";
 import { validateKeyAlgorithm } from "../_helpers";
 
 export function rotateHostKey(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiCacheStore,
-	jwksCache?: JwksCacheStore,
+	jwksCache?: JwksCacheStore
 ) {
 	const cache = jwksCache ?? new MemoryJwksCache();
 	return createAuthEndpoint(
@@ -26,7 +30,7 @@ export function rotateHostKey(
 				public_key: z
 					.record(
 						z.string(),
-						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+						z.union([z.string(), z.boolean(), z.array(z.string())]).optional()
 					)
 					.meta({ description: "New public key as JWK" }),
 			}),
@@ -60,7 +64,9 @@ export function rotateHostKey(
 				}
 				hostId = decoded.iss;
 			} catch (e) {
-				if (e instanceof APIError) throw e;
+				if (e instanceof APIError) {
+					throw e;
+				}
 				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 
@@ -77,7 +83,7 @@ export function rotateHostKey(
 				throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 			}
 
-			if (!host.publicKey && !host.jwksUrl) {
+			if (!(host.publicKey || host.jwksUrl)) {
 				throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 			}
 
@@ -124,7 +130,7 @@ export function rotateHostKey(
 				}
 			}
 
-			if (!publicKey.kty || !publicKey.x) {
+			if (!(publicKey.kty && publicKey.x)) {
 				throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 			}
 
@@ -142,16 +148,20 @@ export function rotateHostKey(
 				},
 			});
 
-			emit(opts, {
-				type: "host.key_rotated",
-				hostId: host.id,
-				actorType: "system",
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "host.key_rotated",
+					hostId: host.id,
+					actorType: "system",
+				},
+				ctx
+			);
 
 			return ctx.json({
 				host_id: host.id,
 				status: "active" as const,
 			});
-		},
+		}
 	);
 }

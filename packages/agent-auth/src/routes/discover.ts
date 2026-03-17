@@ -52,9 +52,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 			return ctx.json({
 				version: "1.0-draft",
 				provider_name: opts.providerName ?? "agent-auth",
-				description:
-					opts.providerDescription ??
-					"Agent Auth enabled service",
+				description: opts.providerDescription ?? "Agent Auth enabled service",
 				issuer,
 				default_location: endpoints.execute,
 				algorithms: opts.allowedKeyAlgorithms,
@@ -66,6 +64,6 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				endpoints,
 				...(opts.jwksUri ? { jwks_uri: opts.jwksUri } : {}),
 			});
-		},
+		}
 	);
 }

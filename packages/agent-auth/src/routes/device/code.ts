@@ -1,15 +1,15 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
-import { TABLE, DEFAULTS } from "../../constants";
+import { DEFAULTS, TABLE } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
-import { generateUserCode, hashToken } from "../../utils/approval";
-import { resolveDeviceAuthPage } from "../_helpers";
 import type {
 	Agent,
 	ApprovalRequest,
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../../types";
+import { generateUserCode, hashToken } from "../../utils/approval";
+import { resolveDeviceAuthPage } from "../_helpers";
 
 /**
  * POST /device/code (RFC 8628 §3.1–3.2).
@@ -55,7 +55,11 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 
 			if (agent.status !== "pending") {
 				if (agent.status === "active") {
-					throw agentError("BAD_REQUEST", ERR.INVALID_REQUEST, "Agent is already active. No approval needed.");
+					throw agentError(
+						"BAD_REQUEST",
+						ERR.INVALID_REQUEST,
+						"Agent is already active. No approval needed."
+					);
 				}
 				if (agent.status === "revoked") {
 					throw agentError("FORBIDDEN", ERR.AGENT_REVOKED);
@@ -113,6 +117,6 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 				expires_in: expiresIn,
 				interval,
 			});
-		},
+		}
 	);
 }

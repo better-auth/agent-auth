@@ -12,8 +12,8 @@ import type {
  */
 export class MemoryStorage implements Storage {
 	private host: HostIdentity | null = null;
-	private agents = new Map<string, AgentConnection>();
-	private providers = new Map<string, ProviderConfig>();
+	private readonly agents = new Map<string, AgentConnection>();
+	private readonly providers = new Map<string, ProviderConfig>();
 
 	async getHostIdentity(): Promise<HostIdentity | null> {
 		return this.host;
@@ -33,7 +33,7 @@ export class MemoryStorage implements Storage {
 
 	async setAgentConnection(
 		agentId: string,
-		conn: AgentConnection,
+		conn: AgentConnection
 	): Promise<void> {
 		this.agents.set(agentId, conn);
 	}
@@ -58,7 +58,7 @@ export class MemoryStorage implements Storage {
 
 	async setProviderConfig(
 		issuer: string,
-		config: ProviderConfig,
+		config: ProviderConfig
 	): Promise<void> {
 		this.providers.set(issuer, config);
 	}

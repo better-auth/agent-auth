@@ -42,15 +42,11 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const userSession = await getSessionFromCtx(ctx as any);
 
-			if (!agentSession && !hostSession && !userSession) {
-				throw agentError(
-					"UNAUTHORIZED",
-					ERR.UNAUTHORIZED_SESSION,
-				);
+			if (!(agentSession || hostSession || userSession)) {
+				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}
 
-			const agentId = ctx.body.agent_id
-				?? agentSession?.agent.id;
+			const agentId = ctx.body.agent_id ?? agentSession?.agent.id;
 
 			if (!agentId) {
 				throw agentError("BAD_REQUEST", ERR.INVALID_REQUEST);
@@ -73,10 +69,8 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 				if (agent.hostId !== hostSession.host.id) {
 					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 				}
-			} else if (userSession) {
-				if (agent.userId !== userSession.user.id) {
-					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
-				}
+			} else if (userSession && agent.userId !== userSession.user.id) {
+				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
 			const now = new Date();
@@ -97,21 +91,25 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
 				update: { status: "revoked", updatedAt: now },
 			});
 
-			emit(opts, {
-				type: "agent.revoked",
-				actorId:
-					agentSession?.user.id ??
-					userSession?.user.id ??
-					hostSession?.host.userId ??
-					undefined,
-				agentId: agent.id,
-				hostId: agent.hostId,
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "agent.revoked",
+					actorId:
+						agentSession?.user.id ??
+						userSession?.user.id ??
+						hostSession?.host.userId ??
+						undefined,
+					agentId: agent.id,
+					hostId: agent.hostId,
+				},
+				ctx
+			);
 
 			return ctx.json({
 				agent_id: agent.id,
 				status: "revoked",
 			});
-		},
+		}
 	);
 }

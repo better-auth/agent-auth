@@ -1,17 +1,17 @@
-import { describe, it, expect } from "vitest";
-import {
-	getAgentAuthTools,
-	toOpenAITools,
-	toAnthropicTools,
-	filterTools,
-	type AgentAuthTool,
-	type ToolParameters,
-} from "../tools";
+import { describe, expect, it } from "vitest";
 import type { AgentAuthClient } from "../client";
+import {
+	type AgentAuthTool,
+	filterTools,
+	getAgentAuthTools,
+	type ToolParameters,
+	toAnthropicTools,
+	toOpenAITools,
+} from "../tools";
 
 function makeTool(
 	name: string,
-	overrides?: Partial<AgentAuthTool>,
+	overrides?: Partial<AgentAuthTool>
 ): AgentAuthTool {
 	return {
 		name,
@@ -52,16 +52,32 @@ describe("toAnthropicTools", () => {
 		const { processToolUse } = toAnthropicTools(sampleTools);
 
 		const results = await processToolUse([
-			{ type: "tool_use", id: "call_1", name: "alpha", input: { input: "hello" } },
-			{ type: "tool_use", id: "call_2", name: "beta", input: { input: "world" } },
+			{
+				type: "tool_use",
+				id: "call_1",
+				name: "alpha",
+				input: { input: "hello" },
+			},
+			{
+				type: "tool_use",
+				id: "call_2",
+				name: "beta",
+				input: { input: "world" },
+			},
 		]);
 
 		expect(results).toHaveLength(2);
 		expect(results[0].type).toBe("tool_result");
 		expect(results[0].tool_use_id).toBe("call_1");
-		expect(JSON.parse(results[0].content)).toEqual({ ok: true, input: "hello" });
+		expect(JSON.parse(results[0].content)).toEqual({
+			ok: true,
+			input: "hello",
+		});
 		expect(results[1].tool_use_id).toBe("call_2");
-		expect(JSON.parse(results[1].content)).toEqual({ ok: true, input: "world" });
+		expect(JSON.parse(results[1].content)).toEqual({
+			ok: true,
+			input: "world",
+		});
 	});
 
 	it("processToolUse returns error for unknown tool", async () => {
@@ -98,8 +114,11 @@ describe("toOpenAITools", () => {
 		for (const def of definitions) {
 			expect(def.function.strict).toBe(true);
 			expect(
-				(def.function.parameters as ToolParameters & { additionalProperties?: boolean })
-					.additionalProperties,
+				(
+					def.function.parameters as ToolParameters & {
+						additionalProperties?: boolean;
+					}
+				).additionalProperties
 			).toBe(false);
 		}
 	});
@@ -122,9 +141,14 @@ describe("toOpenAITools", () => {
 		});
 
 		const { definitions } = toOpenAITools([nested], { strict: true });
-		const params = definitions[0].function.parameters as Record<string, unknown>;
+		const params = definitions[0].function.parameters as Record<
+			string,
+			unknown
+		>;
 		expect(params.additionalProperties).toBe(false);
-		const configProp = (params.properties as Record<string, Record<string, unknown>>).config;
+		const configProp = (
+			params.properties as Record<string, Record<string, unknown>>
+		).config;
 		expect(configProp.additionalProperties).toBe(false);
 	});
 
@@ -136,7 +160,10 @@ describe("toOpenAITools", () => {
 
 	it("execute returns error for unknown tool", async () => {
 		const { execute } = toOpenAITools(sampleTools);
-		const result = (await execute("nope", {})) as { error: string; code: string };
+		const result = (await execute("nope", {})) as {
+			error: string;
+			code: string;
+		};
 		expect(result.error).toContain("Unknown tool");
 		expect(result.code).toBe("unknown_tool");
 	});
@@ -160,13 +187,18 @@ describe("safeExecute", () => {
 	it("catches error with code and returns { error, code }", async () => {
 		const coded = makeTool("coded", {
 			execute: async () => {
-				const err = Object.assign(new Error("denied"), { code: "capability_not_granted" });
+				const err = Object.assign(new Error("denied"), {
+					code: "capability_not_granted",
+				});
 				throw err;
 			},
 		});
 
 		const { execute } = toOpenAITools([coded]);
-		const result = (await execute("coded", {})) as { error: string; code: string };
+		const result = (await execute("coded", {})) as {
+			error: string;
+			code: string;
+		};
 		expect(result.error).toBe("denied");
 		expect(result.code).toBe("capability_not_granted");
 	});
@@ -238,15 +270,12 @@ describe("execute_capability tool definition", () => {
 	});
 
 	it("does NOT expose a 'location' parameter", () => {
-		const props = executeTool!.parameters.properties as Record<
-			string,
-			unknown
-		>;
+		const props = executeTool?.parameters.properties as Record<string, unknown>;
 		expect(props).not.toHaveProperty("location");
 	});
 
 	it("has agent_id and capability as required params", () => {
-		expect(executeTool!.parameters.required).toContain("agent_id");
-		expect(executeTool!.parameters.required).toContain("capability");
+		expect(executeTool?.parameters.required).toContain("agent_id");
+		expect(executeTool?.parameters.required).toContain("capability");
 	});
 });

@@ -6,12 +6,12 @@ import type { SecondaryStorage } from "@better-auth/core/db";
  * secondary storage.
  */
 export interface JtiCacheStore {
-	has(jti: string): boolean | Promise<boolean>;
 	add(jti: string, maxAgeSec: number): void | Promise<void>;
+	has(jti: string): boolean | Promise<boolean>;
 }
 
 export class MemoryJtiCache implements JtiCacheStore {
-	private seen = new Map<string, number>();
+	private readonly seen = new Map<string, number>();
 	private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 	constructor() {
@@ -26,7 +26,9 @@ export class MemoryJtiCache implements JtiCacheStore {
 
 	has(jti: string): boolean {
 		const expiry = this.seen.get(jti);
-		if (expiry === undefined) return false;
+		if (expiry === undefined) {
+			return false;
+		}
 		if (Date.now() > expiry) {
 			this.seen.delete(jti);
 			return false;
@@ -41,7 +43,9 @@ export class MemoryJtiCache implements JtiCacheStore {
 	private evict(): void {
 		const now = Date.now();
 		for (const [jti, expiry] of this.seen) {
-			if (now > expiry) this.seen.delete(jti);
+			if (now > expiry) {
+				this.seen.delete(jti);
+			}
 		}
 	}
 
@@ -57,7 +61,7 @@ export class MemoryJtiCache implements JtiCacheStore {
 const JTI_PREFIX = "agent-auth:jti:";
 
 export class SecondaryStorageJtiCache implements JtiCacheStore {
-	constructor(private storage: SecondaryStorage) {}
+	constructor(private readonly storage: SecondaryStorage) {}
 
 	async has(jti: string): Promise<boolean> {
 		const val = await this.storage.get(`${JTI_PREFIX}${jti}`);

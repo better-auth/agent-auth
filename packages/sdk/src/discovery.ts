@@ -10,7 +10,7 @@ const WELL_KNOWN_PATH = "/.well-known/agent-configuration";
  */
 export async function discoverProvider(
 	url: string,
-	fetchFn: typeof globalThis.fetch = globalThis.fetch,
+	fetchFn: typeof globalThis.fetch = globalThis.fetch
 ): Promise<ProviderConfig> {
 	const base = url.replace(/\/+$/, "");
 
@@ -30,7 +30,7 @@ export async function discoverProvider(
 			});
 			if (res.ok) {
 				const config = (await res.json()) as ProviderConfig;
-				if (!config.version || !config.issuer || !config.endpoints) {
+				if (!(config.version && config.issuer && config.endpoints)) {
 					continue;
 				}
 				return config;
@@ -42,7 +42,7 @@ export async function discoverProvider(
 
 	throw new AgentAuthSDKError(
 		"discovery_failed",
-		`Could not discover Agent Auth configuration at ${base}. ${lastError?.message ?? ""}`.trim(),
+		`Could not discover Agent Auth configuration at ${base}. ${lastError?.message ?? ""}`.trim()
 	);
 }
 
@@ -55,7 +55,7 @@ export async function searchProviders(
 	opts?: {
 		limit?: number;
 		fetchFn?: typeof globalThis.fetch;
-	},
+	}
 ): Promise<ProviderInfo[]> {
 	const configs = await searchRegistryFull(registryUrl, intent, opts);
 	return configs.map((c) => ({
@@ -76,7 +76,7 @@ export async function searchRegistryFull(
 	opts?: {
 		limit?: number;
 		fetchFn?: typeof globalThis.fetch;
-	},
+	}
 ): Promise<ProviderConfig[]> {
 	const fetchFn = opts?.fetchFn ?? globalThis.fetch;
 	const limit = opts?.limit ?? 10;
@@ -95,7 +95,7 @@ export async function searchRegistryFull(
 		throw new AgentAuthSDKError(
 			"registry_search_failed",
 			`Registry search failed: ${res.status} ${res.statusText}`,
-			res.status,
+			res.status
 		);
 	}
 
@@ -146,10 +146,12 @@ function extractHostname(input: string): string | null {
 export async function lookupByUrl(
 	registryUrl: string,
 	serviceUrl: string,
-	opts?: { fetchFn?: typeof globalThis.fetch },
+	opts?: { fetchFn?: typeof globalThis.fetch }
 ): Promise<ProviderConfig | null> {
 	const hostname = extractHostname(serviceUrl);
-	if (!hostname) return null;
+	if (!hostname) {
+		return null;
+	}
 
 	let configs: ProviderConfig[];
 	try {
@@ -163,7 +165,9 @@ export async function lookupByUrl(
 
 	for (const config of configs) {
 		const issuerHost = extractHostname(config.issuer);
-		if (!issuerHost) continue;
+		if (!issuerHost) {
+			continue;
+		}
 		if (
 			issuerHost === hostname ||
 			issuerHost.endsWith(`.${hostname}`) ||

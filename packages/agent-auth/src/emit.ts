@@ -5,9 +5,11 @@ import type { AgentAuthEvent, ResolvedAgentAuthOptions } from "./types";
 export function emit(
 	opts: Pick<ResolvedAgentAuthOptions, "onEvent">,
 	event: AgentAuthEvent,
-	ctx?: GenericEndpointContext,
+	ctx?: GenericEndpointContext
 ): void {
-	if (!opts.onEvent) return;
+	if (!opts.onEvent) {
+		return;
+	}
 	try {
 		const result = opts.onEvent(event);
 		if (result && typeof (result as Promise<void>).then === "function") {

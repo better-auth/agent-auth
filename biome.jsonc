@@ -1,0 +1,62 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.7/schema.json",
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/react",
+    "ultracite/biome/next",
+    "ultracite/biome/vitest",
+    "ultracite/biome/type-aware"
+  ],
+  "formatter": {
+    "indentStyle": "tab"
+  },
+  "linter": {
+    "rules": {
+      "a11y": {
+        "noLabelWithoutControl": "warn",
+        "noNoninteractiveElementInteractions": "warn",
+        "noStaticElementInteractions": "warn",
+        "noSvgWithoutTitle": "warn",
+        "useButtonType": "warn",
+        "useKeyWithClickEvents": "warn"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "off",
+        "noVoid": "warn"
+      },
+      "correctness": {
+        "noUnresolvedImports": "off",
+        "noUnusedFunctionParameters": "warn",
+        "useExhaustiveDependencies": "warn",
+        "useHookAtTopLevel": "warn",
+        "useImageSize": "warn",
+        "useImportExtensions": "off"
+      },
+      "performance": {
+        "noBarrelFile": "off",
+        "noImgElement": "warn",
+        "noNamespaceImport": "warn",
+        "useTopLevelRegex": "warn"
+      },
+      "style": {
+        "noExportedImports": "warn",
+        "noNestedTernary": "warn",
+        "noNonNullAssertion": "warn",
+        "noParameterProperties": "off",
+        "useConsistentMemberAccessibility": "warn",
+        "useDefaultSwitchClause": "warn",
+        "useThrowOnlyError": "warn"
+      },
+      "suspicious": {
+        "noAlert": "warn",
+        "noArrayIndexKey": "warn",
+        "noBitwiseOperators": "warn",
+        "noEmptyBlockStatements": "warn",
+        "noExplicitAny": "warn",
+        "noMisplacedAssertion": "warn",
+        "noNonNullAssertedOptionalChain": "warn",
+        "useAwait": "warn"
+      }
+    }
+  }
+}

@@ -1,13 +1,13 @@
 import type { BetterAuthPlugin } from "@better-auth/core";
 import { mergeSchema } from "better-auth/db";
+import { AGENT_AUTH_ERROR_CODES } from "./errors";
 import { createAgentAuthBeforeHook } from "./middleware";
-import { createAgentRoutes } from "./routes";
+import { createAgentRoutes } from "./routes/index";
 import { agentSchema } from "./schema";
+import type { AgentAuthOptions, ResolvedAgentAuthOptions } from "./types";
 import { JtiCacheProxy } from "./utils/jti-cache";
 import { JwksCacheProxy } from "./utils/jwks-cache";
 import { buildRateLimits } from "./utils/rate-limit";
-import { AGENT_AUTH_ERROR_CODES } from "./errors";
-import type { AgentAuthOptions, ResolvedAgentAuthOptions } from "./types";
 
 declare module "@better-auth/core" {
 	interface BetterAuthPluginRegistry<AuthOptions, Options> {
@@ -24,15 +24,14 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		jwtFormat: options?.jwtFormat ?? "simple",
 		jwtMaxAge: options?.jwtMaxAge ?? 60,
 		agentSessionTTL: options?.agentSessionTTL ?? 3600,
-		agentMaxLifetime: options?.agentMaxLifetime ?? 86400,
+		agentMaxLifetime: options?.agentMaxLifetime ?? 86_400,
 		maxAgentsPerUser: options?.maxAgentsPerUser ?? 25,
 		absoluteLifetime: options?.absoluteLifetime ?? 0,
 		freshSessionWindow: options?.freshSessionWindow ?? 300,
 		blockedCapabilities: options?.blockedCapabilities ?? [],
 		allowDynamicHostRegistration:
 			options?.allowDynamicHostRegistration ?? false,
-		defaultHostCapabilities:
-			options?.defaultHostCapabilities ?? [],
+		defaultHostCapabilities: options?.defaultHostCapabilities ?? [],
 		modes: options?.modes ?? ["delegated", "autonomous"],
 		deviceAuthorizationPage:
 			options?.deviceAuthorizationPage ?? "/device/capabilities",
@@ -52,7 +51,9 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		trustProxy: options?.trustProxy ?? false,
 		proofOfPresence: (() => {
 			const enabled = options?.proofOfPresence?.enabled ?? false;
-			if (!enabled) return { enabled: false, rpId: "", origin: [] };
+			if (!enabled) {
+				return { enabled: false, rpId: "", origin: [] };
+			}
 			return {
 				enabled: true,
 				rpId: options?.proofOfPresence?.rpId ?? "",
@@ -68,8 +69,8 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 	if (opts.dangerouslySkipJtiCheck) {
 		console.warn(
 			"[agent-auth] WARNING: dangerouslySkipJtiCheck is enabled — " +
-			"JWT replay protection is DISABLED. " +
-			"Never use this in production.",
+				"JWT replay protection is DISABLED. " +
+				"Never use this in production."
 		);
 	}
 
@@ -81,7 +82,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 				} catch {
 					throw new Error(
 						`[agent-auth] Capability "${cap.name}" has an invalid location URL: "${cap.location}". ` +
-						`The location must be an absolute URL (e.g. "https://api.example.com/execute").`,
+							`The location must be an absolute URL (e.g. "https://api.example.com/execute").`
 					);
 				}
 			}
@@ -106,27 +107,27 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 					opts.proofOfPresence.origin = [baseUrl.origin];
 				}
 
-				const hasPasskeyTable = ctx.tables?.["passkey"] != null;
+				const hasPasskeyTable = ctx.tables?.passkey != null;
 				if (!hasPasskeyTable) {
 					console.warn(
 						"[agent-auth] proofOfPresence is enabled but the passkey plugin " +
-						"is not installed. WebAuthn-gated approvals require " +
-						"@better-auth/passkey to be added to your plugins array " +
-						"so users can register authenticators.",
+							"is not installed. WebAuthn-gated approvals require " +
+							"@better-auth/passkey to be added to your plugins array " +
+							"so users can register authenticators."
 					);
 				}
 			}
 			if (ctx.secondaryStorage) {
 				const jtiUseSecondary =
 					opts.jtiCacheStorage === "secondary-storage" ||
-					(opts.jtiCacheStorage !== "memory");
+					opts.jtiCacheStorage !== "memory";
 				if (jtiUseSecondary) {
 					jtiCache.useSecondaryStorage(ctx.secondaryStorage);
 				}
 
 				const jwksUseSecondary =
 					opts.jwksCacheStorage === "secondary-storage" ||
-					(opts.jwksCacheStorage !== "memory");
+					opts.jwksCacheStorage !== "memory";
 				if (jwksUseSecondary) {
 					jwksCache.useSecondaryStorage(ctx.secondaryStorage);
 				}
@@ -134,13 +135,13 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 				if (opts.jtiCacheStorage === "memory") {
 					console.warn(
 						"[agent-auth] JTI cache is using in-memory storage while secondaryStorage " +
-						"is available. Set jtiCacheStorage: 'secondary-storage' for multi-instance deployments.",
+							"is available. Set jtiCacheStorage: 'secondary-storage' for multi-instance deployments."
 					);
 				}
 				if (opts.jwksCacheStorage === "memory") {
 					console.warn(
 						"[agent-auth] JWKS cache is using in-memory storage while secondaryStorage " +
-						"is available. Set jwksCacheStorage: 'secondary-storage' for multi-instance deployments.",
+							"is available. Set jwksCacheStorage: 'secondary-storage' for multi-instance deployments."
 					);
 				}
 			}
@@ -185,7 +186,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 	} satisfies BetterAuthPlugin;
 };
 
-export type * from "./types";
-export { verifyAgentRequest } from "./verify-agent-request";
 export { AGENT_AUTH_ERROR_CODES } from "./errors";
 export { asyncResult, streamResult } from "./execute-helpers";
+export type * from "./types";
+export { verifyAgentRequest } from "./verify-agent-request";

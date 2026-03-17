@@ -1,8 +1,8 @@
-import { describe, expect, it, beforeAll } from "vitest";
 import { getTestInstance } from "better-auth/test";
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from "jose";
-import { agentAuth as _agentAuth } from "../index";
+import { beforeAll, describe, expect, it } from "vitest";
 import { agentAuthClient } from "../client";
+import { agentAuth as _agentAuth } from "../index";
 import type { AgentAuthOptions, AgentJWK } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,14 +77,14 @@ function apiCall(path: string, init?: RequestInit): Promise<Response> {
 				"content-type": "application/json",
 				...(init?.headers as Record<string, string> | undefined),
 			},
-		}),
+		})
 	);
 }
 
 function authedPost(
 	path: string,
 	body: unknown,
-	extraHeaders?: Record<string, string>,
+	extraHeaders?: Record<string, string>
 ): Promise<Response> {
 	return apiCall(path, {
 		method: "POST",
@@ -105,7 +105,7 @@ beforeAll(async () => {
 				}),
 			],
 		},
-		{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 	);
 	auth = t.auth;
 

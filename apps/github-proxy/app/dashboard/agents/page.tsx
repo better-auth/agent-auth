@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 function StatusBadge({ status }: { status: string }) {
 	const styles: Record<string, string> = {
-		active: "border-gh-green-emphasis/40 bg-gh-green-emphasis/15 text-gh-green-emphasis",
+		active:
+			"border-gh-green-emphasis/40 bg-gh-green-emphasis/15 text-gh-green-emphasis",
 		pending: "border-gh-attention/40 bg-gh-attention/15 text-gh-attention",
 		expired: "border-muted/40 bg-muted/10 text-muted",
 		revoked: "border-gh-danger/40 bg-gh-danger/15 text-gh-danger",
@@ -14,7 +15,7 @@ function StatusBadge({ status }: { status: string }) {
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? "border-muted/40 bg-muted/10 text-muted"}`}
+			className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium text-[11px] ${styles[status] ?? "border-muted/40 bg-muted/10 text-muted"}`}
 		>
 			{status}
 		</span>
@@ -24,9 +25,9 @@ function StatusBadge({ status }: { status: string }) {
 function Spinner() {
 	return (
 		<svg
-			className="animate-spin h-4 w-4 text-muted"
-			viewBox="0 0 24 24"
+			className="h-4 w-4 animate-spin text-muted"
 			fill="none"
+			viewBox="0 0 24 24"
 		>
 			<circle
 				className="opacity-25"
@@ -38,8 +39,8 @@ function Spinner() {
 			/>
 			<path
 				className="opacity-75"
-				fill="currentColor"
 				d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+				fill="currentColor"
 			/>
 		</svg>
 	);
@@ -47,34 +48,42 @@ function Spinner() {
 
 interface GrantData {
 	capability: string;
-	status: string;
-	granted_by?: string | null;
 	expires_at?: string | null;
+	granted_by?: string | null;
+	status: string;
 }
 
 interface AgentData {
+	agent_capability_grants: GrantData[];
 	agent_id: string;
+	created_at: string;
+	expires_at: string | null;
+	host_id: string;
+	last_used_at: string | null;
+	mode: string;
 	name: string;
 	status: string;
-	mode: string;
-	host_id: string;
-	agent_capability_grants: GrantData[];
-	created_at: string;
-	last_used_at: string | null;
-	expires_at: string | null;
 }
 
 function timeAgo(date: string | null) {
-	if (!date) return "Never";
+	if (!date) {
+		return "Never";
+	}
 	const now = Date.now();
 	const then = new Date(date).getTime();
 	const diff = now - then;
 	const seconds = Math.floor(diff / 1000);
-	if (seconds < 60) return "just now";
+	if (seconds < 60) {
+		return "just now";
+	}
 	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m ago`;
+	if (minutes < 60) {
+		return `${minutes}m ago`;
+	}
 	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours}h ago`;
+	if (hours < 24) {
+		return `${hours}h ago`;
+	}
 	const days = Math.floor(hours / 24);
 	return `${days}d ago`;
 }
@@ -89,7 +98,7 @@ function EventTypeBadge({ type }: { type: string }) {
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "border-muted/40 bg-muted/10 text-muted"}`}
+			className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium text-[11px] ${styles[category] ?? "border-muted/40 bg-muted/10 text-muted"}`}
 		>
 			{type}
 		</span>
@@ -97,14 +106,14 @@ function EventTypeBadge({ type }: { type: string }) {
 }
 
 interface LogEntry {
-	id: number;
-	type: string;
 	actorId: string | null;
 	actorType: string | null;
 	agentId: string | null;
-	hostId: string | null;
-	data: Record<string, unknown> | null;
 	createdAt: string;
+	data: Record<string, unknown> | null;
+	hostId: string | null;
+	id: number;
+	type: string;
 }
 
 function AgentActivityLog({ agentId }: { agentId: string }) {
@@ -145,7 +154,7 @@ function AgentActivityLog({ agentId }: { agentId: string }) {
 	if (logs.length === 0) {
 		return (
 			<div className="flex flex-col items-center justify-center py-10">
-				<p className="text-xs text-muted">No activity yet</p>
+				<p className="text-muted text-xs">No activity yet</p>
 			</div>
 		);
 	}
@@ -156,31 +165,28 @@ function AgentActivityLog({ agentId }: { agentId: string }) {
 				const isExpanded = expandedLog === log.id;
 				return (
 					<button
+						className="flex w-full cursor-pointer flex-col rounded-md border border-border/50 bg-background text-left transition-colors hover:bg-surface-hover"
 						key={log.id}
-						onClick={() =>
-							setExpandedLog(isExpanded ? null : log.id)
-						}
-						className="cursor-pointer flex flex-col w-full rounded-md border border-border/50 bg-background text-left transition-colors hover:bg-surface-hover"
+						onClick={() => setExpandedLog(isExpanded ? null : log.id)}
 					>
 						<div className="flex items-center gap-2 px-3 py-2">
 							<EventTypeBadge type={log.type} />
-							<span className="flex-1 text-[11px] text-muted truncate">
-								{log.data &&
-								"capability" in log.data
+							<span className="flex-1 truncate text-[11px] text-muted">
+								{log.data && "capability" in log.data
 									? String(log.data.capability)
 									: ""}
 							</span>
-							<span className="text-[11px] text-muted/60 shrink-0">
+							<span className="shrink-0 text-[11px] text-muted/60">
 								{timeAgo(log.createdAt)}
 							</span>
 						</div>
-					{isExpanded && log.data && (
-						<div className="border-t border-border/50 px-3 py-2">
-							<pre className="text-[11px] font-mono text-foreground/70 whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
-								{JSON.stringify(log.data, null, 2)}
-							</pre>
-						</div>
-					)}
+						{isExpanded && log.data && (
+							<div className="border-border/50 border-t px-3 py-2">
+								<pre className="max-h-40 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[11px] text-foreground/70">
+									{JSON.stringify(log.data, null, 2)}
+								</pre>
+							</div>
+						)}
 					</button>
 				);
 			})}
@@ -193,12 +199,14 @@ export default function AgentsPage() {
 	const [loading, setLoading] = useState(true);
 	const [filter, setFilter] = useState("all");
 	const [expanded, setExpanded] = useState<string | null>(null);
-	const [activeTab, setActiveTab] = useState<Record<string, "details" | "activity">>({});
+	const [activeTab, setActiveTab] = useState<
+		Record<string, "details" | "activity">
+	>({});
 	const [revoking, setRevoking] = useState<string | null>(null);
 
 	useEffect(() => {
 		setLoading(true);
-		const params = filter !== "all" ? `?status=${filter}` : "";
+		const params = filter === "all" ? "" : `?status=${filter}`;
 		fetch(`/api/auth/agent/list${params}`)
 			.then((r) => (r.ok ? r.json() : { agents: [] }))
 			.then((data) => setAgents(data.agents ?? []))
@@ -217,10 +225,8 @@ export default function AgentsPage() {
 			if (res.ok) {
 				setAgents((prev) =>
 					prev.map((a) =>
-						a.agent_id === agentId
-							? { ...a, status: "revoked" }
-							: a,
-					),
+						a.agent_id === agentId ? { ...a, status: "revoked" } : a
+					)
 				);
 			}
 		} catch {
@@ -237,23 +243,21 @@ export default function AgentsPage() {
 			<div className="flex flex-col gap-6">
 				<div className="flex items-start justify-between">
 					<div>
-						<h1 className="text-lg font-semibold text-white">
-							Agents
-						</h1>
-						<p className="mt-1 text-sm text-muted">
+						<h1 className="font-semibold text-lg text-white">Agents</h1>
+						<p className="mt-1 text-muted text-sm">
 							Connected AI agents and their capability grants.
 						</p>
 					</div>
 					<div className="flex gap-1 rounded-md border border-border bg-surface p-0.5">
 						{filters.map((f) => (
 							<button
-								key={f}
-								onClick={() => setFilter(f)}
-								className={`cursor-pointer rounded px-3 py-1 text-xs font-medium capitalize transition-colors ${
+								className={`cursor-pointer rounded px-3 py-1 font-medium text-xs capitalize transition-colors ${
 									filter === f
 										? "bg-accent/15 text-accent"
 										: "text-muted hover:text-foreground"
 								}`}
+								key={f}
+								onClick={() => setFilter(f)}
 							>
 								{f}
 							</button>
@@ -266,64 +270,55 @@ export default function AgentsPage() {
 						<Spinner />
 					</div>
 				) : agents.length === 0 ? (
-					<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16">
+					<div className="flex flex-col items-center justify-center rounded-lg border border-border border-dashed py-16">
 						<svg
-							className="h-8 w-8 text-muted/30 mb-3"
+							className="mb-3 h-8 w-8 text-muted/30"
 							fill="none"
-							viewBox="0 0 24 24"
 							stroke="currentColor"
+							viewBox="0 0 24 24"
 						>
 							<path
+								d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
 								strokeLinecap="round"
 								strokeLinejoin="round"
 								strokeWidth={1.5}
-								d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
 							/>
 						</svg>
-						<p className="text-sm text-muted">No agents found</p>
-						<p className="mt-1 text-xs text-muted/60">
+						<p className="text-muted text-sm">No agents found</p>
+						<p className="mt-1 text-muted/60 text-xs">
 							Agents will appear here once they connect.
 						</p>
 					</div>
 				) : (
 					<div className="flex flex-col gap-2">
 						{agents.map((agent) => {
-							const isExpanded =
-								expanded === agent.agent_id;
-							const activeGrants =
-								agent.agent_capability_grants.filter(
-									(g) => g.status === "active",
-								);
-							const pendingGrants =
-								agent.agent_capability_grants.filter(
-									(g) => g.status === "pending",
-								);
+							const isExpanded = expanded === agent.agent_id;
+							const activeGrants = agent.agent_capability_grants.filter(
+								(g) => g.status === "active"
+							);
+							const pendingGrants = agent.agent_capability_grants.filter(
+								(g) => g.status === "pending"
+							);
 
 							return (
 								<div
-									key={agent.agent_id}
 									className="rounded-lg border border-border bg-surface"
+									key={agent.agent_id}
 								>
 									<button
-										onClick={() =>
-											setExpanded(
-												isExpanded
-													? null
-													: agent.agent_id,
-											)
-										}
 										className="flex w-full cursor-pointer items-center gap-4 px-4 py-3 text-left"
+										onClick={() =>
+											setExpanded(isExpanded ? null : agent.agent_id)
+										}
 									>
-										<div className="flex-1 min-w-0">
+										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium text-white truncate">
+												<span className="truncate font-medium text-sm text-white">
 													{agent.name}
 												</span>
-												<StatusBadge
-													status={agent.status}
-												/>
+												<StatusBadge status={agent.status} />
 											</div>
-											<p className="mt-0.5 text-xs text-muted">
+											<p className="mt-0.5 text-muted text-xs">
 												{activeGrants.length} active
 												{pendingGrants.length > 0 &&
 													` · ${pendingGrants.length} pending`}
@@ -334,122 +329,127 @@ export default function AgentsPage() {
 										<svg
 											className={`h-4 w-4 shrink-0 text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
 											fill="none"
-											viewBox="0 0 24 24"
 											stroke="currentColor"
+											viewBox="0 0 24 24"
 										>
 											<path
+												d="M19 9l-7 7-7-7"
 												strokeLinecap="round"
 												strokeLinejoin="round"
 												strokeWidth={2}
-												d="M19 9l-7 7-7-7"
 											/>
 										</svg>
 									</button>
 
-								{isExpanded && (
-									<div className="border-t border-border">
-										<div className="flex gap-0 border-b border-border">
-											{(["details", "activity"] as const).map((tab) => (
-												<button
-													key={tab}
-													onClick={(e) => {
-														e.stopPropagation();
-														setActiveTab((prev) => ({
-															...prev,
-															[agent.agent_id]: tab,
-														}));
-													}}
-													className={`cursor-pointer px-4 py-2 text-xs font-medium capitalize transition-colors ${
-														(activeTab[agent.agent_id] ?? "details") === tab
-															? "text-white border-b-2 border-white -mb-px"
-															: "text-muted hover:text-foreground"
-													}`}
-												>
-													{tab}
-												</button>
-											))}
-										</div>
-
-									<div className="px-4 py-4 max-h-80 overflow-y-auto">
-										{(activeTab[agent.agent_id] ?? "details") === "details" ? (
-											<>
-												<div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
-													<div>
-														<p className="text-[10px] uppercase tracking-widest text-muted">
-															Agent ID
-														</p>
-														<code className="text-xs font-mono text-foreground break-all">
-															{agent.agent_id}
-														</code>
-													</div>
-													<div>
-														<p className="text-[10px] uppercase tracking-widest text-muted">
-															Host ID
-														</p>
-														<code className="text-xs font-mono text-foreground break-all">
-															{agent.host_id}
-														</code>
-													</div>
-													<div>
-														<p className="text-[10px] uppercase tracking-widest text-muted">
-															Last Used
-														</p>
-														<p className="text-xs text-foreground">
-															{timeAgo(agent.last_used_at)}
-														</p>
-													</div>
-													<div>
-														<p className="text-[10px] uppercase tracking-widest text-muted">
-															Expires
-														</p>
-														<p className="text-xs text-foreground">
-															{agent.expires_at
-																? new Date(agent.expires_at).toLocaleString()
-																: "Never"}
-														</p>
-													</div>
-												</div>
-
-												{agent.agent_capability_grants.length > 0 && (
-													<div className="mb-4">
-														<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
-															Capabilities
-														</p>
-														<div className="space-y-1">
-															{agent.agent_capability_grants.map((g, i) => (
-																<div
-																	key={i}
-																	className="flex items-center justify-between rounded bg-background px-3 py-2"
-																>
-																	<code className="text-xs font-mono text-foreground truncate mr-2">
-																		{g.capability}
-																	</code>
-																	<StatusBadge status={g.status} />
-																</div>
-															))}
-														</div>
-													</div>
-												)}
-
-												{agent.status === "active" && (
+									{isExpanded && (
+										<div className="border-border border-t">
+											<div className="flex gap-0 border-border border-b">
+												{(["details", "activity"] as const).map((tab) => (
 													<button
+														className={`cursor-pointer px-4 py-2 font-medium text-xs capitalize transition-colors ${
+															(activeTab[agent.agent_id] ?? "details") === tab
+																? "-mb-px border-white border-b-2 text-white"
+																: "text-muted hover:text-foreground"
+														}`}
+														key={tab}
 														onClick={(e) => {
 															e.stopPropagation();
-															handleRevoke(agent.agent_id);
+															setActiveTab((prev) => ({
+																...prev,
+																[agent.agent_id]: tab,
+															}));
 														}}
-														disabled={revoking === agent.agent_id}
-														className="cursor-pointer rounded-md border border-red-500/20 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
 													>
-														{revoking === agent.agent_id ? "Revoking…" : "Revoke Agent"}
+														{tab}
 													</button>
+												))}
+											</div>
+
+											<div className="max-h-80 overflow-y-auto px-4 py-4">
+												{(activeTab[agent.agent_id] ?? "details") ===
+												"details" ? (
+													<>
+														<div className="mb-4 grid grid-cols-2 gap-x-6 gap-y-3">
+															<div>
+																<p className="text-[10px] text-muted uppercase tracking-widest">
+																	Agent ID
+																</p>
+																<code className="break-all font-mono text-foreground text-xs">
+																	{agent.agent_id}
+																</code>
+															</div>
+															<div>
+																<p className="text-[10px] text-muted uppercase tracking-widest">
+																	Host ID
+																</p>
+																<code className="break-all font-mono text-foreground text-xs">
+																	{agent.host_id}
+																</code>
+															</div>
+															<div>
+																<p className="text-[10px] text-muted uppercase tracking-widest">
+																	Last Used
+																</p>
+																<p className="text-foreground text-xs">
+																	{timeAgo(agent.last_used_at)}
+																</p>
+															</div>
+															<div>
+																<p className="text-[10px] text-muted uppercase tracking-widest">
+																	Expires
+																</p>
+																<p className="text-foreground text-xs">
+																	{agent.expires_at
+																		? new Date(
+																				agent.expires_at
+																			).toLocaleString()
+																		: "Never"}
+																</p>
+															</div>
+														</div>
+
+														{agent.agent_capability_grants.length > 0 && (
+															<div className="mb-4">
+																<p className="mb-2 text-[10px] text-muted uppercase tracking-widest">
+																	Capabilities
+																</p>
+																<div className="space-y-1">
+																	{agent.agent_capability_grants.map((g, i) => (
+																		<div
+																			className="flex items-center justify-between rounded bg-background px-3 py-2"
+																			key={i}
+																		>
+																			<code className="mr-2 truncate font-mono text-foreground text-xs">
+																				{g.capability}
+																			</code>
+																			<StatusBadge status={g.status} />
+																		</div>
+																	))}
+																</div>
+															</div>
+														)}
+
+														{agent.status === "active" && (
+															<button
+																className="cursor-pointer rounded-md border border-red-500/20 px-3 py-1.5 text-red-400 text-xs transition-colors hover:bg-red-500/10 disabled:opacity-50"
+																disabled={revoking === agent.agent_id}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	handleRevoke(agent.agent_id);
+																}}
+															>
+																{revoking === agent.agent_id
+																	? "Revoking…"
+																	: "Revoke Agent"}
+															</button>
+														)}
+													</>
+												) : (
+													<AgentActivityLog agentId={agent.agent_id} />
 												)}
-											</>
-										) : (
-											<AgentActivityLog agentId={agent.agent_id} />
-										)}
-									</div>
-									</div>
-								)}
+											</div>
+										</div>
+									)}
 								</div>
 							);
 						})}

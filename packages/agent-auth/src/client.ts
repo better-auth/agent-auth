@@ -1,6 +1,6 @@
 import type { BetterAuthClientPlugin } from "@better-auth/core";
-import type { agentAuth } from ".";
 import { AGENT_AUTH_ERROR_CODES } from "./errors";
+import type { agentAuth } from "./index";
 
 export * from "./errors";
 

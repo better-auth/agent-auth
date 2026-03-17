@@ -1,6 +1,6 @@
 type Pipeline = (
 	texts: string[],
-	options?: { pooling: string; normalize: boolean },
+	options?: { pooling: string; normalize: boolean }
 ) => Promise<{ tolist: () => number[][] }>;
 
 const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
@@ -12,9 +12,15 @@ const pipelineState = {
 };
 
 function loadPipeline(): Promise<Pipeline | null> {
-	if (pipelineState.failed) return Promise.resolve(null);
-	if (pipelineState.instance) return Promise.resolve(pipelineState.instance);
-	if (pipelineState.loading) return pipelineState.loading;
+	if (pipelineState.failed) {
+		return Promise.resolve(null);
+	}
+	if (pipelineState.instance) {
+		return Promise.resolve(pipelineState.instance);
+	}
+	if (pipelineState.loading) {
+		return pipelineState.loading;
+	}
 
 	pipelineState.loading = (async () => {
 		try {
@@ -27,7 +33,7 @@ function loadPipeline(): Promise<Pipeline | null> {
 		} catch (err) {
 			console.warn(
 				"Failed to load embedding model, using keyword fallback:",
-				err,
+				err
 			);
 			pipelineState.failed = true;
 			return null;
@@ -50,16 +56,20 @@ function cosineSimilarity(a: number[], b: number[]): number {
 	let normA = 0;
 	let normB = 0;
 	for (let i = 0; i < a.length; i++) {
-		dot += a[i] * b[i];
-		normA += a[i] * a[i];
-		normB += b[i] * b[i];
+		const ai = a[i]!;
+		const bi = b[i]!;
+		dot += ai * bi;
+		normA += ai * ai;
+		normB += bi * bi;
 	}
 	return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
 }
 
 async function embed(texts: string[]): Promise<number[][]> {
 	const extractor = await loadPipeline();
-	if (!extractor) return [];
+	if (!extractor) {
+		return [];
+	}
 
 	const result = await extractor(texts, {
 		pooling: "mean",
@@ -69,19 +79,21 @@ async function embed(texts: string[]): Promise<number[][]> {
 }
 
 export interface ProviderForSearch {
-	name: string;
-	displayName: string;
-	description: string;
 	categories: string[];
+	description: string;
+	displayName: string;
+	name: string;
 	[key: string]: unknown;
 }
 
 export async function rankByIntent<T extends ProviderForSearch>(
 	providers: T[],
 	intent: string,
-	threshold = 0.2,
+	threshold = 0.2
 ): Promise<T[]> {
-	if (providers.length === 0) return [];
+	if (providers.length === 0) {
+		return [];
+	}
 
 	if (Date.now() - cacheCreatedAt > CACHE_TTL_MS) {
 		embeddingCache.clear();
@@ -110,8 +122,9 @@ export async function rankByIntent<T extends ProviderForSearch>(
 		try {
 			const embeddings = await embed(uncachedTexts);
 			for (let i = 0; i < uncachedKeys.length; i++) {
-				if (embeddings[i]) {
-					embeddingCache.set(uncachedKeys[i], embeddings[i]);
+				const embedding = embeddings[i];
+				if (embedding) {
+					embeddingCache.set(uncachedKeys[i]!, embedding);
 				}
 			}
 		} catch {
@@ -122,7 +135,9 @@ export async function rankByIntent<T extends ProviderForSearch>(
 	let intentEmbedding: number[];
 	try {
 		const [emb] = await embed([intent]);
-		if (!emb) return keywordFallback(providers, intent);
+		if (!emb) {
+			return keywordFallback(providers, intent);
+		}
 		intentEmbedding = emb;
 	} catch {
 		return keywordFallback(providers, intent);
@@ -142,10 +157,12 @@ export async function rankByIntent<T extends ProviderForSearch>(
 
 function keywordFallback<T extends ProviderForSearch>(
 	providers: T[],
-	intent: string,
+	intent: string
 ): T[] {
 	const intentTokens = tokenize(intent);
-	if (intentTokens.length === 0) return providers;
+	if (intentTokens.length === 0) {
+		return providers;
+	}
 
 	const scored = providers.map((p) => {
 		const text = `${p.name.replace(/[._-]/g, " ")} ${p.displayName} ${p.description} ${p.categories.join(" ")}`;

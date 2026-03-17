@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db } from "@/lib/db/index";
 import { provider } from "@/lib/db/schema";
 import type { ProviderConfig } from "@/lib/discover";
 
@@ -19,7 +19,7 @@ function toProviderConfig(row: typeof provider.$inferSelect): ProviderConfig {
 
 export async function GET(
 	_request: Request,
-	{ params }: { params: Promise<{ name: string }> },
+	{ params }: { params: Promise<{ name: string }> }
 ) {
 	const { name: encodedName } = await params;
 	const name = decodeURIComponent(encodedName);
@@ -48,7 +48,7 @@ export async function GET(
 
 export async function PATCH(
 	request: Request,
-	{ params }: { params: Promise<{ name: string }> },
+	{ params }: { params: Promise<{ name: string }> }
 ) {
 	const { name: encodedName } = await params;
 	const name = decodeURIComponent(encodedName);
@@ -74,12 +74,21 @@ export async function PATCH(
 		updatedAt: new Date().toISOString(),
 	};
 
-	if (body.displayName !== undefined) updates.displayName = body.displayName;
-	if (body.description !== undefined) updates.description = body.description;
-	if (body.categories !== undefined)
+	if (body.displayName !== undefined) {
+		updates.displayName = body.displayName;
+	}
+	if (body.description !== undefined) {
+		updates.description = body.description;
+	}
+	if (body.categories !== undefined) {
 		updates.categories = JSON.stringify(body.categories);
-	if (body.logoUrl !== undefined) updates.logoUrl = body.logoUrl;
-	if (body.status !== undefined) updates.status = body.status;
+	}
+	if (body.logoUrl !== undefined) {
+		updates.logoUrl = body.logoUrl;
+	}
+	if (body.status !== undefined) {
+		updates.status = body.status;
+	}
 
 	await db.update(provider).set(updates).where(eq(provider.name, name));
 
@@ -88,7 +97,7 @@ export async function PATCH(
 
 export async function DELETE(
 	_request: Request,
-	{ params }: { params: Promise<{ name: string }> },
+	{ params }: { params: Promise<{ name: string }> }
 ) {
 	const { name: encodedName } = await params;
 	const name = decodeURIComponent(encodedName);

@@ -1,37 +1,37 @@
+import { asyncResult, streamResult } from "../execute-helpers";
 import type {
 	AgentAuthOptions,
 	ApprovalStrength,
 	Capability,
 	DefaultHostCapabilitiesContext,
 } from "../types";
-import { asyncResult, streamResult } from "../execute-helpers";
 
 interface OpenAPIParameter {
-	name: string;
+	description?: string;
 	in: string;
+	name: string;
 	required?: boolean;
 	schema?: Record<string, unknown>;
-	description?: string;
 }
 
 interface OpenAPIRequestBody {
-	required?: boolean;
-	description?: string;
 	content?: Record<string, { schema?: Record<string, unknown> }>;
+	description?: string;
+	required?: boolean;
 }
 
 interface OpenAPIResponse {
-	description?: string;
 	content?: Record<string, { schema?: Record<string, unknown> }>;
+	description?: string;
 }
 
 interface OpenAPIOperation {
-	operationId?: string;
-	summary?: string;
 	description?: string;
+	operationId?: string;
 	parameters?: OpenAPIParameter[];
 	requestBody?: OpenAPIRequestBody;
 	responses?: Record<string, OpenAPIResponse>;
+	summary?: string;
 }
 
 interface OpenAPIPathItem {
@@ -39,14 +39,14 @@ interface OpenAPIPathItem {
 }
 
 interface OpenAPISpec {
+	components?: Record<string, unknown>;
 	info?: {
 		title?: string;
 		description?: string;
 		version?: string;
 	};
-	servers?: Array<{ url: string }>;
 	paths?: Record<string, OpenAPIPathItem>;
-	components?: Record<string, unknown>;
+	servers?: Array<{ url: string }>;
 }
 
 /** Resolve a JSON Reference (`$ref`) against the spec root. */
@@ -58,7 +58,9 @@ function deref<T>(spec: OpenAPISpec, node: T): T {
 			for (const part of ref.slice(2).split("/")) {
 				resolved = (resolved as Record<string, unknown>)?.[part];
 			}
-			if (resolved != null) return resolved as T;
+			if (resolved != null) {
+				return resolved as T;
+			}
 		}
 	}
 	return node;
@@ -68,20 +70,25 @@ function deref<T>(spec: OpenAPISpec, node: T): T {
 function mergeParams(
 	spec: OpenAPISpec,
 	pathItem: OpenAPIPathItem,
-	op: OpenAPIOperation,
+	op: OpenAPIOperation
 ): OpenAPIParameter[] {
-	const pathParams = ((pathItem as Record<string, unknown>).parameters as
-		| OpenAPIParameter[]
-		| undefined) ?? [];
+	const pathParams =
+		((pathItem as Record<string, unknown>).parameters as
+			| OpenAPIParameter[]
+			| undefined) ?? [];
 	const opParams = op.parameters ?? [];
 	const merged = new Map<string, OpenAPIParameter>();
 	for (const p of pathParams) {
 		const resolved = deref(spec, p);
-		if (resolved?.name) merged.set(`${resolved.in}:${resolved.name}`, resolved);
+		if (resolved?.name) {
+			merged.set(`${resolved.in}:${resolved.name}`, resolved);
+		}
 	}
 	for (const p of opParams) {
 		const resolved = deref(spec, p);
-		if (resolved?.name) merged.set(`${resolved.in}:${resolved.name}`, resolved);
+		if (resolved?.name) {
+			merged.set(`${resolved.in}:${resolved.name}`, resolved);
+		}
 	}
 	return [...merged.values()];
 }
@@ -89,9 +96,9 @@ function mergeParams(
 /** Internal representation of a resolved OpenAPI operation. */
 interface ResolvedOperation {
 	method: string;
-	url: string;
 	parameters: OpenAPIParameter[];
 	requestBody?: OpenAPIRequestBody;
+	url: string;
 }
 
 /**
@@ -102,7 +109,7 @@ interface ResolvedOperation {
 function buildInputSchema(
 	spec: OpenAPISpec,
 	parameters: OpenAPIParameter[],
-	requestBody?: OpenAPIRequestBody,
+	requestBody?: OpenAPIRequestBody
 ): Record<string, unknown> | undefined {
 	const properties: Record<string, unknown> = {};
 	const required: string[] = [];
@@ -112,7 +119,9 @@ function buildInputSchema(
 			...(p.schema ?? { type: "string" }),
 			...(p.description ? { description: p.description } : {}),
 		};
-		if (p.required) required.push(p.name);
+		if (p.required) {
+			required.push(p.name);
+		}
 	}
 
 	if (requestBody) {
@@ -130,12 +139,16 @@ function buildInputSchema(
 				properties[key] = val;
 			}
 			for (const r of bodyRequired) {
-				if (!required.includes(r)) required.push(r);
+				if (!required.includes(r)) {
+					required.push(r);
+				}
 			}
 		}
 	}
 
-	if (Object.keys(properties).length === 0) return undefined;
+	if (Object.keys(properties).length === 0) {
+		return undefined;
+	}
 
 	return {
 		type: "object",
@@ -149,16 +162,22 @@ function buildInputSchema(
  */
 function buildOutputSchema(
 	spec: OpenAPISpec,
-	op: OpenAPIOperation,
+	op: OpenAPIOperation
 ): Record<string, unknown> | undefined {
-	if (!op.responses) return undefined;
+	if (!op.responses) {
+		return undefined;
+	}
 
 	const successResponse = op.responses["200"] ?? op.responses["201"];
-	if (!successResponse) return undefined;
+	if (!successResponse) {
+		return undefined;
+	}
 
 	const resolved = deref(spec, successResponse);
 	const jsonContent = resolved?.content?.["application/json"];
-	if (!jsonContent?.schema) return undefined;
+	if (!jsonContent?.schema) {
+		return undefined;
+	}
 
 	return deref(spec, jsonContent.schema) as Record<string, unknown>;
 }
@@ -166,12 +185,14 @@ function buildOutputSchema(
 /** Build a map from operationId → resolved operation metadata. */
 function buildOperationMap(
 	spec: OpenAPISpec,
-	baseUrl: string,
+	baseUrl: string
 ): Map<string, ResolvedOperation> {
 	const map = new Map<string, ResolvedOperation>();
 
 	for (const [path, pathItem] of Object.entries(spec.paths ?? {})) {
-		if (!pathItem) continue;
+		if (!pathItem) {
+			continue;
+		}
 
 		for (const [method, operation] of Object.entries(pathItem)) {
 			if (
@@ -185,7 +206,9 @@ function buildOperationMap(
 			}
 
 			const op = operation as OpenAPIOperation;
-			if (!op.operationId) continue;
+			if (!op.operationId) {
+				continue;
+			}
 
 			const parameters = mergeParams(spec, pathItem, op);
 			const requestBody = deref(spec, op.requestBody);
@@ -211,7 +234,9 @@ function parseOpenAPICapabilities(spec: OpenAPISpec): ParsedCapability[] {
 	const capabilities: ParsedCapability[] = [];
 
 	for (const [_path, pathItem] of Object.entries(spec.paths ?? {})) {
-		if (!pathItem) continue;
+		if (!pathItem) {
+			continue;
+		}
 
 		for (const [method, operation] of Object.entries(pathItem)) {
 			if (
@@ -225,7 +250,9 @@ function parseOpenAPICapabilities(spec: OpenAPISpec): ParsedCapability[] {
 			}
 
 			const op = operation as OpenAPIOperation;
-			if (!op.operationId) continue;
+			if (!op.operationId) {
+				continue;
+			}
 
 			const parameters = mergeParams(spec, pathItem, op);
 			const requestBody = deref(spec, op.requestBody);
@@ -234,8 +261,7 @@ function parseOpenAPICapabilities(spec: OpenAPISpec): ParsedCapability[] {
 
 			capabilities.push({
 				name: op.operationId,
-				description:
-					op.description ?? op.summary ?? op.operationId,
+				description: op.description ?? op.summary ?? op.operationId,
 				...(input ? { input } : {}),
 				...(output ? { output } : {}),
 				_method: method.toUpperCase(),
@@ -288,10 +314,12 @@ export function createOpenAPIHandler(
 		resolveHeaders?: (context: {
 			ctx: Parameters<NonNullable<AgentAuthOptions["onExecute"]>>[0]["ctx"];
 			capability: string;
-			agentSession: Parameters<NonNullable<AgentAuthOptions["onExecute"]>>[0]["agentSession"];
+			agentSession: Parameters<
+				NonNullable<AgentAuthOptions["onExecute"]>
+			>[0]["agentSession"];
 		}) => Record<string, string> | Promise<Record<string, string>>;
 		fetch?: typeof globalThis.fetch;
-	},
+	}
 ): NonNullable<AgentAuthOptions["onExecute"]> {
 	const opMap = buildOperationMap(spec, opts.baseUrl);
 	const fetchFn = opts.fetch ?? globalThis.fetch;
@@ -300,7 +328,7 @@ export function createOpenAPIHandler(
 		const op = opMap.get(capability);
 		if (!op) {
 			throw new Error(
-				`No OpenAPI operation found for capability "${capability}".`,
+				`No OpenAPI operation found for capability "${capability}".`
 			);
 		}
 
@@ -323,14 +351,16 @@ export function createOpenAPIHandler(
 
 		for (const param of op.parameters) {
 			const value = args?.[param.name];
-			if (value === undefined) continue;
+			if (value === undefined) {
+				continue;
+			}
 			consumed.add(param.name);
 
 			switch (param.in) {
 				case "path":
 					url = url.replace(
 						`{${param.name}}`,
-						encodeURIComponent(String(value)),
+						encodeURIComponent(String(value))
 					);
 					break;
 				case "query":
@@ -349,15 +379,13 @@ export function createOpenAPIHandler(
 
 		const fetchOpts: RequestInit = { method: op.method, headers };
 
-		if (
-			op.requestBody &&
-			op.method !== "GET" &&
-			op.method !== "HEAD"
-		) {
+		if (op.requestBody && op.method !== "GET" && op.method !== "HEAD") {
 			const bodyArgs: Record<string, unknown> = {};
 			if (args) {
 				for (const [key, val] of Object.entries(args)) {
-					if (!consumed.has(key)) bodyArgs[key] = val;
+					if (!consumed.has(key)) {
+						bodyArgs[key] = val;
+					}
 				}
 			}
 			if (Object.keys(bodyArgs).length > 0) {
@@ -369,13 +397,11 @@ export function createOpenAPIHandler(
 
 		if (!response.ok && response.status !== 202) {
 			const errorBody = await response.text();
-			throw new Error(
-				`Upstream API error ${response.status}: ${errorBody}`,
-			);
+			throw new Error(`Upstream API error ${response.status}: ${errorBody}`);
 		}
 
 		if (response.status === 202) {
-			const body = await response.json() as Record<string, unknown>;
+			const body = (await response.json()) as Record<string, unknown>;
 			const statusUrl =
 				(body.status_url as string | undefined) ??
 				response.headers.get("location") ??
@@ -383,16 +409,13 @@ export function createOpenAPIHandler(
 			const retryAfter = response.headers.get("retry-after");
 			return asyncResult(
 				statusUrl,
-				retryAfter ? parseInt(retryAfter, 10) : undefined,
+				retryAfter ? Number.parseInt(retryAfter, 10) : undefined
 			);
 		}
 
 		const contentType = response.headers.get("content-type");
 
-		if (
-			contentType?.includes("text/event-stream") &&
-			response.body
-		) {
+		if (contentType?.includes("text/event-stream") && response.body) {
 			return streamResult(response.body);
 		}
 
@@ -404,12 +427,12 @@ export function createOpenAPIHandler(
 }
 
 interface OpenAPICapabilityInfo {
-	/** The capability name (operationId). */
-	name: string;
-	/** The HTTP method this operation uses (uppercase). */
-	method: string;
 	/** The capability description. */
 	description: string;
+	/** The HTTP method this operation uses (uppercase). */
+	method: string;
+	/** The capability name (operationId). */
+	name: string;
 }
 
 /**
@@ -428,7 +451,7 @@ type DefaultHostCapabilitiesFilter =
 	| string[]
 	| ((
 			capability: OpenAPICapabilityInfo,
-			context: DefaultHostCapabilitiesContext,
+			context: DefaultHostCapabilitiesContext
 	  ) => boolean | Promise<boolean>);
 
 /**
@@ -444,16 +467,28 @@ type ApprovalStrengthFilter =
 	| Record<string, ApprovalStrength>
 	| ((capability: OpenAPICapabilityInfo) => ApprovalStrength);
 
-type CreateFromOpenAPIOptions = {
+interface CreateFromOpenAPIOptions {
+	/**
+	 * Assign `approvalStrength` to capabilities derived from the spec (§8.11).
+	 *
+	 * Controls which capabilities require proof of physical presence
+	 * (WebAuthn) versus a standard session-based approval.
+	 *
+	 * @example
+	 * ```ts
+	 * // All mutating methods require WebAuthn
+	 * approvalStrength: { GET: "session", POST: "webauthn", DELETE: "webauthn" }
+	 *
+	 * // Everything requires WebAuthn
+	 * approvalStrength: "webauthn"
+	 *
+	 * // Per-capability callback
+	 * approvalStrength: (cap) =>
+	 *   cap.method === "DELETE" ? "webauthn" : "session"
+	 * ```
+	 */
+	approvalStrength?: ApprovalStrengthFilter;
 	baseUrl: string;
-	resolveHeaders?: (context: {
-		ctx: Parameters<NonNullable<AgentAuthOptions["onExecute"]>>[0]["ctx"];
-		capability: string;
-		agentSession: Parameters<
-			NonNullable<AgentAuthOptions["onExecute"]>
-		>[0]["agentSession"];
-	}) => Record<string, string> | Promise<Record<string, string>>;
-	fetch?: typeof globalThis.fetch;
 	/**
 	 * Automatically populate `defaultHostCapabilities` from the spec.
 	 *
@@ -476,26 +511,7 @@ type CreateFromOpenAPIOptions = {
 	 * ```
 	 */
 	defaultHostCapabilities?: DefaultHostCapabilitiesFilter;
-	/**
-	 * Assign `approvalStrength` to capabilities derived from the spec (§8.11).
-	 *
-	 * Controls which capabilities require proof of physical presence
-	 * (WebAuthn) versus a standard session-based approval.
-	 *
-	 * @example
-	 * ```ts
-	 * // All mutating methods require WebAuthn
-	 * approvalStrength: { GET: "session", POST: "webauthn", DELETE: "webauthn" }
-	 *
-	 * // Everything requires WebAuthn
-	 * approvalStrength: "webauthn"
-	 *
-	 * // Per-capability callback
-	 * approvalStrength: (cap) =>
-	 *   cap.method === "DELETE" ? "webauthn" : "session"
-	 * ```
-	 */
-	approvalStrength?: ApprovalStrengthFilter;
+	fetch?: typeof globalThis.fetch;
 	/**
 	 * Set the `location` field on every capability derived from the spec (§2.15).
 	 *
@@ -510,15 +526,26 @@ type CreateFromOpenAPIOptions = {
 	 * ```
 	 */
 	location?: string;
-};
+	resolveHeaders?: (context: {
+		ctx: Parameters<NonNullable<AgentAuthOptions["onExecute"]>>[0]["ctx"];
+		capability: string;
+		agentSession: Parameters<
+			NonNullable<AgentAuthOptions["onExecute"]>
+		>[0]["agentSession"];
+	}) => Record<string, string> | Promise<Record<string, string>>;
+}
 
 /** Resolve `approvalStrength` for a single parsed capability. */
 function resolveApprovalStrength(
 	cap: ParsedCapability,
-	filter: ApprovalStrengthFilter | undefined,
+	filter: ApprovalStrengthFilter | undefined
 ): ApprovalStrength | undefined {
-	if (filter === undefined) return undefined;
-	if (typeof filter === "string") return filter;
+	if (filter === undefined) {
+		return undefined;
+	}
+	if (typeof filter === "string") {
+		return filter;
+	}
 	if (typeof filter === "function") {
 		return filter({
 			name: cap.name,
@@ -538,10 +565,14 @@ function resolveApprovalStrength(
  */
 function resolveDefaultHostCaps(
 	parsed: ParsedCapability[],
-	filter: DefaultHostCapabilitiesFilter | undefined,
+	filter: DefaultHostCapabilitiesFilter | undefined
 ): AgentAuthOptions["defaultHostCapabilities"] | undefined {
-	if (filter === undefined || filter === false) return undefined;
-	if (filter === true) return parsed.map((c) => c.name);
+	if (filter === undefined || filter === false) {
+		return undefined;
+	}
+	if (filter === true) {
+		return parsed.map((c) => c.name);
+	}
 
 	if (typeof filter === "function") {
 		const capInfos: Array<OpenAPICapabilityInfo & { _name: string }> =
@@ -557,17 +588,21 @@ function resolveDefaultHostCaps(
 				capInfos.map(async (info) => ({
 					name: info._name,
 					include: await filter(
-						{ name: info.name, method: info.method, description: info.description },
-						context,
+						{
+							name: info.name,
+							method: info.method,
+							description: info.description,
+						},
+						context
 					),
-				})),
+				}))
 			);
 			return results.filter((r) => r.include).map((r) => r.name);
 		};
 	}
 
 	const methods = new Set(
-		(Array.isArray(filter) ? filter : [filter]).map((m) => m.toUpperCase()),
+		(Array.isArray(filter) ? filter : [filter]).map((m) => m.toUpperCase())
 	);
 	return parsed.filter((c) => methods.has(c._method ?? "")).map((c) => c.name);
 }
@@ -601,7 +636,7 @@ function resolveDefaultHostCaps(
  */
 export function createFromOpenAPI(
 	spec: OpenAPISpec,
-	opts: CreateFromOpenAPIOptions,
+	opts: CreateFromOpenAPIOptions
 ): Pick<
 	AgentAuthOptions,
 	| "providerName"
@@ -611,17 +646,19 @@ export function createFromOpenAPI(
 	| "defaultHostCapabilities"
 > {
 	const parsed = parseOpenAPICapabilities(spec);
-	const capabilities: Capability[] = parsed.map(
-		({ _method, ...cap }) => {
-			const strength = resolveApprovalStrength(
-				{ ...cap, _method },
-				opts.approvalStrength,
-			);
-			if (strength) cap.approvalStrength = strength;
-			if (opts.location) cap.location = opts.location;
-			return cap;
-		},
-	);
+	const capabilities: Capability[] = parsed.map(({ _method, ...cap }) => {
+		const strength = resolveApprovalStrength(
+			{ ...cap, _method },
+			opts.approvalStrength
+		);
+		if (strength) {
+			cap.approvalStrength = strength;
+		}
+		if (opts.location) {
+			cap.location = opts.location;
+		}
+		return cap;
+	});
 
 	const onExecute = createOpenAPIHandler(spec, {
 		baseUrl: opts.baseUrl,
@@ -631,7 +668,7 @@ export function createFromOpenAPI(
 
 	const defaultHostCapabilities = resolveDefaultHostCaps(
 		parsed,
-		opts.defaultHostCapabilities,
+		opts.defaultHostCapabilities
 	);
 
 	return {
@@ -641,8 +678,8 @@ export function createFromOpenAPI(
 			: {}),
 		capabilities,
 		onExecute,
-		...(defaultHostCapabilities !== undefined
-			? { defaultHostCapabilities }
-			: {}),
+		...(defaultHostCapabilities === undefined
+			? {}
+			: { defaultHostCapabilities }),
 	};
 }

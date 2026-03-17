@@ -1,10 +1,10 @@
 import {
 	exportJWK,
 	generateKeyPair,
-	jwtVerify,
-	SignJWT,
 	importJWK,
 	errors as joseErrors,
+	jwtVerify,
+	SignJWT,
 } from "jose";
 import type { AgentJWK } from "../types";
 
@@ -18,9 +18,16 @@ const CRV_TO_ALG: Record<string, string> = {
 
 /** Derive the JWA algorithm identifier from a JWK's `crv` or `kty`. */
 function resolveAlgorithm(key: AgentJWK): string {
-	if (key.crv && CRV_TO_ALG[key.crv]) return CRV_TO_ALG[key.crv];
-	if (key.kty === "OKP") return "EdDSA";
-	if (key.kty === "RSA") return "RS256";
+	const crvAlg = key.crv ? CRV_TO_ALG[key.crv] : undefined;
+	if (crvAlg) {
+		return crvAlg;
+	}
+	if (key.kty === "OKP") {
+		return "EdDSA";
+	}
+	if (key.kty === "RSA") {
+		return "RS256";
+	}
 	return "EdDSA";
 }
 
@@ -42,17 +49,22 @@ export async function generateAgentKeypair(): Promise<{
 
 /** Base64url-encode a Uint8Array without padding. */
 function base64url(bytes: Uint8Array): string {
-	const lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	const lookup =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 	let result = "";
 	const len = bytes.length;
 	for (let i = 0; i < len; i += 3) {
-		const b0 = bytes[i];
-		const b1 = i + 1 < len ? bytes[i + 1] : 0;
-		const b2 = i + 2 < len ? bytes[i + 2] : 0;
+		const b0 = bytes[i]!;
+		const b1 = i + 1 < len ? bytes[i + 1]! : 0;
+		const b2 = i + 2 < len ? bytes[i + 2]! : 0;
 		result += lookup[b0 >> 2];
 		result += lookup[((b0 & 0x03) << 4) | (b1 >> 4)];
-		if (i + 1 < len) result += lookup[((b1 & 0x0f) << 2) | (b2 >> 6)];
-		if (i + 2 < len) result += lookup[b2 & 0x3f];
+		if (i + 1 < len) {
+			result += lookup[((b1 & 0x0f) << 2) | (b2 >> 6)];
+		}
+		if (i + 2 < len) {
+			result += lookup[b2 & 0x3f];
+		}
 	}
 	return result;
 }
@@ -61,37 +73,35 @@ function base64url(bytes: Uint8Array): string {
 export async function hashRequestBody(body: string): Promise<string> {
 	const digest = await globalThis.crypto.subtle.digest(
 		"SHA-256",
-		new TextEncoder().encode(body),
+		new TextEncoder().encode(body)
 	);
 	return base64url(new Uint8Array(digest));
 }
 
 export interface SignAgentJWTOptions {
-	privateKey: AgentJWK;
-	/** JWT `sub` claim. */
-	subject: string;
+	/** Additional claims. */
+	additionalClaims?: Record<string, unknown>;
+	ath?: string;
 	/** JWT `aud` claim — the server's issuer URL. */
 	audience: string;
-	/** JWT `typ` header (§4.2/§4.5). @default "agent+jwt" */
-	typ?: "host+jwt" | "agent+jwt";
-	/** JWT `iss` claim — required for host JWTs (§4.2). */
-	issuer?: string;
-	/** Expiry in seconds from now. @default 60 */
-	expiresInSeconds?: number;
 	/** Optional capabilities to restrict this JWT to (§5.3). */
 	capabilities?: string[];
+	/** Expiry in seconds from now. @default 60 */
+	expiresInSeconds?: number;
 	/** Optional DPoP-style claims. */
 	htm?: string;
 	htu?: string;
-	ath?: string;
-	/** Additional claims. */
-	additionalClaims?: Record<string, unknown>;
+	/** JWT `iss` claim — required for host JWTs (§4.2). */
+	issuer?: string;
+	privateKey: AgentJWK;
+	/** JWT `sub` claim. */
+	subject: string;
+	/** JWT `typ` header (§4.2/§4.5). @default "agent+jwt" */
+	typ?: "host+jwt" | "agent+jwt";
 }
 
 /** Sign a short-lived JWT with the given private key (§5.2 / §5.3). */
-export async function signAgentJWT(
-	opts: SignAgentJWTOptions,
-): Promise<string> {
+export async function signAgentJWT(opts: SignAgentJWTOptions): Promise<string> {
 	const alg = resolveAlgorithm(opts.privateKey);
 	const key = await importJWK(opts.privateKey, alg);
 	const builder = new SignJWT({
@@ -117,9 +127,9 @@ export async function signAgentJWT(
 
 export interface VerifyJWTOptions {
 	jwt: string;
-	publicKey: AgentJWK;
 	/** Maximum acceptable age in seconds. */
 	maxAge: number;
+	publicKey: AgentJWK;
 }
 
 /**
@@ -130,7 +140,7 @@ export interface VerifyJWTOptions {
  * JWT header, to prevent algorithm confusion attacks (§5.1).
  */
 export async function verifyJWT(
-	opts: VerifyJWTOptions,
+	opts: VerifyJWTOptions
 ): Promise<Record<string, unknown> | null> {
 	try {
 		const alg = resolveAlgorithm(opts.publicKey);
@@ -141,7 +151,9 @@ export async function verifyJWT(
 		});
 		return payload as Record<string, unknown>;
 	} catch (err) {
-		if (err instanceof joseErrors.JOSEError) return null;
+		if (err instanceof joseErrors.JOSEError) {
+			return null;
+		}
 		throw err;
 	}
 }

@@ -2,13 +2,9 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
-import type {
-	Agent,
-	AgentHost,
-	ResolvedAgentAuthOptions,
-} from "../../types";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../../types";
 import { checkSharedOrg } from "../_helpers";
 
 /**
@@ -58,7 +54,7 @@ export function switchHostAccount(opts: ResolvedAgentAuthOptions) {
 				const sameOrg = await checkSharedOrg(
 					ctx.context.adapter,
 					session.user.id,
-					host.userId,
+					host.userId
 				);
 				if (!sameOrg) {
 					throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
@@ -120,7 +116,7 @@ export function switchHostAccount(opts: ResolvedAgentAuthOptions) {
 						agentsRevoked,
 					},
 				},
-				ctx,
+				ctx
 			);
 
 			if (opts.onHostClaimed) {
@@ -139,6 +135,6 @@ export function switchHostAccount(opts: ResolvedAgentAuthOptions) {
 				new_user_id: session.user.id,
 				agents_revoked: agentsRevoked,
 			});
-		},
+		}
 	);
 }

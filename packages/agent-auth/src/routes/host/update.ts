@@ -2,15 +2,15 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
-import { parseCapabilityIds } from "../../utils/capabilities";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import type { AgentHost, ResolvedAgentAuthOptions } from "../../types";
+import { parseCapabilityIds } from "../../utils/capabilities";
 import {
 	checkSharedOrg,
-	validateKeyAlgorithm,
-	validateCapabilityIds,
 	validateCapabilitiesExist,
+	validateCapabilityIds,
+	validateKeyAlgorithm,
 } from "../_helpers";
 
 export function updateHost(opts: ResolvedAgentAuthOptions) {
@@ -27,7 +27,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 				public_key: z
 					.record(
 						z.string(),
-						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+						z.union([z.string(), z.boolean(), z.array(z.string())]).optional()
 					)
 					.optional()
 					.meta({ description: "New static public key as JWK" }),
@@ -72,7 +72,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 				const sameOrg = await checkSharedOrg(
 					ctx.context.adapter,
 					session.user.id,
-					host.userId,
+					host.userId
 				);
 				if (!sameOrg) {
 					throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
@@ -92,7 +92,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 			}
 
 			if (publicKey) {
-				if (!publicKey.kty || !publicKey.x) {
+				if (!(publicKey.kty && publicKey.x)) {
 					throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 				}
 				validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
@@ -121,22 +121,28 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
 				where: [{ field: "id", value: host.id }],
 			});
 
-			emit(opts, {
-				type: "host.updated",
-				actorId: session.user.id,
-				hostId: host.id,
-				metadata: { name, defaultCapabilities: defaultCapabilityIds, jwksUrl },
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "host.updated",
+					actorId: session.user.id,
+					hostId: host.id,
+					metadata: {
+						name,
+						defaultCapabilities: defaultCapabilityIds,
+						jwksUrl,
+					},
+				},
+				ctx
+			);
 
 			return ctx.json({
-				id: updated!.id,
-				default_capabilities: parseCapabilityIds(
-					updated!.defaultCapabilities,
-				),
-				jwks_url: updated!.jwksUrl,
-				status: updated!.status,
-				updated_at: updated!.updatedAt,
+				id: updated?.id,
+				default_capabilities: parseCapabilityIds(updated?.defaultCapabilities),
+				jwks_url: updated?.jwksUrl,
+				status: updated?.status,
+				updated_at: updated?.updatedAt,
 			});
-		},
+		}
 	);
 }

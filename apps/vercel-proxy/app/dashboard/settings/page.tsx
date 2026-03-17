@@ -54,46 +54,40 @@ export default function SettingsPage() {
 		<div className="mx-auto w-full max-w-3xl px-6 py-8">
 			<div className="flex flex-col gap-8">
 				<div>
-					<h1 className="text-lg font-semibold text-white">
-						Settings
-					</h1>
-					<p className="mt-1 text-sm text-muted">
+					<h1 className="font-semibold text-lg text-white">Settings</h1>
+					<p className="mt-1 text-muted text-sm">
 						Configure security and approval settings for Agent Auth.
 					</p>
 				</div>
 
 				<div className="flex flex-col gap-3">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+					<h2 className="font-medium text-muted text-xs uppercase tracking-wider">
 						Session Security
 					</h2>
 					<div className="rounded-lg border border-border bg-surface">
-						<div className="flex items-center justify-between border-b border-border px-4 py-4">
+						<div className="flex items-center justify-between border-border border-b px-4 py-4">
 							<div className="flex-1 pr-4">
-								<p className="text-sm font-medium text-white">
+								<p className="font-medium text-sm text-white">
 									Require fresh session for approvals
 								</p>
-								<p className="mt-1 text-xs text-muted">
-									When enabled, users must have signed in
-									recently to approve agent capability
-									requests. Helps prevent stale session
+								<p className="mt-1 text-muted text-xs">
+									When enabled, users must have signed in recently to approve
+									agent capability requests. Helps prevent stale session
 									hijacking.
 								</p>
 							</div>
 							<button
-								type="button"
-								role="switch"
 								aria-checked={settings.freshSessionEnabled}
+								className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+									settings.freshSessionEnabled ? "bg-white" : "bg-zinc-700"
+								}`}
 								onClick={() =>
 									save({
-										freshSessionEnabled:
-											!settings.freshSessionEnabled,
+										freshSessionEnabled: !settings.freshSessionEnabled,
 									})
 								}
-								className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-									settings.freshSessionEnabled
-										? "bg-white"
-										: "bg-zinc-700"
-								}`}
+								role="switch"
+								type="button"
 							>
 								<span
 									className={`pointer-events-none inline-block h-5 w-5 rounded-full shadow-lg transition-transform ${
@@ -108,41 +102,34 @@ export default function SettingsPage() {
 						{settings.freshSessionEnabled && (
 							<div className="flex items-center justify-between px-4 py-4">
 								<div className="flex-1 pr-4">
-									<p className="text-sm font-medium text-white">
+									<p className="font-medium text-sm text-white">
 										Session window
 									</p>
-									<p className="mt-1 text-xs text-muted">
-										Maximum age (in seconds) of the session
-										at time of approval.
+									<p className="mt-1 text-muted text-xs">
+										Maximum age (in seconds) of the session at time of approval.
 									</p>
 								</div>
 								<div className="flex items-center gap-2">
 									<input
-										type="number"
+										className="w-24 rounded-md border border-border bg-background px-3 py-1.5 text-right text-sm text-white outline-none focus:border-white/30"
+										max={86_400}
 										min={30}
-										max={86400}
-										value={settings.freshSessionWindow}
+										onBlur={() =>
+											save({
+												freshSessionWindow: settings.freshSessionWindow,
+											})
+										}
 										onChange={(e) =>
 											setSettings((s) => ({
 												...s!,
 												freshSessionWindow:
-													parseInt(
-														e.target.value,
-														10,
-													) || 300,
+													Number.parseInt(e.target.value, 10) || 300,
 											}))
 										}
-										onBlur={() =>
-											save({
-												freshSessionWindow:
-													settings.freshSessionWindow,
-											})
-										}
-										className="w-24 rounded-md border border-border bg-background px-3 py-1.5 text-right text-sm text-white outline-none focus:border-white/30"
+										type="number"
+										value={settings.freshSessionWindow}
 									/>
-									<span className="text-xs text-muted">
-										sec
-									</span>
+									<span className="text-muted text-xs">sec</span>
 								</div>
 							</div>
 						)}
@@ -150,19 +137,18 @@ export default function SettingsPage() {
 				</div>
 
 				<div className="flex flex-col gap-3">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+					<h2 className="font-medium text-muted text-xs uppercase tracking-wider">
 						Approval Method
 					</h2>
 					<div className="rounded-lg border border-border bg-surface">
 						<div className="px-4 py-4">
-							<p className="text-sm font-medium text-white">
+							<p className="font-medium text-sm text-white">
 								Preferred approval method
 							</p>
-							<p className="mt-1 text-xs text-muted">
-								Choose how agents request user approval for
-								capabilities. The agent can still request a
-								specific method, but this sets the server
-								default.
+							<p className="mt-1 text-muted text-xs">
+								Choose how agents request user approval for capabilities. The
+								agent can still request a specific method, but this sets the
+								server default.
 							</p>
 							<div className="mt-3 flex gap-3">
 								{(
@@ -180,32 +166,29 @@ export default function SettingsPage() {
 									] as const
 								).map((opt) => (
 									<button
-										key={opt.value}
-										type="button"
-										onClick={() =>
-											save({
-												preferredApprovalMethod:
-													opt.value,
-											})
-										}
 										className={`flex flex-1 flex-col rounded-lg border px-4 py-3 text-left transition-colors ${
-											settings.preferredApprovalMethod ===
-											opt.value
+											settings.preferredApprovalMethod === opt.value
 												? "border-white bg-white/5"
 												: "border-border hover:border-white/20"
 										}`}
+										key={opt.value}
+										onClick={() =>
+											save({
+												preferredApprovalMethod: opt.value,
+											})
+										}
+										type="button"
 									>
 										<span
-											className={`text-sm font-medium ${
-												settings.preferredApprovalMethod ===
-												opt.value
+											className={`font-medium text-sm ${
+												settings.preferredApprovalMethod === opt.value
 													? "text-white"
 													: "text-zinc-400"
 											}`}
 										>
 											{opt.label}
 										</span>
-										<span className="mt-0.5 text-xs text-muted">
+										<span className="mt-0.5 text-muted text-xs">
 											{opt.desc}
 										</span>
 									</button>
@@ -215,17 +198,17 @@ export default function SettingsPage() {
 					</div>
 				</div>
 
-			<div className="flex flex-col gap-3">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+				<div className="flex flex-col gap-3">
+					<h2 className="font-medium text-muted text-xs uppercase tracking-wider">
 						Proof of Presence (WebAuthn)
 					</h2>
 					<div className="rounded-lg border border-border bg-surface">
-						<div className="flex items-center justify-between border-b border-border px-4 py-4">
+						<div className="flex items-center justify-between border-border border-b px-4 py-4">
 							<div className="flex-1 pr-4">
-								<p className="text-sm font-medium text-white">
+								<p className="font-medium text-sm text-white">
 									Require biometric verification for sensitive actions
 								</p>
-								<p className="mt-1 text-xs text-muted">
+								<p className="mt-1 text-muted text-xs">
 									When enabled, capabilities marked with{" "}
 									<code className="rounded bg-white/10 px-1 py-0.5 text-[11px]">
 										approvalStrength: &quot;webauthn&quot;
@@ -236,20 +219,17 @@ export default function SettingsPage() {
 								</p>
 							</div>
 							<button
-								type="button"
-								role="switch"
 								aria-checked={settings.webauthnEnabled}
+								className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+									settings.webauthnEnabled ? "bg-white" : "bg-zinc-700"
+								}`}
 								onClick={() =>
 									save({
-										webauthnEnabled:
-											!settings.webauthnEnabled,
+										webauthnEnabled: !settings.webauthnEnabled,
 									})
 								}
-								className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-									settings.webauthnEnabled
-										? "bg-white"
-										: "bg-zinc-700"
-								}`}
+								role="switch"
+								type="button"
 							>
 								<span
 									className={`pointer-events-none inline-block h-5 w-5 rounded-full shadow-lg transition-transform ${
@@ -261,17 +241,15 @@ export default function SettingsPage() {
 							</button>
 						</div>
 
-						{settings.webauthnEnabled && (
-							<PasskeyManager />
-						)}
+						{settings.webauthnEnabled && <PasskeyManager />}
 					</div>
 				</div>
 
 				{(saving || saved) && (
-				<p className="text-xs text-muted">
-					{saving ? "Saving…" : "Settings saved."}
-				</p>
-			)}
+					<p className="text-muted text-xs">
+						{saving ? "Saving…" : "Settings saved."}
+					</p>
+				)}
 			</div>
 		</div>
 	);
@@ -301,7 +279,7 @@ function PasskeyManager() {
 
 	useEffect(() => {
 		fetchPasskeys();
-	}, []);
+	}, [fetchPasskeys]);
 
 	const handleRegister = async () => {
 		setRegistering(true);
@@ -317,8 +295,10 @@ function PasskeyManager() {
 			}
 		} catch (e: unknown) {
 			const msg =
-				e instanceof Error ? e.message : "Passkey registration cancelled or failed";
-			if (!msg.includes("cancelled") && !msg.includes("abort")) {
+				e instanceof Error
+					? e.message
+					: "Passkey registration cancelled or failed";
+			if (!(msg.includes("cancelled") || msg.includes("abort"))) {
 				setError(msg);
 			}
 		} finally {
@@ -330,46 +310,41 @@ function PasskeyManager() {
 		<div className="px-4 py-4">
 			<div className="flex items-center justify-between">
 				<div>
-					<p className="text-sm font-medium text-white">Your passkeys</p>
-					<p className="mt-1 text-xs text-muted">
+					<p className="font-medium text-sm text-white">Your passkeys</p>
+					<p className="mt-1 text-muted text-xs">
 						Register at least one passkey to enable biometric approvals.
 					</p>
 				</div>
 				<button
-					type="button"
-					onClick={handleRegister}
+					className="rounded-md bg-white px-3 py-1.5 font-medium text-black text-xs transition-opacity hover:opacity-90 disabled:opacity-50"
 					disabled={registering}
-					className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+					onClick={handleRegister}
+					type="button"
 				>
 					{registering ? "Registering…" : "+ Add Passkey"}
 				</button>
 			</div>
 
-			{error && (
-				<p className="mt-2 text-xs text-red-400">{error}</p>
-			)}
+			{error && <p className="mt-2 text-red-400 text-xs">{error}</p>}
 
 			{loading ? (
 				<div className="mt-3 h-8 w-full animate-pulse rounded bg-white/5" />
 			) : passkeys.length === 0 ? (
 				<p className="mt-3 text-xs text-yellow-400/80">
-					No passkeys registered. WebAuthn approvals will fail until you add one.
+					No passkeys registered. WebAuthn approvals will fail until you add
+					one.
 				</p>
 			) : (
 				<ul className="mt-3 divide-y divide-border">
 					{passkeys.map((pk) => (
-						<li
-							key={pk.id}
-							className="flex items-center justify-between py-2"
-						>
+						<li className="flex items-center justify-between py-2" key={pk.id}>
 							<div>
 								<p className="text-sm text-white">
 									{pk.name ?? "Unnamed passkey"}
 								</p>
 								{pk.createdAt && (
 									<p className="text-[11px] text-muted">
-										Added{" "}
-										{new Date(pk.createdAt).toLocaleDateString()}
+										Added {new Date(pk.createdAt).toLocaleDateString()}
 									</p>
 								)}
 							</div>

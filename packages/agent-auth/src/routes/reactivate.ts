@@ -1,9 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
-import { parseCapabilityIds } from "../utils/capabilities";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -11,6 +10,7 @@ import type {
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../types";
+import { parseCapabilityIds } from "../utils/capabilities";
 import {
 	buildApprovalInfo,
 	createGrantRows,
@@ -61,15 +61,19 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 
 			// §6.6 state checks
 			if (agent.status === "active") {
-				const grants =
-					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+				const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>(
+					{
 						model: TABLE.grant,
 						where: [{ field: "agentId", value: agent.id }],
-					});
+					}
+				);
 				return ctx.json({
 					agent_id: agent.id,
 					status: "active" as const,
-					agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+					agent_capability_grants: formatGrantsResponse(
+						grants,
+						opts.capabilities
+					),
 					activated_at: agent.activatedAt,
 					expires_at: agent.expiresAt,
 				});
@@ -90,8 +94,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 			// Absolute lifetime check (§2.4)
 			if (opts.absoluteLifetime > 0 && agent.createdAt) {
 				const absoluteExpiry =
-					new Date(agent.createdAt).getTime() +
-					opts.absoluteLifetime * 1000;
+					new Date(agent.createdAt).getTime() + opts.absoluteLifetime * 1000;
 				if (Date.now() >= absoluteExpiry) {
 					const revokedAt = new Date();
 					await Promise.all([
@@ -111,10 +114,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 							update: { status: "revoked", updatedAt: revokedAt },
 						}),
 					]);
-					throw agentError(
-						"FORBIDDEN",
-						ERR.ABSOLUTE_LIFETIME_EXCEEDED,
-					);
+					throw agentError("FORBIDDEN", ERR.ABSOLUTE_LIFETIME_EXCEEDED);
 				}
 			}
 
@@ -128,14 +128,11 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 			}
 
-			const baseCapabilityIds = parseCapabilityIds(
-				host.defaultCapabilities,
-			);
+			const baseCapabilityIds = parseCapabilityIds(host.defaultCapabilities);
 
 			const now = new Date();
 			const isHostLinked = !!host.userId;
-			const needsApproval =
-				!isHostLinked && baseCapabilityIds.length > 0;
+			const needsApproval = !isHostLinked && baseCapabilityIds.length > 0;
 
 			// Revoke all existing grants and re-grant host defaults
 			await createGrantRows(
@@ -147,11 +144,13 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 					clearExisting: true,
 					status: needsApproval ? "pending" : "active",
 				},
-				needsApproval ? undefined : {
-					pluginOpts: opts,
-					hostId: agent.hostId,
-					userId: agent.userId,
-				},
+				needsApproval
+					? undefined
+					: {
+							pluginOpts: opts,
+							hostId: agent.hostId,
+							userId: agent.userId,
+						}
 			);
 
 			const newStatus = needsApproval ? "pending" : "active";
@@ -172,28 +171,34 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				},
 			});
 
-			const grants =
-				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-					model: TABLE.grant,
-					where: [{ field: "agentId", value: agent.id }],
-				});
+			const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+				model: TABLE.grant,
+				where: [{ field: "agentId", value: agent.id }],
+			});
 
-			emit(opts, {
-				type: "agent.reactivated",
-				actorType: "agent",
-				agentId: agent.id,
-				hostId: agent.hostId ?? undefined,
-				metadata: {
-					capabilities: grants
-						.filter((g) => g.status === "active")
-						.map((g) => g.capability),
+			emit(
+				opts,
+				{
+					type: "agent.reactivated",
+					actorType: "agent",
+					agentId: agent.id,
+					hostId: agent.hostId ?? undefined,
+					metadata: {
+						capabilities: grants
+							.filter((g) => g.status === "active")
+							.map((g) => g.capability),
+					},
 				},
-			}, ctx);
+				ctx
+			);
 
 			const response: Record<string, unknown> = {
 				agent_id: agent.id,
 				status: newStatus,
-				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+				agent_capability_grants: formatGrantsResponse(
+					grants,
+					opts.capabilities
+				),
 				activated_at: needsApproval ? null : now.toISOString(),
 				expires_at: expiresAt ? expiresAt.toISOString() : null,
 			};
@@ -211,11 +216,11 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 						agentName: agent.name,
 						hostId: agent.hostId,
 						capabilities: baseCapabilityIds,
-					},
+					}
 				);
 			}
 
 			return ctx.json(response);
-		},
+		}
 	);
 }

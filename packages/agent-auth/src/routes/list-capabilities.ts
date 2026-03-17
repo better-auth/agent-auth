@@ -1,7 +1,11 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import {
+	agentAuthChallenge,
+	agentError,
+	AGENT_AUTH_ERROR_CODES as ERR,
+} from "../errors";
 import type {
 	AgentCapabilityGrant,
 	AgentSession,
@@ -44,16 +48,12 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 			const hostSession = (ctx.context as Record<string, unknown>)
 				.hostSession as HostSession | undefined;
 
-			if (
-				opts.requireAuthForCapabilities &&
-				!agentSession &&
-				!hostSession
-			) {
+			if (opts.requireAuthForCapabilities && !agentSession && !hostSession) {
 				throw agentError(
 					"UNAUTHORIZED",
 					ERR.AUTH_REQUIRED_FOR_CAPABILITIES,
 					undefined,
-					agentAuthChallenge(ctx.context.baseURL),
+					agentAuthChallenge(ctx.context.baseURL)
 				);
 			}
 
@@ -96,24 +96,25 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 			let grantedCapabilityIds: Set<string> | null = null;
 
 			if (agentSession) {
-				const grants =
-					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+				const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>(
+					{
 						model: TABLE.grant,
 						where: [{ field: "agentId", value: agentSession.agent.id }],
-					});
+					}
+				);
 
 				grantedCapabilityIds = new Set(
 					grants
 						.filter(
 							(g) =>
 								g.status === "active" &&
-								(!g.expiresAt || new Date(g.expiresAt) > new Date()),
+								(!g.expiresAt || new Date(g.expiresAt) > new Date())
 						)
-						.map((g) => g.capability),
+						.map((g) => g.capability)
 				);
 			} else if (hostSession) {
 				grantedCapabilityIds = new Set(
-					hostSession.host.defaultCapabilities ?? [],
+					hostSession.host.defaultCapabilities ?? []
 				);
 			}
 
@@ -129,9 +130,7 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 						typeof input === "object" &&
 						input.properties &&
 						typeof input.properties === "object"
-							? Object.keys(
-									input.properties as Record<string, unknown>,
-								)
+							? Object.keys(input.properties as Record<string, unknown>)
 							: undefined;
 					return {
 						...summary,
@@ -151,10 +150,8 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 					};
 				}),
 				has_more: hasMore,
-				...(hasMore
-					? { next_cursor: String(cursorIdx + limit) }
-					: {}),
+				...(hasMore ? { next_cursor: String(cursorIdx + limit) } : {}),
 			});
-		},
+		}
 	);
 }

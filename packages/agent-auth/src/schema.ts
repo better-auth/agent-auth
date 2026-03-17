@@ -1,7 +1,13 @@
 import type { BetterAuthPluginDBSchema } from "@better-auth/core/db";
 
-type ConstraintPrim = string | number | boolean;
-type ConstraintOps = { eq?: ConstraintPrim; min?: number; max?: number; in?: ConstraintPrim[]; not_in?: ConstraintPrim[] };
+export type ConstraintPrim = string | number | boolean;
+export interface ConstraintOps {
+	eq?: ConstraintPrim;
+	in?: ConstraintPrim[];
+	max?: number;
+	min?: number;
+	not_in?: ConstraintPrim[];
+}
 type ConstraintRecord = Record<string, ConstraintPrim | ConstraintOps>;
 
 function parseJSON<T>(value: string): T {
@@ -37,7 +43,9 @@ export const agentSchema = () =>
 							return JSON.stringify(value);
 						},
 						output(value: unknown) {
-							if (!value) return [];
+							if (!value) {
+								return [];
+							}
 							return parseJSON<string[]>(value as string);
 						},
 					},
@@ -176,7 +184,9 @@ export const agentSchema = () =>
 							return JSON.stringify(value);
 						},
 						output(value: unknown) {
-							if (!value) return null;
+							if (!value) {
+								return null;
+							}
 							return parseJSON<Record<string, unknown>>(value as string);
 						},
 					},
@@ -207,12 +217,12 @@ export const agentSchema = () =>
 					required: true,
 					input: false,
 				},
-			deniedBy: {
-				type: "string",
-				references: { model: "user", field: "id", onDelete: "cascade" },
-				required: false,
-				input: false,
-			},
+				deniedBy: {
+					type: "string",
+					references: { model: "user", field: "id", onDelete: "cascade" },
+					required: false,
+					input: false,
+				},
 				grantedBy: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },
@@ -235,35 +245,39 @@ export const agentSchema = () =>
 					required: true,
 					input: false,
 				},
-			status: {
-				type: "string",
-				required: true,
-				input: false,
-				defaultValue: "active",
-			},
-			reason: {
-				type: "string",
-				required: false,
-				input: false,
-			},
-			constraints: {
-				type: "string",
-				required: false,
-				input: false,
-				transform: {
-					input(value: unknown) {
-						if (!value) return null;
-						return typeof value === "string" ? value : JSON.stringify(value);
-					},
-					output(value: unknown) {
-						if (!value) return null;
-						return parseJSON<ConstraintRecord>(value as string);
+				status: {
+					type: "string",
+					required: true,
+					input: false,
+					defaultValue: "active",
+				},
+				reason: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+				constraints: {
+					type: "string",
+					required: false,
+					input: false,
+					transform: {
+						input(value: unknown) {
+							if (!value) {
+								return null;
+							}
+							return typeof value === "string" ? value : JSON.stringify(value);
+						},
+						output(value: unknown) {
+							if (!value) {
+								return null;
+							}
+							return parseJSON<ConstraintRecord>(value as string);
+						},
 					},
 				},
 			},
 		},
-	},
-	approvalRequest: {
+		approvalRequest: {
 			fields: {
 				method: {
 					type: "string",

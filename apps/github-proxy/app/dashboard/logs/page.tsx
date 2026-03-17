@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 function Spinner() {
 	return (
 		<svg
-			className="animate-spin h-4 w-4 text-muted"
-			viewBox="0 0 24 24"
+			className="h-4 w-4 animate-spin text-muted"
 			fill="none"
+			viewBox="0 0 24 24"
 		>
 			<circle
 				className="opacity-25"
@@ -19,8 +19,8 @@ function Spinner() {
 			/>
 			<path
 				className="opacity-75"
-				fill="currentColor"
 				d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+				fill="currentColor"
 			/>
 		</svg>
 	);
@@ -36,7 +36,7 @@ function EventTypeBadge({ type }: { type: string }) {
 	};
 	return (
 		<span
-			className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${styles[category] ?? "border-muted/40 bg-muted/10 text-muted"}`}
+			className={`inline-flex items-center rounded-full border px-2 py-0.5 font-medium text-[11px] ${styles[category] ?? "border-muted/40 bg-muted/10 text-muted"}`}
 		>
 			{type}
 		</span>
@@ -44,14 +44,14 @@ function EventTypeBadge({ type }: { type: string }) {
 }
 
 interface LogEntry {
-	id: number;
-	type: string;
 	actorId: string | null;
 	actorType: string | null;
 	agentId: string | null;
-	hostId: string | null;
-	data: Record<string, unknown> | null;
 	createdAt: string;
+	data: Record<string, unknown> | null;
+	hostId: string | null;
+	id: number;
+	type: string;
 }
 
 const EVENT_CATEGORIES = [
@@ -63,15 +63,23 @@ const EVENT_CATEGORIES = [
 ];
 
 function formatTimestamp(ts: string) {
-	const d = new Date(ts + "Z");
-	if (isNaN(d.getTime())) return ts;
+	const d = new Date(`${ts}Z`);
+	if (Number.isNaN(d.getTime())) {
+		return ts;
+	}
 	const now = Date.now();
 	const diff = now - d.getTime();
 	const seconds = Math.floor(diff / 1000);
 
-	if (seconds < 60) return "just now";
-	if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-	if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+	if (seconds < 60) {
+		return "just now";
+	}
+	if (seconds < 3600) {
+		return `${Math.floor(seconds / 60)}m ago`;
+	}
+	if (seconds < 86_400) {
+		return `${Math.floor(seconds / 3600)}h ago`;
+	}
 
 	return d.toLocaleDateString("en-US", {
 		month: "short",
@@ -97,7 +105,9 @@ export default function LogsPage() {
 				limit: String(pageSize),
 				offset: String(page * pageSize),
 			});
-			if (category) params.set("type", category);
+			if (category) {
+				params.set("type", category);
+			}
 
 			const res = await fetch(`/api/logs?${params}`);
 			if (res.ok) {
@@ -118,7 +128,9 @@ export default function LogsPage() {
 	}, [fetchLogs]);
 
 	useEffect(() => {
-		if (!autoRefresh) return;
+		if (!autoRefresh) {
+			return;
+		}
 		const interval = setInterval(fetchLogs, 3000);
 		return () => clearInterval(interval);
 	}, [autoRefresh, fetchLogs]);
@@ -130,33 +142,31 @@ export default function LogsPage() {
 			<div className="flex flex-col gap-6">
 				<div className="flex items-start justify-between">
 					<div>
-						<h1 className="text-lg font-semibold text-white">
-							Event Logs
-						</h1>
-						<p className="mt-1 text-sm text-muted">
+						<h1 className="font-semibold text-lg text-white">Event Logs</h1>
+						<p className="mt-1 text-muted text-sm">
 							Audit trail of agent, host, and capability events.
 						</p>
 					</div>
 					<div className="flex items-center gap-3">
 						<button
-							onClick={() => setAutoRefresh(!autoRefresh)}
-							className={`cursor-pointer flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors ${
+							className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors ${
 								autoRefresh
 									? "border-gh-green-emphasis/40 text-gh-green-emphasis"
 									: "border-border text-muted hover:text-foreground"
 							}`}
+							onClick={() => setAutoRefresh(!autoRefresh)}
 						>
 							<span
-								className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? "bg-gh-green-emphasis animate-pulse" : "bg-muted/50"}`}
+								className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? "animate-pulse bg-gh-green-emphasis" : "bg-muted/50"}`}
 							/>
 							{autoRefresh ? "Live" : "Auto-refresh"}
 						</button>
 						<button
+							className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-muted text-xs transition-colors hover:text-foreground"
 							onClick={() => {
 								setLoading(true);
 								fetchLogs();
 							}}
-							className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground"
 						>
 							Refresh
 						</button>
@@ -166,16 +176,16 @@ export default function LogsPage() {
 				<div className="flex gap-1 rounded-md border border-border bg-surface p-0.5">
 					{EVENT_CATEGORIES.map((cat) => (
 						<button
+							className={`cursor-pointer rounded px-3 py-1 font-medium text-xs transition-colors ${
+								category === (cat.prefix ?? "")
+									? "bg-accent/15 text-accent"
+									: "text-muted hover:text-foreground"
+							}`}
 							key={cat.label}
 							onClick={() => {
 								setCategory(cat.prefix ?? "");
 								setPage(0);
 							}}
-							className={`cursor-pointer rounded px-3 py-1 text-xs font-medium transition-colors ${
-								category === (cat.prefix ?? "")
-									? "bg-accent/15 text-accent"
-									: "text-muted hover:text-foreground"
-							}`}
 						>
 							{cat.label}
 						</button>
@@ -187,24 +197,23 @@ export default function LogsPage() {
 						<Spinner />
 					</div>
 				) : logs.length === 0 ? (
-					<div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-16">
+					<div className="flex flex-col items-center justify-center rounded-lg border border-border border-dashed py-16">
 						<svg
-							className="h-8 w-8 text-muted/30 mb-3"
+							className="mb-3 h-8 w-8 text-muted/30"
 							fill="none"
-							viewBox="0 0 24 24"
 							stroke="currentColor"
+							viewBox="0 0 24 24"
 						>
 							<path
+								d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
 								strokeLinecap="round"
 								strokeLinejoin="round"
 								strokeWidth={1.5}
-								d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
 							/>
 						</svg>
-						<p className="text-sm text-muted">No events yet</p>
-						<p className="mt-1 text-xs text-muted/60">
-							Events will appear here as agents interact with the
-							system.
+						<p className="text-muted text-sm">No events yet</p>
+						<p className="mt-1 text-muted/60 text-xs">
+							Events will appear here as agents interact with the system.
 						</p>
 					</div>
 				) : (
@@ -214,66 +223,46 @@ export default function LogsPage() {
 								const isExpanded = expandedLog === log.id;
 								return (
 									<button
+										className="flex w-full cursor-pointer flex-col rounded-lg border border-border bg-surface text-left transition-colors hover:bg-surface-hover"
 										key={log.id}
-										onClick={() =>
-											setExpandedLog(
-												isExpanded ? null : log.id,
-											)
-										}
-										className="cursor-pointer flex flex-col w-full rounded-lg border border-border bg-surface text-left transition-colors hover:bg-surface-hover"
+										onClick={() => setExpandedLog(isExpanded ? null : log.id)}
 									>
 										<div className="flex items-center gap-3 px-4 py-2.5">
 											<EventTypeBadge type={log.type} />
-											<div className="flex-1 min-w-0 flex items-center gap-3">
+											<div className="flex min-w-0 flex-1 items-center gap-3">
 												{log.agentId && (
-													<span className="text-xs text-muted truncate">
+													<span className="truncate text-muted text-xs">
 														agent:{" "}
 														<code className="text-foreground/70">
-															{log.agentId.slice(
-																0,
-																8,
-															)}
-															…
+															{log.agentId.slice(0, 8)}…
 														</code>
 													</span>
 												)}
 												{log.hostId && (
-													<span className="text-xs text-muted truncate">
+													<span className="truncate text-muted text-xs">
 														host:{" "}
 														<code className="text-foreground/70">
-															{log.hostId.slice(
-																0,
-																8,
-															)}
-															…
+															{log.hostId.slice(0, 8)}…
 														</code>
 													</span>
 												)}
 												{log.actorId && (
-													<span className="text-xs text-muted truncate">
+													<span className="truncate text-muted text-xs">
 														by{" "}
 														<code className="text-foreground/70">
-															{log.actorId.slice(
-																0,
-																8,
-															)}
-															…
+															{log.actorId.slice(0, 8)}…
 														</code>
 													</span>
 												)}
 											</div>
-											<span className="text-[11px] text-muted/60 shrink-0">
+											<span className="shrink-0 text-[11px] text-muted/60">
 												{formatTimestamp(log.createdAt)}
 											</span>
 										</div>
 										{isExpanded && log.data && (
-											<div className="border-t border-border px-4 py-3">
-												<pre className="text-xs font-mono text-foreground/70 whitespace-pre-wrap break-all">
-													{JSON.stringify(
-														log.data,
-														null,
-														2,
-													)}
+											<div className="border-border border-t px-4 py-3">
+												<pre className="whitespace-pre-wrap break-all font-mono text-foreground/70 text-xs">
+													{JSON.stringify(log.data, null, 2)}
 												</pre>
 											</div>
 										)}
@@ -284,33 +273,22 @@ export default function LogsPage() {
 
 						{totalPages > 1 && (
 							<div className="flex items-center justify-between">
-								<p className="text-xs text-muted">
-									{total} total events
-								</p>
+								<p className="text-muted text-xs">{total} total events</p>
 								<div className="flex items-center gap-2">
 									<button
-										onClick={() =>
-											setPage(Math.max(0, page - 1))
-										}
+										className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-muted text-xs transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
 										disabled={page === 0}
-										className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+										onClick={() => setPage(Math.max(0, page - 1))}
 									>
 										Previous
 									</button>
-									<span className="text-xs text-muted">
+									<span className="text-muted text-xs">
 										{page + 1} / {totalPages}
 									</span>
 									<button
-										onClick={() =>
-											setPage(
-												Math.min(
-													totalPages - 1,
-													page + 1,
-												),
-											)
-										}
+										className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-muted text-xs transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
 										disabled={page >= totalPages - 1}
-										className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+										onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
 									>
 										Next
 									</button>

@@ -2,20 +2,20 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
+import { emit } from "../emit";
 import {
-	agentError,
 	agentAuthChallenge,
+	agentError,
 	AGENT_AUTH_ERROR_CODES as ERR,
 } from "../errors";
-import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
-import { validateConstraints } from "../utils/constraints";
 import type {
 	AgentCapabilityGrant,
 	AgentSession,
 	ConstraintPrimitive,
 	ResolvedAgentAuthOptions,
 } from "../types";
+import { validateConstraints } from "../utils/constraints";
 
 /**
  * POST /capability/execute (§6.11).
@@ -56,7 +56,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					"UNAUTHORIZED",
 					ERR.UNAUTHORIZED_SESSION,
 					undefined,
-					agentAuthChallenge(ctx.context.baseURL),
+					agentAuthChallenge(ctx.context.baseURL)
 				);
 			}
 
@@ -64,13 +64,13 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 
 			const allCapabilities = opts.capabilities ?? [];
 			const capabilityDef = allCapabilities.find(
-				(c) => c.name === capabilityName,
+				(c) => c.name === capabilityName
 			);
 			if (!capabilityDef) {
 				throw agentError(
 					"NOT_FOUND",
 					ERR.CAPABILITY_NOT_FOUND,
-					`Capability "${capabilityName}" does not exist.`,
+					`Capability "${capabilityName}" does not exist.`
 				);
 			}
 
@@ -78,52 +78,68 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 			// already narrowed capabilityGrants to that intersection. Reject
 			// early if the requested capability is outside the JWT scope.
 			const sessionGrant = agentSession.agent.capabilityGrants.find(
-				(g) => g.capability === capabilityName,
+				(g) => g.capability === capabilityName
 			);
 			if (!sessionGrant) {
 				throw agentError(
 					"FORBIDDEN",
 					ERR.CAPABILITY_NOT_GRANTED,
-					`Agent does not have an active grant for capability "${capabilityName}".`,
+					`Agent does not have an active grant for capability "${capabilityName}".`
 				);
 			}
 
-			const grants =
-				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-					model: TABLE.grant,
-					where: [
-						{ field: "agentId", value: agentSession.agent.id },
-						{ field: "capability", value: capabilityName },
-					],
-				});
+			const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+				model: TABLE.grant,
+				where: [
+					{ field: "agentId", value: agentSession.agent.id },
+					{ field: "capability", value: capabilityName },
+				],
+			});
 
 			const now = new Date();
 			const activeGrant = grants.find(
 				(g) =>
-					g.status === "active" &&
-					(!g.expiresAt || new Date(g.expiresAt) > now),
+					g.status === "active" && (!g.expiresAt || new Date(g.expiresAt) > now)
 			);
 
-		if (!activeGrant) {
-			throw agentError(
-				"FORBIDDEN",
-				ERR.CAPABILITY_NOT_GRANTED,
-				`Agent does not have an active grant for capability "${capabilityName}".`,
-			);
-		}
-
-		if (activeGrant.constraints) {
-			const constraintArgs = (args ?? {}) as Record<string, ConstraintPrimitive | undefined>;
-			const result = validateConstraints(activeGrant.constraints, constraintArgs);
-			if (result.unknownOperators.length > 0) {
-				throw agentError("BAD_REQUEST", ERR.UNKNOWN_CONSTRAINT_OPERATOR, `Unknown constraint operators: ${result.unknownOperators.join(", ")}`, undefined, { operators: result.unknownOperators });
+			if (!activeGrant) {
+				throw agentError(
+					"FORBIDDEN",
+					ERR.CAPABILITY_NOT_GRANTED,
+					`Agent does not have an active grant for capability "${capabilityName}".`
+				);
 			}
-			if (result.violations.length > 0) {
-				throw agentError("FORBIDDEN", ERR.CONSTRAINT_VIOLATED, undefined, undefined, { violations: result.violations });
-			}
-		}
 
-		if (!opts.onExecute) {
+			if (activeGrant.constraints) {
+				const constraintArgs = (args ?? {}) as Record<
+					string,
+					ConstraintPrimitive | undefined
+				>;
+				const result = validateConstraints(
+					activeGrant.constraints,
+					constraintArgs
+				);
+				if (result.unknownOperators.length > 0) {
+					throw agentError(
+						"BAD_REQUEST",
+						ERR.UNKNOWN_CONSTRAINT_OPERATOR,
+						`Unknown constraint operators: ${result.unknownOperators.join(", ")}`,
+						undefined,
+						{ operators: result.unknownOperators }
+					);
+				}
+				if (result.violations.length > 0) {
+					throw agentError(
+						"FORBIDDEN",
+						ERR.CONSTRAINT_VIOLATED,
+						undefined,
+						undefined,
+						{ violations: result.violations }
+					);
+				}
+			}
+
+			if (!opts.onExecute) {
 				throw agentError("INTERNAL_SERVER_ERROR", ERR.EXECUTE_NOT_CONFIGURED);
 			}
 
@@ -140,8 +156,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					agentSession,
 				});
 			} catch (err) {
-				execError =
-					err instanceof Error ? err.message : String(err);
+				execError = err instanceof Error ? err.message : String(err);
 				const durationMs = Date.now() - startTime;
 
 				emit(
@@ -158,14 +173,16 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 						error: execError,
 						durationMs,
 					},
-					ctx,
+					ctx
 				);
 
-				if (err instanceof APIError) throw err;
+				if (err instanceof APIError) {
+					throw err;
+				}
 				throw agentError(
 					"INTERNAL_SERVER_ERROR",
 					ERR.INTERNAL_ERROR,
-					execError,
+					execError
 				);
 			}
 
@@ -184,7 +201,7 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					status: "success",
 					durationMs,
 				},
-				ctx,
+				ctx
 			);
 
 			if (isAsyncResult(result)) {
@@ -196,11 +213,9 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 					{
 						status: "pending",
 						status_url: result.statusUrl,
-						...(result.retryAfter
-							? { retry_after: result.retryAfter }
-							: {}),
+						...(result.retryAfter ? { retry_after: result.retryAfter } : {}),
 					},
-					{ status: 202, headers },
+					{ status: 202, headers }
 				);
 			}
 
@@ -217,6 +232,6 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 			}
 
 			return ctx.json({ data: result });
-		},
+		}
 	);
 }

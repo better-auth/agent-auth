@@ -1,6 +1,6 @@
 import { generateKeypair, signAgentJWT, signHostJWT } from "./crypto";
 import { discoverProvider, lookupByUrl, searchRegistryFull } from "./discovery";
-import { detectHostName, detectTool } from "./host-name";
+import { detectHostName } from "./host-name";
 import { MemoryStorage } from "./storage";
 import type {
 	AgentAuthClientOptions,
@@ -26,21 +26,21 @@ import type {
 import { AgentAuthSDKError } from "./types";
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
-  });
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+			return;
+		}
+		const timer = setTimeout(resolve, ms);
+		signal?.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timer);
+				reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+			},
+			{ once: true }
+		);
+	});
 }
 
 /**
@@ -69,8 +69,7 @@ export class AgentAuthClient {
 		this.storage = opts.storage ?? new MemoryStorage();
 		this.fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
 		this.registryUrl = opts.registryUrl ?? null;
-		this.allowDirectDiscovery =
-			opts.allowDirectDiscovery ?? !this.registryUrl;
+		this.allowDirectDiscovery = opts.allowDirectDiscovery ?? !this.registryUrl;
 		this.jwtExpirySeconds = opts.jwtExpirySeconds ?? 60;
 		this.hostName = opts.hostName ?? detectHostName();
 		this.onApprovalRequired = opts.onApprovalRequired ?? null;
@@ -92,7 +91,7 @@ export class AgentAuthClient {
 	 */
 	destroy(): void {
 		this.abortController.abort(
-			new AgentAuthSDKError("client_destroyed", "Client was destroyed."),
+			new AgentAuthSDKError("client_destroyed", "Client was destroyed.")
 		);
 	}
 
@@ -120,7 +119,7 @@ export class AgentAuthClient {
 		if (!this.registryUrl) {
 			throw new AgentAuthSDKError(
 				"no_registry",
-				"No registry URL configured. Set registryUrl in client options.",
+				"No registry URL configured. Set registryUrl in client options."
 			);
 		}
 		const configs = await searchRegistryFull(this.registryUrl, intent, {
@@ -152,7 +151,7 @@ export class AgentAuthClient {
 			if (!this.registryUrl) {
 				throw new AgentAuthSDKError(
 					"direct_discovery_blocked",
-					"Direct discovery is disabled and no registry URL is configured.",
+					"Direct discovery is disabled and no registry URL is configured."
 				);
 			}
 			const config = await lookupByUrl(this.registryUrl, url, {
@@ -164,7 +163,7 @@ export class AgentAuthClient {
 			}
 			throw new AgentAuthSDKError(
 				"provider_not_in_registry",
-				`Provider at "${url}" was not found in the registry. Direct discovery is disabled when a registry URL is configured. Set allowDirectDiscovery: true to override.`,
+				`Provider at "${url}" was not found in the registry. Direct discovery is disabled when a registry URL is configured. Set allowDirectDiscovery: true to override.`
 			);
 		}
 
@@ -201,9 +200,15 @@ export class AgentAuthClient {
 		const config = await this.resolveConfig(opts.provider);
 		const capEndpoint = config.endpoints.capabilities;
 		const url = new URL(capEndpoint ?? `${config.issuer}/capability/list`);
-		if (opts.query) url.searchParams.set("query", opts.query);
-		if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
-		if (opts.limit != null) url.searchParams.set("limit", String(opts.limit));
+		if (opts.query) {
+			url.searchParams.set("query", opts.query);
+		}
+		if (opts.cursor) {
+			url.searchParams.set("cursor", opts.cursor);
+		}
+		if (opts.limit != null) {
+			url.searchParams.set("limit", String(opts.limit));
+		}
 
 		const headers: Record<string, string> = {
 			accept: "application/json",
@@ -224,9 +229,17 @@ export class AgentAuthClient {
 		}
 
 		let res = await this.fetchFn(url.toString(), { method: "GET", headers });
-		if (!res.ok && res.status === 401 && !opts.agentId && headers.authorization) {
-			delete headers.authorization;
-			res = await this.fetchFn(url.toString(), { method: "GET", headers });
+		if (
+			!res.ok &&
+			res.status === 401 &&
+			!opts.agentId &&
+			headers.authorization
+		) {
+			const { authorization: _, ...headersWithoutAuth } = headers;
+			res = await this.fetchFn(url.toString(), {
+				method: "GET",
+				headers: headersWithoutAuth,
+			});
 		}
 		if (!res.ok) {
 			throw await this.toError(res);
@@ -246,7 +259,9 @@ export class AgentAuthClient {
 	}): Promise<Capability> {
 		const config = await this.resolveConfig(opts.provider);
 		const describeEndpoint = config.endpoints.describe_capability;
-		const url = new URL(describeEndpoint ?? `${config.issuer}/capability/describe`);
+		const url = new URL(
+			describeEndpoint ?? `${config.issuer}/capability/describe`
+		);
 		url.searchParams.set("name", opts.name);
 
 		const headers: Record<string, string> = { accept: "application/json" };
@@ -307,12 +322,19 @@ export class AgentAuthClient {
 		const config = await this.resolveConfig(opts.provider);
 
 		if (!opts.forceNew) {
-			const existing = await this.findActiveConnection(config, opts.capabilities);
-			if (existing) return existing;
+			const existing = await this.findActiveConnection(
+				config,
+				opts.capabilities
+			);
+			if (existing) {
+				return existing;
+			}
 		}
 
-		const { regBody, host, agentKeypair } =
-			await this.registerAgent(config, opts);
+		const { regBody, host, agentKeypair } = await this.registerAgent(
+			config,
+			opts
+		);
 
 		const connection: AgentConnection = {
 			agentId: regBody.agent_id,
@@ -334,7 +356,7 @@ export class AgentAuthClient {
 				host,
 				regBody.agent_id,
 				regBody.approval,
-				{ signal: opts.signal },
+				{ signal: opts.signal }
 			);
 
 			connection.capabilityGrants = finalStatus.agent_capability_grants;
@@ -363,7 +385,7 @@ export class AgentAuthClient {
 	 */
 	private async findActiveConnection(
 		config: ProviderConfig,
-		requestedCapabilities?: CapabilityRequestItem[],
+		requestedCapabilities?: CapabilityRequestItem[]
 	): Promise<{
 		agentId: string;
 		hostId: string;
@@ -371,7 +393,9 @@ export class AgentAuthClient {
 		capabilityGrants: CapabilityGrant[];
 	} | null> {
 		const connections = await this.storage.listAgentConnections(config.issuer);
-		if (connections.length === 0) return null;
+		if (connections.length === 0) {
+			return null;
+		}
 
 		for (const conn of connections) {
 			try {
@@ -384,7 +408,7 @@ export class AgentAuthClient {
 
 				const missingCaps = this.findMissingCapabilities(
 					requestedCapabilities,
-					status.agent_capability_grants,
+					status.agent_capability_grants
 				);
 
 				if (missingCaps.length > 0) {
@@ -417,13 +441,13 @@ export class AgentAuthClient {
 
 	private findMissingCapabilities(
 		requested: CapabilityRequestItem[] | undefined,
-		granted: CapabilityGrant[],
+		granted: CapabilityGrant[]
 	): CapabilityRequestItem[] {
-		if (!requested || requested.length === 0) return [];
+		if (!requested || requested.length === 0) {
+			return [];
+		}
 		const activeNames = new Set(
-			granted
-				.filter((g) => g.status === "active")
-				.map((g) => g.capability),
+			granted.filter((g) => g.status === "active").map((g) => g.capability)
 		);
 		return requested.filter((cap) => {
 			const name = typeof cap === "string" ? cap : cap.name;
@@ -458,7 +482,7 @@ export class AgentAuthClient {
 		if (!conn) {
 			throw new AgentAuthSDKError(
 				"agent_not_found",
-				`No local connection for agent ${opts.agentId}. Call connectAgent first.`,
+				`No local connection for agent ${opts.agentId}. Call connectAgent first.`
 			);
 		}
 
@@ -466,13 +490,13 @@ export class AgentAuthClient {
 			const granted = new Set(
 				conn.capabilityGrants
 					.filter((g) => g.status === "active")
-					.map((g) => g.capability),
+					.map((g) => g.capability)
 			);
 			for (const id of opts.capabilities) {
 				if (!granted.has(id)) {
 					throw new AgentAuthSDKError(
 						"capability_not_granted",
-						`Capability "${id}" is not granted to agent ${opts.agentId}.`,
+						`Capability "${id}" is not granted to agent ${opts.agentId}.`
 					);
 				}
 			}
@@ -521,16 +545,24 @@ export class AgentAuthClient {
 		const url = this.resolveEndpoint(
 			config,
 			"request_capability",
-			"/agent/request-capability",
+			"/agent/request-capability"
 		);
 
 		const body: Record<string, CapabilityRequestItem[] | string> = {
 			capabilities: opts.capabilities,
 		};
-		if (opts.reason) body.reason = opts.reason;
-		if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
-		if (opts.loginHint) body.login_hint = opts.loginHint;
-		if (opts.bindingMessage) body.binding_message = opts.bindingMessage;
+		if (opts.reason) {
+			body.reason = opts.reason;
+		}
+		if (opts.preferredMethod) {
+			body.preferred_method = opts.preferredMethod;
+		}
+		if (opts.loginHint) {
+			body.login_hint = opts.loginHint;
+		}
+		if (opts.bindingMessage) {
+			body.binding_message = opts.bindingMessage;
+		}
 
 		const res = await this.fetchFn(url, {
 			method: "POST",
@@ -555,7 +587,7 @@ export class AgentAuthClient {
 					host,
 					opts.agentId,
 					resBody.approval,
-					{ signal: opts.signal },
+					{ signal: opts.signal }
 				);
 				conn.capabilityGrants = finalStatus.agent_capability_grants;
 				await this.storage.setAgentConnection(opts.agentId, conn);
@@ -566,12 +598,19 @@ export class AgentAuthClient {
 		}
 
 		const finalConn = await this.storage.getAgentConnection(opts.agentId);
-		const grants = finalConn?.capabilityGrants ?? resBody.agent_capability_grants;
+		const grants =
+			finalConn?.capabilityGrants ?? resBody.agent_capability_grants;
 
 		return {
-			granted: grants.filter((g) => g.status === "active").map((g) => g.capability),
-			pending: grants.filter((g) => g.status === "pending").map((g) => g.capability),
-			denied: grants.filter((g) => g.status === "denied" || g.status === "revoked").map((g) => g.capability),
+			granted: grants
+				.filter((g) => g.status === "active")
+				.map((g) => g.capability),
+			pending: grants
+				.filter((g) => g.status === "pending")
+				.map((g) => g.capability),
+			denied: grants
+				.filter((g) => g.status === "denied" || g.status === "revoked")
+				.map((g) => g.capability),
 		};
 	}
 
@@ -616,7 +655,10 @@ export class AgentAuthClient {
 	/**
 	 * Reactivate an expired agent — §7.7.
 	 */
-	async reactivateAgent(agentId: string, opts?: { signal?: AbortSignal }): Promise<{
+	async reactivateAgent(
+		agentId: string,
+		opts?: { signal?: AbortSignal }
+	): Promise<{
 		agentId: string;
 		status: AgentStatus;
 		capabilityGrants: CapabilityGrant[];
@@ -653,7 +695,7 @@ export class AgentAuthClient {
 				host,
 				agentId,
 				body.approval,
-				{ signal: opts?.signal },
+				{ signal: opts?.signal }
 			);
 
 			conn.capabilityGrants = finalStatus.agent_capability_grants;
@@ -736,12 +778,9 @@ export class AgentAuthClient {
 
 		const capLocation = this.resolveCapabilityLocationFromConfig(
 			config,
-			opts.capability,
+			opts.capability
 		);
-		const executeLocation = this.resolveExecuteLocation(
-			config,
-			capLocation,
-		);
+		const executeLocation = this.resolveExecuteLocation(config, capLocation);
 
 		const token = await this.signJwt({
 			agentId: opts.agentId,
@@ -768,10 +807,7 @@ export class AgentAuthClient {
 		const body = (await res.json()) as ExecuteCapabilityResponse;
 
 		if (body.status === "pending" && body.status_url) {
-			return this.pollAsyncResult(
-				body.status_url,
-				token.token,
-			);
+			return this.pollAsyncResult(body.status_url, token.token);
 		}
 
 		return body;
@@ -808,7 +844,10 @@ export class AgentAuthClient {
 			throw await this.toError(res);
 		}
 
-		const body = (await res.json()) as { agent_id: string; status: AgentStatus };
+		const body = (await res.json()) as {
+			agent_id: string;
+			status: AgentStatus;
+		};
 
 		conn.agentKeypair = newKeypair;
 		await this.storage.setAgentConnection(agentId, conn);
@@ -836,7 +875,11 @@ export class AgentAuthClient {
 			audience: config.issuer,
 		});
 
-		const url = this.resolveEndpoint(config, "rotate_host_key", "/host/rotate-key");
+		const url = this.resolveEndpoint(
+			config,
+			"rotate_host_key",
+			"/host/rotate-key"
+		);
 
 		const res = await this.fetchFn(url, {
 			method: "POST",
@@ -917,12 +960,16 @@ export class AgentAuthClient {
 
 	private async resolveConfig(providerOrUrl: string): Promise<ProviderConfig> {
 		const byIssuer = await this.storage.getProviderConfig(providerOrUrl);
-		if (byIssuer) return byIssuer;
+		if (byIssuer) {
+			return byIssuer;
+		}
 
 		// Search by provider_name across all cached configs
 		const all = await this.storage.listProviderConfigs();
 		const byName = all.find((c) => c.provider_name === providerOrUrl);
-		if (byName) return byName;
+		if (byName) {
+			return byName;
+		}
 
 		if (
 			providerOrUrl.startsWith("http://") ||
@@ -933,7 +980,7 @@ export class AgentAuthClient {
 
 		throw new AgentAuthSDKError(
 			"provider_not_found",
-			`Provider "${providerOrUrl}" not found. Discover it first or pass a URL.`,
+			`Provider "${providerOrUrl}" not found. Discover it first or pass a URL.`
 		);
 	}
 
@@ -952,25 +999,41 @@ export class AgentAuthClient {
 			loginHint?: string;
 			bindingMessage?: string;
 			name?: string;
-		},
+		}
 	): Promise<{
 		regBody: RegisterResponse;
 		host: HostIdentity;
 		agentKeypair: Keypair;
 	}> {
-		const registerUrl = this.resolveEndpoint(config, "register", "/agent/register");
+		const registerUrl = this.resolveEndpoint(
+			config,
+			"register",
+			"/agent/register"
+		);
 
 		const buildBody = () => {
 			const body: Record<string, CapabilityRequestItem[] | string> = {
 				name: opts.name ?? `agent-${Date.now()}`,
 				mode: opts.mode ?? "delegated",
 			};
-			if (opts.capabilities) body.capabilities = opts.capabilities;
-			if (opts.reason) body.reason = opts.reason;
-			if (opts.preferredMethod) body.preferred_method = opts.preferredMethod;
-			if (opts.loginHint) body.login_hint = opts.loginHint;
-			if (opts.bindingMessage) body.binding_message = opts.bindingMessage;
-			if (this.hostName) body.host_name = this.hostName;
+			if (opts.capabilities) {
+				body.capabilities = opts.capabilities;
+			}
+			if (opts.reason) {
+				body.reason = opts.reason;
+			}
+			if (opts.preferredMethod) {
+				body.preferred_method = opts.preferredMethod;
+			}
+			if (opts.loginHint) {
+				body.login_hint = opts.loginHint;
+			}
+			if (opts.bindingMessage) {
+				body.binding_message = opts.bindingMessage;
+			}
+			if (this.hostName) {
+				body.host_name = this.hostName;
+			}
 			return body;
 		};
 
@@ -1019,10 +1082,12 @@ export class AgentAuthClient {
 	private resolveEndpoint(
 		config: ProviderConfig,
 		key: string,
-		fallback: string,
+		fallback: string
 	): string {
 		const endpoint = config.endpoints[key];
-		if (endpoint) return new URL(endpoint, config.issuer).toString();
+		if (endpoint) {
+			return new URL(endpoint, config.issuer).toString();
+		}
 		return `${config.issuer}${fallback}`;
 	}
 
@@ -1034,10 +1099,14 @@ export class AgentAuthClient {
 	 */
 	private resolveExecuteLocation(
 		config: ProviderConfig,
-		capabilityLocation?: string,
+		capabilityLocation?: string
 	): string {
-		if (capabilityLocation) return capabilityLocation;
-		if (config.default_location) return config.default_location;
+		if (capabilityLocation) {
+			return capabilityLocation;
+		}
+		if (config.default_location) {
+			return config.default_location;
+		}
 		return this.resolveEndpoint(config, "execute", "/capability/execute");
 	}
 
@@ -1048,11 +1117,13 @@ export class AgentAuthClient {
 	 */
 	private resolveCapabilityLocationFromConfig(
 		config: ProviderConfig,
-		capabilityName: string,
+		capabilityName: string
 	): string | undefined {
 		if (config.capabilities) {
 			const cap = config.capabilities.find((c) => c.name === capabilityName);
-			if (cap?.location) return cap.location;
+			if (cap?.location) {
+				return cap.location;
+			}
 		}
 		return undefined;
 	}
@@ -1062,26 +1133,32 @@ export class AgentAuthClient {
 		host: HostIdentity,
 		agentId: string,
 		approval: ApprovalInfo,
-		opts?: { signal?: AbortSignal },
+		opts?: { signal?: AbortSignal }
 	): Promise<StatusResponse> {
 		if (this.onApprovalRequired) {
 			await this.onApprovalRequired(approval);
 		}
 
-		const signals = [this.abortController.signal];
-		if (opts?.signal) signals.push(opts.signal);
-		const signal = signals.length === 1
-			? signals[0]
-			: AbortSignal.any(signals);
+		const signal = opts?.signal
+			? AbortSignal.any([this.abortController.signal, opts.signal])
+			: this.abortController.signal;
 
 		if (approval.notification_url) {
 			try {
 				return await this.waitForApprovalSSE(
-					config, host, agentId, approval.notification_url, signal,
+					config,
+					host,
+					agentId,
+					approval.notification_url,
+					signal
 				);
 			} catch (err) {
-				if (err instanceof AgentAuthSDKError) throw err;
-				if (signal.aborted) throw err;
+				if (err instanceof AgentAuthSDKError) {
+					throw err;
+				}
+				if (signal.aborted) {
+					throw err;
+				}
 			}
 		}
 
@@ -1089,11 +1166,11 @@ export class AgentAuthClient {
 	}
 
 	private async waitForApprovalSSE(
-		config: ProviderConfig,
-		host: HostIdentity,
-		agentId: string,
+		_config: ProviderConfig,
+		_host: HostIdentity,
+		_agentId: string,
 		notificationUrl: string,
-		signal: AbortSignal,
+		signal: AbortSignal
 	): Promise<StatusResponse> {
 		const deadline = Date.now() + this.approvalTimeoutMs;
 
@@ -1117,15 +1194,22 @@ export class AgentAuthClient {
 			};
 			signal.addEventListener("abort", onAbort, { once: true });
 
-			const timeoutId = setTimeout(() => {
-				if (!settled) {
-					cleanup();
-					reject(new AgentAuthSDKError("approval_timeout", "Approval timed out."));
-				}
-			}, Math.max(0, deadline - Date.now()));
+			const timeoutId = setTimeout(
+				() => {
+					if (!settled) {
+						cleanup();
+						reject(
+							new AgentAuthSDKError("approval_timeout", "Approval timed out.")
+						);
+					}
+				},
+				Math.max(0, deadline - Date.now())
+			);
 
 			eventSource.addEventListener("status", async (event) => {
-				if (settled) return;
+				if (settled) {
+					return;
+				}
 				try {
 					const data = JSON.parse(event.data) as StatusResponse;
 
@@ -1140,10 +1224,12 @@ export class AgentAuthClient {
 					} else if (data.status === "rejected" || data.status === "revoked") {
 						cleanup();
 						clearTimeout(timeoutId);
-						reject(new AgentAuthSDKError(
-							`agent_${data.status}`,
-							`Agent was ${data.status} during approval.`,
-						));
+						reject(
+							new AgentAuthSDKError(
+								`agent_${data.status}`,
+								`Agent was ${data.status} during approval.`
+							)
+						);
 					}
 				} catch {
 					// Malformed event — ignore, keep listening
@@ -1151,14 +1237,18 @@ export class AgentAuthClient {
 			});
 
 			eventSource.onerror = () => {
-				if (settled) return;
+				if (settled) {
+					return;
+				}
 				cleanup();
 				clearTimeout(timeoutId);
 				signal.removeEventListener("abort", onAbort);
-				reject(new AgentAuthSDKError(
-					"sse_failed",
-					"SSE connection failed, falling back to polling.",
-				));
+				reject(
+					new AgentAuthSDKError(
+						"sse_failed",
+						"SSE connection failed, falling back to polling."
+					)
+				);
 			};
 		});
 	}
@@ -1168,13 +1258,12 @@ export class AgentAuthClient {
 		host: HostIdentity,
 		agentId: string,
 		approval: ApprovalInfo,
-		signal: AbortSignal,
+		signal: AbortSignal
 	): Promise<StatusResponse> {
 		const interval = (approval.interval ?? 5) * 1000;
-		const deadline = Date.now() + Math.min(
-			(approval.expires_in ?? 300) * 1000,
-			this.approvalTimeoutMs,
-		);
+		const deadline =
+			Date.now() +
+			Math.min((approval.expires_in ?? 300) * 1000, this.approvalTimeoutMs);
 
 		while (Date.now() < deadline) {
 			await sleep(interval, signal);
@@ -1198,7 +1287,9 @@ export class AgentAuthClient {
 					signal,
 				});
 
-				if (!res.ok) continue;
+				if (!res.ok) {
+					continue;
+				}
 
 				const status = (await res.json()) as StatusResponse;
 
@@ -1206,28 +1297,31 @@ export class AgentAuthClient {
 					await this.onApprovalStatusChange(status.status);
 				}
 
-				if (status.status === "active") return status;
+				if (status.status === "active") {
+					return status;
+				}
 				if (status.status === "rejected" || status.status === "revoked") {
 					throw new AgentAuthSDKError(
 						`agent_${status.status}`,
-						`Agent was ${status.status} during approval.`,
+						`Agent was ${status.status} during approval.`
 					);
 				}
 			} catch (err) {
-				if (err instanceof AgentAuthSDKError) throw err;
-				if (signal.aborted) throw err;
+				if (err instanceof AgentAuthSDKError) {
+					throw err;
+				}
+				if (signal.aborted) {
+					throw err;
+				}
 			}
 		}
 
-		throw new AgentAuthSDKError(
-			"approval_timeout",
-			"Approval timed out.",
-		);
+		throw new AgentAuthSDKError("approval_timeout", "Approval timed out.");
 	}
 
 	private async pollAsyncResult(
 		statusUrl: string,
-		token: string,
+		token: string
 	): Promise<ExecuteCapabilityResponse> {
 		const signal = this.abortController.signal;
 		const maxAttempts = 60;
@@ -1263,7 +1357,7 @@ export class AgentAuthClient {
 
 		throw new AgentAuthSDKError(
 			"async_timeout",
-			"Async capability execution timed out.",
+			"Async capability execution timed out."
 		);
 	}
 
@@ -1272,7 +1366,7 @@ export class AgentAuthClient {
 		if (!conn) {
 			throw new AgentAuthSDKError(
 				"agent_not_found",
-				`No local connection for agent ${agentId}.`,
+				`No local connection for agent ${agentId}.`
 			);
 		}
 		return conn;
@@ -1283,7 +1377,7 @@ export class AgentAuthClient {
 		if (!config) {
 			throw new AgentAuthSDKError(
 				"provider_not_found",
-				`No cached config for issuer ${issuer}.`,
+				`No cached config for issuer ${issuer}.`
 			);
 		}
 		return config;
@@ -1294,7 +1388,7 @@ export class AgentAuthClient {
 		if (!host) {
 			throw new AgentAuthSDKError(
 				"host_not_found",
-				"No host identity found. Call connectAgent first.",
+				"No host identity found. Call connectAgent first."
 			);
 		}
 		return host;
@@ -1302,7 +1396,7 @@ export class AgentAuthClient {
 
 	private async toError(
 		res: Response,
-		issuer?: string,
+		issuer?: string
 	): Promise<AgentAuthSDKError> {
 		try {
 			const body = (await res.json()) as Record<string, string>;
@@ -1314,7 +1408,7 @@ export class AgentAuthClient {
 					return new AgentAuthSDKError(
 						err.code,
 						`${err.message} ${hint}`,
-						err.status,
+						err.status
 					);
 				}
 			}
@@ -1324,13 +1418,13 @@ export class AgentAuthClient {
 			return new AgentAuthSDKError(
 				"request_failed",
 				`Request failed: ${res.status} ${res.statusText}`,
-				res.status,
+				res.status
 			);
 		}
 	}
 
 	private async getAvailableCapabilityHint(
-		issuer: string,
+		issuer: string
 	): Promise<string | null> {
 		try {
 			const config = await this.storage.getProviderConfig(issuer);

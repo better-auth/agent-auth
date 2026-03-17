@@ -1,9 +1,9 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { parseCapabilityIds } from "../../utils/capabilities";
 import type { AgentHost } from "../../types";
-import { sessionMiddleware } from "better-auth/api";
+import { parseCapabilityIds } from "../../utils/capabilities";
 
 export function listHosts() {
 	return createAuthEndpoint(
@@ -59,6 +59,6 @@ export function listHosts() {
 					updated_at: h.updatedAt,
 				})),
 			});
-		},
+		}
 	);
 }

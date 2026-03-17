@@ -1,19 +1,17 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
-import { TABLE, DEFAULTS } from "../../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { DEFAULTS, TABLE } from "../../constants";
 import { emit } from "../../emit";
-import {
-	generateEnrollmentToken,
-} from "../../utils/approval";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import type { AgentHost, ResolvedAgentAuthOptions } from "../../types";
+import { generateEnrollmentToken } from "../../utils/approval";
 import {
 	findHostByKey,
 	resolveDefaultHostCapabilities,
-	validateKeyAlgorithm,
-	validateCapabilityIds,
 	validateCapabilitiesExist,
+	validateCapabilityIds,
+	validateKeyAlgorithm,
 } from "../_helpers";
 
 export function createHost(opts: ResolvedAgentAuthOptions) {
@@ -29,7 +27,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				public_key: z
 					.record(
 						z.string(),
-						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+						z.union([z.string(), z.boolean(), z.array(z.string())]).optional()
 					)
 					.optional()
 					.meta({
@@ -62,29 +60,30 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				jwks_url: jwksUrl,
 				default_capabilities: bodyCapIds,
 			} = ctx.body;
-			const isEnrollmentFlow = !publicKey && !jwksUrl;
+			const isEnrollmentFlow = !(publicKey || jwksUrl);
 
 			if (publicKey) {
-				if (!publicKey.kty || !publicKey.x) {
+				if (!(publicKey.kty && publicKey.x)) {
 					throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 				}
 				validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
 			}
 
-			const defaultCapabilityIds = bodyCapIds ??
-				await resolveDefaultHostCapabilities(opts, {
+			const defaultCapabilityIds =
+				bodyCapIds ??
+				(await resolveDefaultHostCapabilities(opts, {
 					ctx,
 					mode: "delegated",
 					userId: session.user.id,
 					hostId: null,
 					hostName: hostName ?? null,
-				});
+				}));
 			validateCapabilityIds(defaultCapabilityIds, opts);
 			await validateCapabilitiesExist(defaultCapabilityIds, opts);
 
 			const now = new Date();
 			const kid = publicKey
-				? (publicKey.kid as string | undefined) ?? null
+				? ((publicKey.kid as string | undefined) ?? null)
 				: null;
 			const expiresAt =
 				!isEnrollmentFlow && opts.agentSessionTTL > 0
@@ -128,12 +127,16 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 						update: reactivateUpdate,
 					});
 
-					emit(opts, {
-						type: "host.reactivated",
-						actorId: session.user.id,
-						hostId: existing.id,
-						metadata: { defaultCapabilities: defaultCapabilityIds },
-					}, ctx);
+					emit(
+						opts,
+						{
+							type: "host.reactivated",
+							actorId: session.user.id,
+							hostId: existing.id,
+							metadata: { defaultCapabilities: defaultCapabilityIds },
+						},
+						ctx
+					);
 
 					return ctx.json({
 						hostId: existing.id,
@@ -152,7 +155,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				enrollmentTokenPlaintext = token.plaintext;
 				enrollmentTokenHash = token.hash;
 				enrollmentTokenExpiresAt = new Date(
-					now.getTime() + DEFAULTS.enrollmentTokenTTL * 1000,
+					now.getTime() + DEFAULTS.enrollmentTokenTTL * 1000
 				);
 			}
 
@@ -179,15 +182,19 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				},
 			});
 
-			emit(opts, {
-				type: "host.created",
-				actorId: session.user.id,
-				hostId: host.id,
-				metadata: {
-					defaultCapabilities: defaultCapabilityIds,
-					status: isEnrollmentFlow ? "pending_enrollment" : "active",
+			emit(
+				opts,
+				{
+					type: "host.created",
+					actorId: session.user.id,
+					hostId: host.id,
+					metadata: {
+						defaultCapabilities: defaultCapabilityIds,
+						status: isEnrollmentFlow ? "pending_enrollment" : "active",
+					},
 				},
-			}, ctx);
+				ctx
+			);
 
 			if (isEnrollmentFlow) {
 				return ctx.json({
@@ -204,6 +211,6 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
 				default_capabilities: defaultCapabilityIds,
 				status: "active",
 			});
-		},
+		}
 	);
 }

@@ -15,22 +15,25 @@ const BLOCKED_HOSTNAMES = new Set([
 ]);
 
 function isBlockedHostname(hostname: string): boolean {
-	if (BLOCKED_HOSTNAMES.has(hostname)) return true;
+	if (BLOCKED_HOSTNAMES.has(hostname)) {
+		return true;
+	}
 	const bare = hostname.replace(/^\[|\]$/g, "");
-	if (bare === "::1" || bare === "0:0:0:0:0:0:0:1") return true;
-	if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname))
+	if (bare === "::1" || bare === "0:0:0:0:0:0:0:1") {
 		return true;
-	if (hostname.endsWith(".local") || hostname.endsWith(".internal"))
+	}
+	if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname)) {
 		return true;
+	}
+	if (hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+		return true;
+	}
 	return false;
 }
 
 export interface JwksCacheStore {
-	getKeyByKid(
-		jwksUrl: string,
-		kid: string,
-	): Promise<AgentJWK | null>;
 	clear(): void | Promise<void>;
+	getKeyByKid(jwksUrl: string, kid: string): Promise<AgentJWK | null>;
 }
 
 async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
@@ -39,14 +42,15 @@ async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
 
 		for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
 			const parsed = new URL(currentUrl);
-			if (parsed.protocol !== "https:") return null;
-			if (isBlockedHostname(parsed.hostname)) return null;
+			if (parsed.protocol !== "https:") {
+				return null;
+			}
+			if (isBlockedHostname(parsed.hostname)) {
+				return null;
+			}
 
 			const controller = new AbortController();
-			const timer = setTimeout(
-				() => controller.abort(),
-				FETCH_TIMEOUT_MS,
-			);
+			const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
 			const res = await fetch(currentUrl, {
 				signal: controller.signal,
@@ -57,13 +61,17 @@ async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
 
 			if (res.status >= 300 && res.status < 400) {
 				const location = res.headers.get("location");
-				if (!location || redirects === MAX_REDIRECTS) return null;
+				if (!location || redirects === MAX_REDIRECTS) {
+					return null;
+				}
 				currentUrl = new URL(location, currentUrl).href;
 				continue;
 			}
 
 			if (!res.ok) {
-				console.error(`[agent-auth] JWKS fetch failed: ${currentUrl} responded with status ${res.status}`);
+				console.error(
+					`[agent-auth] JWKS fetch failed: ${currentUrl} responded with status ${res.status}`
+				);
 				return null;
 			}
 
@@ -73,10 +81,14 @@ async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
 			}
 
 			const text = await res.text();
-			if (text.length > MAX_RESPONSE_BYTES) return null;
+			if (text.length > MAX_RESPONSE_BYTES) {
+				return null;
+			}
 
 			const body = JSON.parse(text) as { keys?: AgentJWK[] };
-			if (!body.keys || !Array.isArray(body.keys)) return null;
+			if (!(body.keys && Array.isArray(body.keys))) {
+				return null;
+			}
 
 			return body.keys;
 		}
@@ -89,10 +101,14 @@ async function fetchKeys(url: string): Promise<AgentJWK[] | null> {
 }
 
 function validateUrl(url: string): boolean {
-	if (url.length > MAX_URL_LENGTH || !url.startsWith("https://")) return false;
+	if (url.length > MAX_URL_LENGTH || !url.startsWith("https://")) {
+		return false;
+	}
 	try {
 		const parsed = new URL(url);
-		if (isBlockedHostname(parsed.hostname)) return false;
+		if (isBlockedHostname(parsed.hostname)) {
+			return false;
+		}
 		return true;
 	} catch {
 		return false;
@@ -100,31 +116,42 @@ function validateUrl(url: string): boolean {
 }
 
 export class MemoryJwksCache implements JwksCacheStore {
-	private cache = new Map<string, { keys: AgentJWK[]; fetchedAt: number }>();
-	private ttlMs: number;
+	private readonly cache = new Map<
+		string,
+		{ keys: AgentJWK[]; fetchedAt: number }
+	>();
+	private readonly ttlMs: number;
 
 	constructor(ttlMs = DEFAULT_TTL_MS) {
 		this.ttlMs = ttlMs;
 	}
 
 	async getKeyByKid(jwksUrl: string, kid: string): Promise<AgentJWK | null> {
-		if (!validateUrl(jwksUrl)) return null;
+		if (!validateUrl(jwksUrl)) {
+			return null;
+		}
 
 		let entry = this.cache.get(jwksUrl);
 		const now = Date.now();
 
 		if (!entry || now - entry.fetchedAt > this.ttlMs) {
 			const keys = await fetchKeys(jwksUrl);
-			if (!keys) return null;
+			if (!keys) {
+				return null;
+			}
 			entry = { keys, fetchedAt: now };
 			this.cache.set(jwksUrl, entry);
 		}
 
 		const match = entry.keys.find((k) => k.kid === kid);
-		if (match) return match;
+		if (match) {
+			return match;
+		}
 
 		const freshKeys = await fetchKeys(jwksUrl);
-		if (!freshKeys) return null;
+		if (!freshKeys) {
+			return null;
+		}
 		entry = { keys: freshKeys, fetchedAt: Date.now() };
 		this.cache.set(jwksUrl, entry);
 
@@ -139,17 +166,19 @@ export class MemoryJwksCache implements JwksCacheStore {
 const JWKS_PREFIX = "agent-auth:jwks:";
 
 export class SecondaryStorageJwksCache implements JwksCacheStore {
-	private ttlSec: number;
+	private readonly ttlSec: number;
 
 	constructor(
-		private storage: SecondaryStorage,
-		ttlMs = DEFAULT_TTL_MS,
+		private readonly storage: SecondaryStorage,
+		ttlMs = DEFAULT_TTL_MS
 	) {
 		this.ttlSec = Math.ceil(ttlMs / 1000);
 	}
 
 	async getKeyByKid(jwksUrl: string, kid: string): Promise<AgentJWK | null> {
-		if (!validateUrl(jwksUrl)) return null;
+		if (!validateUrl(jwksUrl)) {
+			return null;
+		}
 
 		const cacheKey = `${JWKS_PREFIX}${jwksUrl}`;
 		const cached = await this.storage.get(cacheKey);
@@ -157,7 +186,10 @@ export class SecondaryStorageJwksCache implements JwksCacheStore {
 		let keys: AgentJWK[] | null = null;
 		if (cached) {
 			try {
-				keys = typeof cached === "string" ? JSON.parse(cached) as AgentJWK[] : cached as AgentJWK[] | null;
+				keys =
+					typeof cached === "string"
+						? (JSON.parse(cached) as AgentJWK[])
+						: (cached as AgentJWK[] | null);
 			} catch {
 				keys = null;
 			}
@@ -165,15 +197,21 @@ export class SecondaryStorageJwksCache implements JwksCacheStore {
 
 		if (!keys) {
 			keys = await fetchKeys(jwksUrl);
-			if (!keys) return null;
+			if (!keys) {
+				return null;
+			}
 			await this.storage.set(cacheKey, JSON.stringify(keys), this.ttlSec);
 		}
 
 		const match = keys.find((k) => k.kid === kid);
-		if (match) return match;
+		if (match) {
+			return match;
+		}
 
 		const freshKeys = await fetchKeys(jwksUrl);
-		if (!freshKeys) return null;
+		if (!freshKeys) {
+			return null;
+		}
 		await this.storage.set(cacheKey, JSON.stringify(freshKeys), this.ttlSec);
 
 		return freshKeys.find((k) => k.kid === kid) ?? null;

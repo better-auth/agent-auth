@@ -2,8 +2,8 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { getSessionFromCtx } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import type {
 	Agent,
 	AgentHost,
@@ -52,18 +52,15 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 				}
 			} else if (userSession) {
 				if (!ctx.body?.host_id) {
-				throw agentError(
-					"BAD_REQUEST",
-					ERR.INVALID_REQUEST,
-					"host_id is required when using user session.",
-				);
+					throw agentError(
+						"BAD_REQUEST",
+						ERR.INVALID_REQUEST,
+						"host_id is required when using user session."
+					);
 				}
 				targetHostId = ctx.body.host_id;
 			} else {
-				throw agentError(
-					"UNAUTHORIZED",
-					ERR.UNAUTHORIZED_SESSION,
-				);
+				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
 			}
 
 			const host = await ctx.context.adapter.findOne<AgentHost>({
@@ -75,16 +72,19 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 				throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
 			}
 
-			if (userSession && !hostSession) {
-				if (host.userId !== userSession.user.id && host.userId !== null) {
-					const sameOrg = await checkSharedOrg(
-						ctx.context.adapter,
-						userSession.user.id,
-						host.userId,
-					);
-					if (!sameOrg) {
-						throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
-					}
+			if (
+				userSession &&
+				!hostSession &&
+				host.userId !== userSession.user.id &&
+				host.userId !== null
+			) {
+				const sameOrg = await checkSharedOrg(
+					ctx.context.adapter,
+					userSession.user.id,
+					host.userId
+				);
+				if (!sameOrg) {
+					throw agentError("NOT_FOUND", ERR.HOST_NOT_FOUND);
 				}
 			}
 
@@ -115,7 +115,7 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 			});
 
 			const toRevoke = allAgents.filter(
-				(a) => a.status !== "revoked" && a.status !== "rejected",
+				(a) => a.status !== "revoked" && a.status !== "rejected"
 			);
 
 			for (const agent of toRevoke) {
@@ -136,21 +136,23 @@ export function revokeHost(opts: ResolvedAgentAuthOptions) {
 				});
 			}
 
-			emit(opts, {
-				type: "host.revoked",
-				actorId:
-					userSession?.user.id ??
-					hostSession?.host.userId ??
-					undefined,
-				hostId: host.id,
-				metadata: { agentsRevoked: toRevoke.length },
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "host.revoked",
+					actorId:
+						userSession?.user.id ?? hostSession?.host.userId ?? undefined,
+					hostId: host.id,
+					metadata: { agentsRevoked: toRevoke.length },
+				},
+				ctx
+			);
 
 			return ctx.json({
 				host_id: host.id,
 				status: "revoked" as const,
 				agents_revoked: toRevoke.length,
 			});
-		},
+		}
 	);
 }

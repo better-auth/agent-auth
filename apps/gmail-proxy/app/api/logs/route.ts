@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 const SCOPE_CLAUSE = `(
   actorId = ?
@@ -20,10 +20,10 @@ export async function GET(req: Request) {
 	const userId = session.user.id;
 	const url = new URL(req.url);
 	const limit = Math.min(
-		parseInt(url.searchParams.get("limit") ?? "50"),
-		200,
+		Number.parseInt(url.searchParams.get("limit") ?? "50", 10),
+		200
 	);
-	const offset = parseInt(url.searchParams.get("offset") ?? "0");
+	const offset = Number.parseInt(url.searchParams.get("offset") ?? "0", 10);
 	const type = url.searchParams.get("type");
 	const agentId = url.searchParams.get("agent_id");
 
@@ -69,9 +69,7 @@ export async function GET(req: Request) {
 		countParams.push(agentId);
 	}
 	const countQuery = `SELECT COUNT(*) as count FROM event_log WHERE ${countConditions.join(" AND ")}`;
-	const total = db
-		.prepare(countQuery)
-		.get(...countParams) as { count: number };
+	const total = db.prepare(countQuery).get(...countParams) as { count: number };
 
 	return NextResponse.json({
 		logs: logs.map((l) => ({

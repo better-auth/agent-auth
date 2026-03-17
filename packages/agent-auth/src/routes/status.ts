@@ -46,11 +46,11 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 				targetAgentId = agentSession.agent.id;
 			} else if (hostSession) {
 				if (!ctx.query?.agent_id) {
-				throw agentError(
-					"BAD_REQUEST",
-					ERR.INVALID_REQUEST,
-					"agent_id query parameter is required when using host JWT.",
-				);
+					throw agentError(
+						"BAD_REQUEST",
+						ERR.INVALID_REQUEST,
+						"agent_id query parameter is required when using host JWT."
+					);
 				}
 				targetAgentId = ctx.query.agent_id;
 			} else {
@@ -70,18 +70,20 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
-			const grants =
-				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-					model: TABLE.grant,
-					where: [{ field: "agentId", value: agent.id }],
-				});
+			const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+				model: TABLE.grant,
+				where: [{ field: "agentId", value: agent.id }],
+			});
 
 			return ctx.json({
 				agent_id: agent.id,
 				name: agent.name,
 				host_id: agent.hostId,
 				status: agent.status,
-				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+				agent_capability_grants: formatGrantsResponse(
+					grants,
+					opts.capabilities
+				),
 				mode: agent.mode,
 				user_id: agent.userId,
 				activated_at: agent.activatedAt
@@ -91,6 +93,6 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 				last_used_at: agent.lastUsedAt,
 				expires_at: agent.expiresAt,
 			});
-		},
+		}
 	);
 }

@@ -1,10 +1,10 @@
 import {
-	generateAuthenticationOptions,
-	verifyAuthenticationResponse,
-	type VerifiedAuthenticationResponse,
 	type AuthenticationResponseJSON,
-	type PublicKeyCredentialDescriptorJSON,
 	type AuthenticatorTransportFuture,
+	generateAuthenticationOptions,
+	type PublicKeyCredentialDescriptorJSON,
+	type VerifiedAuthenticationResponse,
+	verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
 import type { ResolvedProofOfPresence } from "../types";
 
@@ -17,10 +17,10 @@ export type { AuthenticationResponseJSON };
  * not the full passkey plugin schema.
  */
 export interface StoredPasskey {
-	id: string;
-	credentialID: string;
-	publicKey: string;
 	counter: number;
+	credentialID: string;
+	id: string;
+	publicKey: string;
 	transports?: string | null;
 }
 
@@ -33,7 +33,7 @@ export interface StoredPasskey {
  */
 export async function generateApprovalChallenge(
 	config: ResolvedProofOfPresence,
-	passkeys: StoredPasskey[],
+	passkeys: StoredPasskey[]
 ): Promise<{
 	options: Awaited<ReturnType<typeof generateAuthenticationOptions>>;
 }> {
@@ -43,10 +43,12 @@ export async function generateApprovalChallenge(
 			type: "public-key" as const,
 			...(pk.transports
 				? {
-						transports: pk.transports.split(",") as AuthenticatorTransportFuture[],
+						transports: pk.transports.split(
+							","
+						) as AuthenticatorTransportFuture[],
 					}
 				: {}),
-		}),
+		})
 	);
 
 	const options = await generateAuthenticationOptions({
@@ -65,7 +67,7 @@ export async function verifyApprovalResponse(
 	config: ResolvedProofOfPresence,
 	response: AuthenticationResponseJSON,
 	expectedChallenge: string,
-	passkey: StoredPasskey,
+	passkey: StoredPasskey
 ): Promise<VerifiedAuthenticationResponse> {
 	const publicKeyBytes = base64UrlToUint8Array(passkey.publicKey);
 

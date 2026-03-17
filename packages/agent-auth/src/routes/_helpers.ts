@@ -1,13 +1,8 @@
 import type { GenericEndpointContext } from "@better-auth/core";
 import * as z from "zod";
-import { TABLE, DEFAULTS } from "../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { DEFAULTS, TABLE } from "../constants";
 import { emit } from "../emit";
-import { generateUserCode, hashToken } from "../utils/approval";
-import { resolveGrantExpiresAt } from "../utils/grant-ttl";
-import {
-	findBlockedCapabilities,
-} from "../utils/capabilities";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	AdapterCreate,
 	AdapterDelete,
@@ -22,9 +17,11 @@ import type {
 	CapabilityConstraints,
 	Constraints,
 	DefaultHostCapabilitiesContext,
-	NormalizedCapability,
 	ResolvedAgentAuthOptions,
 } from "../types";
+import { generateUserCode, hashToken } from "../utils/approval";
+import { findBlockedCapabilities } from "../utils/capabilities";
+import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 
 // ── Capability parsing schemas (§2.13) ──────────────────────
 
@@ -38,7 +35,10 @@ const constraintOperatorValueZ = z.union([
 
 export const capabilityConstraintsZ = z.record(
 	z.string(),
-	z.union([constraintPrimitiveZ, z.record(z.string(), constraintOperatorValueZ)]),
+	z.union([
+		constraintPrimitiveZ,
+		z.record(z.string(), constraintOperatorValueZ),
+	])
 );
 
 export const capabilityItemZ = z.union([
@@ -54,7 +54,7 @@ export const capabilityItemZ = z.union([
  * ID list and constraints map. See spec §2.13.
  */
 export function normalizeCapabilities(
-	caps: Array<string | { name: string; constraints?: CapabilityConstraints }>,
+	caps: Array<string | { name: string; constraints?: CapabilityConstraints }>
 ): { ids: string[]; constraintsMap: Map<string, CapabilityConstraints> } {
 	const ids: string[] = [];
 	const constraintsMap = new Map<string, CapabilityConstraints>();
@@ -77,7 +77,7 @@ export function normalizeCapabilities(
  */
 export function resolveDeviceAuthPage(
 	opts: ResolvedAgentAuthOptions,
-	origin: string,
+	origin: string
 ): string {
 	const page = opts.deviceAuthorizationPage;
 	if (page.startsWith("http://") || page.startsWith("https://")) {
@@ -89,16 +89,17 @@ export function resolveDeviceAuthPage(
 
 export async function findHostByKey(
 	adapter: AdapterFindOne,
-	publicKey: Record<string, unknown>,
+	publicKey: Record<string, unknown>
 ): Promise<AgentHost | null> {
-	const kid =
-		typeof publicKey.kid === "string" ? publicKey.kid : null;
+	const kid = typeof publicKey.kid === "string" ? publicKey.kid : null;
 	if (kid) {
 		const byKid = await adapter.findOne<AgentHost>({
 			model: TABLE.host,
 			where: [{ field: "kid", value: kid }],
 		});
-		if (byKid) return byKid;
+		if (byKid) {
+			return byKid;
+		}
 	}
 
 	return adapter.findOne<AgentHost>({
@@ -112,7 +113,7 @@ const MEMBER_TABLE = "member";
 export async function checkSharedOrg(
 	adapter: AdapterFindMany,
 	userA: string,
-	userB: string,
+	userB: string
 ): Promise<boolean> {
 	try {
 		const membershipsA = await adapter.findMany<{
@@ -121,7 +122,9 @@ export async function checkSharedOrg(
 			model: MEMBER_TABLE,
 			where: [{ field: "userId", value: userA }],
 		});
-		if (membershipsA.length === 0) return false;
+		if (membershipsA.length === 0) {
+			return false;
+		}
 
 		for (const m of membershipsA) {
 			const membershipsB = await adapter.findMany<{
@@ -133,7 +136,9 @@ export async function checkSharedOrg(
 					{ field: "organizationId", value: m.organizationId },
 				],
 			});
-			if (membershipsB.length > 0) return true;
+			if (membershipsB.length > 0) {
+				return true;
+			}
 		}
 		return false;
 	} catch {
@@ -157,7 +162,7 @@ export async function createGrantRows(
 		hostId: string | null;
 		userId: string | null;
 	},
-	constraintsMap?: Map<string, CapabilityConstraints>,
+	constraintsMap?: Map<string, CapabilityConstraints>
 ): Promise<void> {
 	if (grantOpts?.clearExisting) {
 		await adapter.delete({
@@ -171,17 +176,14 @@ export async function createGrantRows(
 	for (const cap of capabilityIds) {
 		const expiresAt =
 			status === "active" && ttlContext
-				? await resolveGrantExpiresAt(
-						ttlContext.pluginOpts,
-						cap,
-						{
-							agentId,
-							hostId: ttlContext.hostId,
-							userId: ttlContext.userId,
-						},
-					)
+				? await resolveGrantExpiresAt(ttlContext.pluginOpts, cap, {
+						agentId,
+						hostId: ttlContext.hostId,
+						userId: ttlContext.userId,
+					})
 				: null;
-		const constraints = grantOpts?.constraintsMap?.get(cap) ?? constraintsMap?.get(cap) ?? null;
+		const constraints =
+			grantOpts?.constraintsMap?.get(cap) ?? constraintsMap?.get(cap) ?? null;
 		await adapter.create({
 			model: TABLE.grant,
 			data: {
@@ -214,8 +216,8 @@ export async function createGrantRows(
 export function formatGrantsResponse(
 	grants: AgentCapabilityGrant[],
 	capabilityDefs?: Capability[],
-	opts?: { compact?: boolean },
-): Array<Record<string, unknown>> {
+	opts?: { compact?: boolean }
+): Record<string, unknown>[] {
 	const defsMap = capabilityDefs
 		? new Map(capabilityDefs.map((c) => [c.name, c]))
 		: null;
@@ -226,18 +228,30 @@ export function formatGrantsResponse(
 			status: g.status,
 		};
 
-		if (opts?.compact) return base;
+		if (opts?.compact) {
+			return base;
+		}
 
 		if (g.status === "active") {
-			if (g.grantedBy) base.granted_by = g.grantedBy;
-			if (g.constraints) base.constraints = g.constraints;
-			if (g.expiresAt) base.expires_at = new Date(g.expiresAt).toISOString();
+			if (g.grantedBy) {
+				base.granted_by = g.grantedBy;
+			}
+			if (g.constraints) {
+				base.constraints = g.constraints;
+			}
+			if (g.expiresAt) {
+				base.expires_at = new Date(g.expiresAt).toISOString();
+			}
 
-			if (defsMap && defsMap.has(g.capability)) {
+			if (defsMap?.has(g.capability)) {
 				const def = defsMap.get(g.capability)!;
 				base.description = def.description;
-				if (def.input) base.input = def.input;
-				if (def.output) base.output = def.output;
+				if (def.input) {
+					base.input = def.input;
+				}
+				if (def.output) {
+					base.output = def.output;
+				}
 			}
 		}
 
@@ -251,13 +265,12 @@ export function formatGrantsResponse(
 
 /** Filter grants to only active, non-expired ones. */
 export function activeGrants(
-	grants: AgentCapabilityGrant[],
+	grants: AgentCapabilityGrant[]
 ): AgentCapabilityGrant[] {
 	const now = new Date();
 	return grants.filter(
 		(g) =>
-			g.status === "active" &&
-			(!g.expiresAt || new Date(g.expiresAt) > now),
+			g.status === "active" && (!g.expiresAt || new Date(g.expiresAt) > now)
 	);
 }
 
@@ -265,9 +278,7 @@ export async function buildApprovalInfo(
 	opts: ResolvedAgentAuthOptions,
 	adapter: AdapterCreate & AdapterUpdate,
 	internalAdapter: {
-		findUserById: (
-			id: string,
-		) => Promise<{ id: string; email: string } | null>;
+		findUserById: (id: string) => Promise<{ id: string; email: string } | null>;
 	},
 	context: {
 		origin: string;
@@ -279,7 +290,7 @@ export async function buildApprovalInfo(
 		preferredMethod?: string;
 		loginHint?: string;
 		bindingMessage?: string;
-	},
+	}
 ): Promise<Record<string, unknown>> {
 	const resolved = await opts.resolveApprovalMethod({
 		userId: context.userId,
@@ -314,7 +325,9 @@ export async function buildApprovalInfo(
 					status: "pending",
 					userCodeHash: null,
 					loginHint: context.loginHint ?? user.email,
-					bindingMessage: context.bindingMessage ?? `Agent "${context.agentName}" requesting approval`,
+					bindingMessage:
+						context.bindingMessage ??
+						`Agent "${context.agentName}" requesting approval`,
 					clientNotificationToken: null,
 					clientNotificationEndpoint: null,
 					deliveryMode: "poll",
@@ -336,7 +349,10 @@ export async function buildApprovalInfo(
 	const userCode = generateUserCode();
 	const codeHash = await hashToken(userCode);
 
-	const approvalReq = await adapter.create<Record<string, unknown>, ApprovalRequest>({
+	const approvalReq = await adapter.create<
+		Record<string, unknown>,
+		ApprovalRequest
+	>({
 		model: TABLE.approval,
 		data: {
 			method: "device_authorization",
@@ -374,88 +390,94 @@ export async function buildApprovalInfo(
 
 export async function isDynamicHostAllowed(
 	opts: ResolvedAgentAuthOptions,
-	ctx: GenericEndpointContext,
+	ctx: GenericEndpointContext
 ): Promise<boolean> {
 	const flag = opts.allowDynamicHostRegistration;
-	if (typeof flag === "function") return flag(ctx);
+	if (typeof flag === "function") {
+		return flag(ctx);
+	}
 	return flag;
 }
 
 export async function resolveDefaultHostCapabilities(
 	opts: ResolvedAgentAuthOptions,
-	context: DefaultHostCapabilitiesContext,
+	context: DefaultHostCapabilitiesContext
 ): Promise<string[]> {
 	const val = opts.defaultHostCapabilities;
-	if (typeof val === "function") return val(context);
+	if (typeof val === "function") {
+		return val(context);
+	}
 	return val;
 }
 
 export function validateKeyAlgorithm(
 	publicKey: Record<string, unknown>,
-	allowedAlgorithms: string[],
+	allowedAlgorithms: string[]
 ): void {
 	const kty = publicKey.kty as string | undefined;
 	const crv = publicKey.crv as string | undefined;
 	const keyAlg = crv ?? kty;
-	if (!keyAlg || !allowedAlgorithms.includes(keyAlg)) {
-	throw agentError(
-		"BAD_REQUEST",
-		ERR.UNSUPPORTED_ALGORITHM,
-		`Key algorithm "${keyAlg}" is not allowed. Accepted: ${allowedAlgorithms.join(", ")}`,
-	);
+	if (!(keyAlg && allowedAlgorithms.includes(keyAlg))) {
+		throw agentError(
+			"BAD_REQUEST",
+			ERR.UNSUPPORTED_ALGORITHM,
+			`Key algorithm "${keyAlg}" is not allowed. Accepted: ${allowedAlgorithms.join(", ")}`
+		);
 	}
 }
 
 export function validateCapabilityIds(
 	capabilityIds: string[],
-	opts: ResolvedAgentAuthOptions,
+	opts: ResolvedAgentAuthOptions
 ): void {
 	if (capabilityIds.length > 0 && opts.blockedCapabilities.length > 0) {
 		const blocked = findBlockedCapabilities(
 			capabilityIds,
-			opts.blockedCapabilities,
+			opts.blockedCapabilities
 		);
 		if (blocked.length > 0) {
-		throw agentError(
-			"BAD_REQUEST",
-			ERR.CAPABILITY_BLOCKED,
-			`Blocked capabilities: ${blocked.join(", ")}`,
-		);
+			throw agentError(
+				"BAD_REQUEST",
+				ERR.CAPABILITY_BLOCKED,
+				`Blocked capabilities: ${blocked.join(", ")}`
+			);
 		}
 	}
 }
 
 export async function validateCapabilitiesExist(
 	capabilityIds: string[],
-	opts: ResolvedAgentAuthOptions,
+	opts: ResolvedAgentAuthOptions
 ): Promise<void> {
-	if (capabilityIds.length === 0) return;
+	if (capabilityIds.length === 0) {
+		return;
+	}
 
 	const hasStaticList = opts.capabilities && opts.capabilities.length > 0;
 	const hasCustomValidator = !!opts.validateCapabilities;
 
-	if (!hasStaticList && !hasCustomValidator) {
+	if (!(hasStaticList || hasCustomValidator)) {
 		console.warn(
 			`[agent-auth] Capabilities requested (${capabilityIds.join(", ")}) but no capabilities list or ` +
-			"validateCapabilities function is configured. All names are accepted unchecked.",
+				"validateCapabilities function is configured. All names are accepted unchecked."
 		);
 		return;
 	}
 
 	if (hasStaticList) {
-		const known = new Set(opts.capabilities!.map((c) => c.name));
+		const known = new Set(opts.capabilities?.map((c) => c.name));
 		const unknown = capabilityIds.filter((id) => !known.has(id));
 		if (unknown.length > 0) {
 			throw agentError(
 				"BAD_REQUEST",
 				ERR.INVALID_CAPABILITIES,
-				`Unknown capabilities: ${unknown.join(", ")}`,
+				`Unknown capabilities: ${unknown.join(", ")}`
 			);
 		}
 	}
 
 	if (hasCustomValidator) {
-		const valid = await opts.validateCapabilities!(capabilityIds);
+		const valid = await opts.validateCapabilities?.(capabilityIds);
 		if (!valid) {
 			throw agentError("BAD_REQUEST", ERR.INVALID_CAPABILITIES);
 		}
@@ -478,7 +500,7 @@ export function verifyAudience(
 	baseURL: string,
 	headers?: Headers | null,
 	trustProxy?: boolean,
-	expectedLocation?: string,
+	expectedLocation?: string
 ): boolean {
 	const parsedBase = new URL(baseURL);
 	const configuredOrigin = parsedBase.origin;
@@ -494,7 +516,8 @@ export function verifyAudience(
 	const reqHost = headers?.get("host");
 	if (reqHost) {
 		const proto = trustProxy
-			? (headers?.get("x-forwarded-proto") ?? parsedBase.protocol.replace(":", ""))
+			? (headers?.get("x-forwarded-proto") ??
+				parsedBase.protocol.replace(":", ""))
 			: parsedBase.protocol.replace(":", "");
 		const reqOrigin = `${proto}://${reqHost}`;
 		accepted.add(reqOrigin);
@@ -504,9 +527,7 @@ export function verifyAudience(
 	if (expectedLocation) {
 		accepted.add(expectedLocation);
 	}
-	const values = Array.isArray(audValues)
-		? audValues
-		: [audValues];
+	const values = Array.isArray(audValues) ? audValues : [audValues];
 	return values.some((a) => accepted.has(String(a)));
 }
 
@@ -516,9 +537,11 @@ export function verifyAudience(
  */
 export function getCapabilityLocation(
 	capabilities: Array<{ name: string; location?: string }> | undefined,
-	capabilityName: string,
+	capabilityName: string
 ): string | undefined {
-	if (!capabilities) return undefined;
+	if (!capabilities) {
+		return undefined;
+	}
 	const cap = capabilities.find((c) => c.name === capabilityName);
 	return cap?.location;
 }
@@ -535,7 +558,7 @@ export async function claimAutonomousAgents(
 	params: {
 		hostId: string;
 		userId: string;
-	},
+	}
 ): Promise<void> {
 	const agents = await adapter.findMany<Agent>({
 		model: TABLE.agent,
@@ -544,7 +567,7 @@ export async function claimAutonomousAgents(
 
 	const now = new Date();
 	const autonomous = agents.filter(
-		(a) => a.mode === "autonomous" && a.status === "active",
+		(a) => a.mode === "autonomous" && a.status === "active"
 	);
 
 	for (const agent of autonomous) {
@@ -582,13 +605,17 @@ export async function claimAutonomousAgents(
 			capabilities: activeCapabilities,
 		});
 
-		emit(opts, {
-			type: "agent.claimed",
-			actorId: params.userId,
-			agentId: agent.id,
-			hostId: params.hostId,
-			metadata: { capabilities: activeCapabilities },
-		}, ctx);
+		emit(
+			opts,
+			{
+				type: "agent.claimed",
+				actorId: params.userId,
+				agentId: agent.id,
+				hostId: params.hostId,
+				metadata: { capabilities: activeCapabilities },
+			},
+			ctx
+		);
 	}
 }
 
@@ -608,9 +635,11 @@ export async function activatePendingAgent(
 		agentId: string;
 		userId: string;
 		agent: { status: string; hostId: string };
-	},
+	}
 ): Promise<void> {
-	if (params.agent.status !== "pending") return;
+	if (params.agent.status !== "pending") {
+		return;
+	}
 
 	const now = new Date();
 	const expiresAt =
@@ -681,12 +710,16 @@ export async function activatePendingAgent(
 				update: hostUpdate,
 			});
 
-			emit(opts, {
-				type: "host.claimed",
-				actorId: params.userId,
-				hostId: host.id,
-				metadata: { previousUserId },
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "host.claimed",
+					actorId: params.userId,
+					hostId: host.id,
+					metadata: { previousUserId },
+				},
+				ctx
+			);
 		}
 	}
 }
@@ -703,7 +736,7 @@ async function revokeAgentsForUserOnHost(
 		hostId: string;
 		userId: string;
 		excludeAgentId?: string;
-	},
+	}
 ): Promise<void> {
 	const agents = await adapter.findMany<Agent>({
 		model: TABLE.agent,
@@ -716,8 +749,12 @@ async function revokeAgentsForUserOnHost(
 	const now = new Date();
 
 	for (const agent of agents) {
-		if (agent.id === params.excludeAgentId) continue;
-		if (agent.status === "revoked" || agent.status === "rejected") continue;
+		if (agent.id === params.excludeAgentId) {
+			continue;
+		}
+		if (agent.status === "revoked" || agent.status === "rejected") {
+			continue;
+		}
 
 		await adapter.update({
 			model: TABLE.grant,
@@ -734,13 +771,17 @@ async function revokeAgentsForUserOnHost(
 			},
 		});
 
-		emit(opts, {
-			type: "agent.revoked",
-			actorId: params.userId,
-			agentId: agent.id,
-			hostId: params.hostId,
-			metadata: { reason: "host_transferred" },
-		}, ctx);
+		emit(
+			opts,
+			{
+				type: "agent.revoked",
+				actorId: params.userId,
+				agentId: agent.id,
+				hostId: params.hostId,
+				metadata: { reason: "host_transferred" },
+			},
+			ctx
+		);
 	}
 }
 
@@ -755,7 +796,7 @@ export async function resolvePendingApprovalRequests(
 		agentId: string;
 		status: "approved" | "denied";
 		excludeId?: string;
-	},
+	}
 ): Promise<ApprovalRequest[]> {
 	const now = new Date();
 	const pending = await adapter.findMany<ApprovalRequest>({
@@ -767,7 +808,9 @@ export async function resolvePendingApprovalRequests(
 	});
 	const resolved: ApprovalRequest[] = [];
 	for (const req of pending) {
-		if (params.excludeId && req.id === params.excludeId) continue;
+		if (params.excludeId && req.id === params.excludeId) {
+			continue;
+		}
 		await adapter.update({
 			model: TABLE.approval,
 			where: [{ field: "id", value: req.id }],
@@ -783,17 +826,19 @@ export async function resolvePendingApprovalRequests(
  */
 export async function deliverApprovalNotifications(
 	requests: ApprovalRequest[],
-	payload: Record<string, unknown>,
+	payload: Record<string, unknown>
 ): Promise<void> {
 	for (const req of requests) {
 		if (
 			req.method !== "ciba" ||
 			!req.clientNotificationEndpoint ||
 			!req.clientNotificationToken
-		)
+		) {
 			continue;
-		if (req.deliveryMode !== "ping" && req.deliveryMode !== "push")
+		}
+		if (req.deliveryMode !== "ping" && req.deliveryMode !== "push") {
 			continue;
+		}
 		try {
 			await globalThis.fetch(req.clientNotificationEndpoint, {
 				method: "POST",

@@ -2,19 +2,16 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
-import { resolveGrantExpiresAt } from "../utils/grant-ttl";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	Agent,
 	AgentCapabilityGrant,
 	AgentHost,
 	ResolvedAgentAuthOptions,
 } from "../types";
-import {
-	validateCapabilityIds,
-	validateCapabilitiesExist,
-} from "./_helpers";
+import { resolveGrantExpiresAt } from "../utils/grant-ttl";
+import { validateCapabilitiesExist, validateCapabilityIds } from "./_helpers";
 
 export function grantCapability(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -81,11 +78,12 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 			validateCapabilityIds(capabilityIds, opts);
 			await validateCapabilitiesExist(capabilityIds, opts);
 
-			const existing =
-				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+			const existing = await ctx.context.adapter.findMany<AgentCapabilityGrant>(
+				{
 					model: TABLE.grant,
 					where: [{ field: "agentId", value: agentId }],
-				});
+				}
+			);
 
 			const now = new Date();
 			const grantIds: string[] = [];
@@ -93,8 +91,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 
 			for (const capabilityId of capabilityIds) {
 				const pendingGrant = existing.find(
-					(g) =>
-						g.capability === capabilityId && g.status === "pending",
+					(g) => g.capability === capabilityId && g.status === "pending"
 				);
 
 				const expiresAt = await resolveGrantExpiresAt(
@@ -105,7 +102,7 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 						hostId: agent.hostId,
 						userId: agent.userId,
 					},
-					explicitTTL,
+					explicitTTL
 				);
 
 				if (pendingGrant) {
@@ -122,11 +119,11 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 					grantIds.push(pendingGrant.id);
 				} else {
 					const alreadyActive = existing.find(
-						(g) =>
-							g.capability === capabilityId &&
-							g.status === "active",
+						(g) => g.capability === capabilityId && g.status === "active"
 					);
-					if (alreadyActive) continue;
+					if (alreadyActive) {
+						continue;
+					}
 
 					const grant = await ctx.context.adapter.create<
 						Record<string, unknown>,
@@ -136,12 +133,12 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 						data: {
 							agentId,
 							capability: capabilityId,
-						constraints: null,
-						grantedBy: session.user.id,
-						deniedBy: null,
-						expiresAt,
-						status: "active",
-						reason: null,
+							constraints: null,
+							grantedBy: session.user.id,
+							deniedBy: null,
+							expiresAt,
+							status: "active",
+							reason: null,
 							createdAt: now,
 							updatedAt: now,
 						},
@@ -151,14 +148,18 @@ export function grantCapability(opts: ResolvedAgentAuthOptions) {
 				added.push(capabilityId);
 			}
 
-			emit(opts, {
-				type: "capability.granted",
-				actorId: session.user.id,
-				agentId,
-				metadata: { capabilities: added },
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "capability.granted",
+					actorId: session.user.id,
+					agentId,
+					metadata: { capabilities: added },
+				},
+				ctx
+			);
 
 			return ctx.json({ agent_id: agentId, grant_ids: grantIds, added });
-		},
+		}
 	);
 }

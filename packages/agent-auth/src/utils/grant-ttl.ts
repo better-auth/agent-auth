@@ -13,7 +13,7 @@ export async function resolveGrantExpiresAt(
 		hostId: string | null;
 		userId: string | null;
 	},
-	explicitTTL?: number,
+	explicitTTL?: number
 ): Promise<Date | null> {
 	if (explicitTTL && explicitTTL > 0) {
 		return new Date(Date.now() + explicitTTL * 1000);

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db } from "@/lib/db/index";
 import { provider } from "@/lib/db/schema";
 import type { ProviderConfig } from "@/lib/discover";
 import { rankByIntent } from "@/lib/intent-search";
@@ -9,13 +9,13 @@ export async function GET(request: Request) {
 	const intent = searchParams.get("intent")?.trim();
 	const limit = Math.min(
 		50,
-		Math.max(1, Number(searchParams.get("limit") ?? "10")),
+		Math.max(1, Number(searchParams.get("limit") ?? "10"))
 	);
 
 	if (!intent) {
 		return Response.json(
 			{ error: "intent query parameter is required" },
-			{ status: 400 },
+			{ status: 400 }
 		);
 	}
 

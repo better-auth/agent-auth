@@ -16,9 +16,16 @@ const CRV_TO_ALG: Record<string, string> = {
 };
 
 function resolveAlgorithm(key: AgentJWK): string {
-	if (key.crv && CRV_TO_ALG[key.crv]) return CRV_TO_ALG[key.crv];
-	if (key.kty === "OKP") return "EdDSA";
-	if (key.kty === "RSA") return "RS256";
+	const crvAlg = key.crv ? CRV_TO_ALG[key.crv] : undefined;
+	if (crvAlg) {
+		return crvAlg;
+	}
+	if (key.kty === "OKP") {
+		return "EdDSA";
+	}
+	if (key.kty === "RSA") {
+		return "RS256";
+	}
 	return "EdDSA";
 }
 
@@ -39,7 +46,15 @@ export async function generateKeypair(): Promise<Keypair> {
 }
 
 export interface SignHostJWTOptions {
+	/** Agent's public key to embed in the host JWT for registration. */
+	agentPublicKey?: AgentJWK;
+	/** JWT `aud` claim — the server's issuer URL. */
+	audience: string;
+	/** Expiry in seconds. @default 60 */
+	expiresInSeconds?: number;
 	hostKeypair: Keypair;
+	/** Host name to include in the JWT. */
+	hostName?: string;
 	/**
 	 * Host identifier used as the JWT `iss` claim (§4.2).
 	 * Defaults to the public key's `kid` (JWK thumbprint),
@@ -49,14 +64,6 @@ export interface SignHostJWTOptions {
 	issuer?: string;
 	/** @deprecated Use `issuer` instead. */
 	subject?: string;
-	/** JWT `aud` claim — the server's issuer URL. */
-	audience: string;
-	/** Agent's public key to embed in the host JWT for registration. */
-	agentPublicKey?: AgentJWK;
-	/** Host name to include in the JWT. */
-	hostName?: string;
-	/** Expiry in seconds. @default 60 */
-	expiresInSeconds?: number;
 }
 
 /**
@@ -68,10 +75,11 @@ export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 	const alg = resolveAlgorithm(opts.hostKeypair.privateKey);
 	const key = await importJWK(opts.hostKeypair.privateKey, alg);
 	const kid = opts.hostKeypair.publicKey.kid;
-	const hostId = opts.issuer ?? opts.subject ?? kid ?? await calculateJwkThumbprint(
-		opts.hostKeypair.publicKey,
-		"sha256",
-	);
+	const hostId =
+		opts.issuer ??
+		opts.subject ??
+		kid ??
+		(await calculateJwkThumbprint(opts.hostKeypair.publicKey, "sha256"));
 
 	const claims: Record<string, unknown> = {
 		host_public_key: opts.hostKeypair.publicKey,
@@ -96,21 +104,21 @@ export async function signHostJWT(opts: SignHostJWTOptions): Promise<string> {
 }
 
 export interface SignAgentJWTOptions {
-	agentKeypair: Keypair;
 	/** JWT `sub` claim — the agent's ID. */
 	agentId: string;
+	agentKeypair: Keypair;
+	/** Access token hash for DPoP request binding (§5.3). */
+	ath?: string;
 	/** JWT `aud` claim — the server's issuer URL. */
 	audience: string;
 	/** Restrict this JWT to specific capabilities. */
 	capabilities?: string[];
+	/** Expiry in seconds. @default 60 */
+	expiresInSeconds?: number;
 	/** HTTP method for DPoP request binding (§5.3). */
 	htm?: string;
 	/** HTTP target URI for DPoP request binding (§5.3). */
 	htu?: string;
-	/** Access token hash for DPoP request binding (§5.3). */
-	ath?: string;
-	/** Expiry in seconds. @default 60 */
-	expiresInSeconds?: number;
 }
 
 /**
@@ -126,9 +134,15 @@ export async function signAgentJWT(opts: SignAgentJWTOptions): Promise<string> {
 	if (opts.capabilities && opts.capabilities.length > 0) {
 		claims.capabilities = opts.capabilities;
 	}
-	if (opts.htm) claims.htm = opts.htm;
-	if (opts.htu) claims.htu = opts.htu;
-	if (opts.ath) claims.ath = opts.ath;
+	if (opts.htm) {
+		claims.htm = opts.htm;
+	}
+	if (opts.htu) {
+		claims.htu = opts.htu;
+	}
+	if (opts.ath) {
+		claims.ath = opts.ath;
+	}
 
 	return new SignJWT(claims)
 		.setProtectedHeader({ alg, typ: "agent+jwt", ...(kid ? { kid } : {}) })

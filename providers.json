@@ -4,17 +4,9 @@
     "provider_name": "vercel",
     "description": "A deployment platform for your apps. Next.js, React, Node.js, etc.",
     "issuer": "http://localhost:3000",
-    "algorithms": [
-      "Ed25519"
-    ],
-    "modes": [
-      "delegated",
-      "autonomous"
-    ],
-    "approval_methods": [
-      "ciba",
-      "device_authorization"
-    ],
+    "algorithms": ["Ed25519"],
+    "modes": ["delegated", "autonomous"],
+    "approval_methods": ["ciba", "device_authorization"],
     "endpoints": {
       "register": "/api/auth/agent/register",
       "capabilities": "/api/auth/capability/list",

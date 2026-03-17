@@ -11,7 +11,11 @@ import type {
 import { verifyJWT } from "../utils/crypto";
 import type { JtiCacheStore } from "../utils/jti-cache";
 import type { JwksCacheStore } from "../utils/jwks-cache";
-import { activeGrants, verifyAudience, getCapabilityLocation } from "./_helpers";
+import {
+	activeGrants,
+	getCapabilityLocation,
+	verifyAudience,
+} from "./_helpers";
 
 /**
  * POST /agent/introspect
@@ -25,7 +29,7 @@ import { activeGrants, verifyAudience, getCapabilityLocation } from "./_helpers"
 export function introspect(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiCacheStore,
-	jwksCache?: JwksCacheStore,
+	jwksCache?: JwksCacheStore
 ) {
 	return createAuthEndpoint(
 		"/agent/introspect",
@@ -50,8 +54,12 @@ export function introspect(
 				const decoded = decodeJwt(token);
 				const tokenHeader = decodeProtectedHeader(token);
 				// §4.5: introspected token must be an agent JWT
-				if (tokenHeader.typ !== "agent+jwt") return ctx.json(inactive);
-				if (!decoded.sub) return ctx.json(inactive);
+				if (tokenHeader.typ !== "agent+jwt") {
+					return ctx.json(inactive);
+				}
+				if (!decoded.sub) {
+					return ctx.json(inactive);
+				}
 				agentId = decoded.sub;
 			} catch {
 				return ctx.json(inactive);
@@ -62,8 +70,12 @@ export function introspect(
 				where: [{ field: "id", value: agentId }],
 			});
 
-			if (!agent) return ctx.json(inactive);
-			if (agent.status !== "active") return ctx.json(inactive);
+			if (!agent) {
+				return ctx.json(inactive);
+			}
+			if (agent.status !== "active") {
+				return ctx.json(inactive);
+			}
 
 			let publicKey: AgentJWK | null = null;
 
@@ -79,17 +91,15 @@ export function introspect(
 			if (!publicKey && agent.publicKey) {
 				try {
 					const parsed: unknown = JSON.parse(agent.publicKey);
-					if (
-						parsed &&
-						typeof parsed === "object" &&
-						"kty" in parsed
-					) {
+					if (parsed && typeof parsed === "object" && "kty" in parsed) {
 						publicKey = parsed as AgentJWK;
 					}
 				} catch {}
 			}
 
-			if (!publicKey) return ctx.json(inactive);
+			if (!publicKey) {
+				return ctx.json(inactive);
+			}
 
 			const payload = await verifyJWT({
 				jwt: token,
@@ -97,17 +107,26 @@ export function introspect(
 				maxAge: opts.jwtMaxAge,
 			});
 
-			if (!payload) return ctx.json(inactive);
+			if (!payload) {
+				return ctx.json(inactive);
+			}
 
 			const jwtCaps = Array.isArray(payload.capabilities)
-				? payload.capabilities as string[]
+				? (payload.capabilities as string[])
 				: [];
-			const expectedLocation = jwtCaps.length === 1
-				? getCapabilityLocation(opts.capabilities, jwtCaps[0])
-				: undefined;
+			const expectedLocation =
+				jwtCaps.length === 1
+					? getCapabilityLocation(opts.capabilities, jwtCaps[0]!)
+					: undefined;
 			if (
 				payload.aud &&
-				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers, opts.trustProxy, expectedLocation)
+				!verifyAudience(
+					payload.aud,
+					ctx.context.baseURL,
+					ctx.headers,
+					opts.trustProxy,
+					expectedLocation
+				)
 			) {
 				return ctx.json(inactive);
 			}
@@ -127,11 +146,10 @@ export function introspect(
 				return ctx.json(inactive);
 			}
 
-			const grants =
-				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-					model: TABLE.grant,
-					where: [{ field: "agentId", value: agent.id }],
-				});
+			const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+				model: TABLE.grant,
+				where: [{ field: "agentId", value: agent.id }],
+			});
 
 			let relevantGrants = activeGrants(grants);
 
@@ -139,11 +157,13 @@ export function introspect(
 			if (Array.isArray(capabilitiesClaim)) {
 				const jwtCaps = new Set<string>();
 				for (const v of capabilitiesClaim) {
-					if (typeof v === "string") jwtCaps.add(v);
+					if (typeof v === "string") {
+						jwtCaps.add(v);
+					}
 				}
 				if (jwtCaps.size > 0) {
 					relevantGrants = relevantGrants.filter((g) =>
-						jwtCaps.has(g.capability),
+						jwtCaps.has(g.capability)
 					);
 				}
 			}
@@ -162,6 +182,6 @@ export function introspect(
 					? new Date(agent.expiresAt).toISOString()
 					: null,
 			});
-		},
+		}
 	);
 }

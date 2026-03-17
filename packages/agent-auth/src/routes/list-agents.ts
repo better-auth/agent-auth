@@ -2,7 +2,12 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import type { Agent, AgentCapabilityGrant, AgentHost, ResolvedAgentAuthOptions } from "../types";
+import type {
+	Agent,
+	AgentCapabilityGrant,
+	AgentHost,
+	ResolvedAgentAuthOptions,
+} from "../types";
 import { formatGrantsResponse } from "./_helpers";
 
 /**
@@ -79,7 +84,7 @@ export function listAgents(opts: ResolvedAgentAuthOptions) {
 						where: [{ field: "id", value: hid }],
 					});
 					hostMap.set(hid, host?.name ?? null);
-				}),
+				})
 			);
 
 			const agentsWithGrants = await Promise.all(
@@ -96,15 +101,18 @@ export function listAgents(opts: ResolvedAgentAuthOptions) {
 						mode: agent.mode,
 						host_id: agent.hostId,
 						host_name: hostMap.get(agent.hostId) ?? null,
-						agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+						agent_capability_grants: formatGrantsResponse(
+							grants,
+							opts.capabilities
+						),
 						created_at: agent.createdAt,
 						last_used_at: agent.lastUsedAt,
 						expires_at: agent.expiresAt,
 					};
-				}),
+				})
 			);
 
 			return ctx.json({ agents: agentsWithGrants });
-		},
+		}
 	);
 }

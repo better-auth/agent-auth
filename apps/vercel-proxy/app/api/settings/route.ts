@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
-import { getSetting, setSetting } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { getSetting, setSetting } from "@/lib/db";
 
 const ALLOWED_KEYS = [
 	"freshSessionEnabled",
@@ -20,9 +20,9 @@ export async function GET() {
 
 	return NextResponse.json({
 		freshSessionEnabled: getSetting("freshSessionEnabled") === "true",
-		freshSessionWindow: parseInt(
+		freshSessionWindow: Number.parseInt(
 			getSetting("freshSessionWindow") ?? "300",
-			10,
+			10
 		),
 		preferredApprovalMethod:
 			getSetting("preferredApprovalMethod") ?? "device_authorization",

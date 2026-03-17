@@ -1,6 +1,6 @@
-import { Command } from "commander";
 import type { CapabilityConstraints, CapabilityRequestItem } from "@auth/agent";
-import { createClient, getClientConfig } from "./client.js";
+import { Command } from "commander";
+import { createClient, getClientConfig } from "./client";
 
 function json<T>(data: T): void {
 	console.log(JSON.stringify(data, null, 2));
@@ -12,14 +12,23 @@ function json<T>(data: T): void {
  */
 function mergeConstraints(
 	ids: string[] | undefined,
-	constraintsJson: string | undefined,
+	constraintsJson: string | undefined
 ): CapabilityRequestItem[] | undefined {
-	if (!ids) return undefined;
-	if (!constraintsJson) return ids;
-	const parsed = JSON.parse(constraintsJson) as Record<string, CapabilityConstraints>;
+	if (!ids) {
+		return undefined;
+	}
+	if (!constraintsJson) {
+		return ids;
+	}
+	const parsed = JSON.parse(constraintsJson) as Record<
+		string,
+		CapabilityConstraints
+	>;
 	return ids.map((id): CapabilityRequestItem => {
 		const c = parsed[id];
-		if (c) return { name: id, constraints: c };
+		if (c) {
+			return { name: id, constraints: c };
+		}
 		return id;
 	});
 }
@@ -41,8 +50,16 @@ export function buildCli(): Command {
 		.name("auth-agent")
 		.description("CLI for the Agent Auth Protocol")
 		.version("0.1.0")
-		.option("--storage-dir <path>", "storage directory", process.env.AGENT_AUTH_STORAGE_DIR)
-		.option("--registry-url <url>", "registry URL", process.env.AGENT_AUTH_REGISTRY_URL)
+		.option(
+			"--storage-dir <path>",
+			"storage directory",
+			process.env.AGENT_AUTH_STORAGE_DIR
+		)
+		.option(
+			"--registry-url <url>",
+			"registry URL",
+			process.env.AGENT_AUTH_REGISTRY_URL
+		)
 		.option("--host-name <name>", "host name", process.env.AGENT_AUTH_HOST_NAME)
 		.option("--no-browser", "don't auto-open the browser for approval URLs")
 		.option("--url <urls...>", "provider URLs to auto-discover at startup");
@@ -66,7 +83,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().discoverProvider(url);
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -76,7 +93,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const results = await client().searchProviders(intent);
 				json(results);
-			}),
+			})
 		);
 
 	program
@@ -86,7 +103,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const results = await client().listProviders();
 				json(results);
-			}),
+			})
 		);
 
 	program
@@ -105,12 +122,14 @@ export function buildCli(): Command {
 					cursor: opts.cursor,
 				});
 				json(result);
-			}),
+			})
 		);
 
 	program
 		.command("describe <capability-name>")
-		.description("Get the full definition of a capability (including input schema)")
+		.description(
+			"Get the full definition of a capability (including input schema)"
+		)
 		.requiredOption("--provider <url>", "provider URL or name")
 		.option("--agent-id <id>", "agent ID for grant status context")
 		.action((name: string, opts) =>
@@ -121,7 +140,7 @@ export function buildCli(): Command {
 					agentId: opts.agentId,
 				});
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -129,17 +148,32 @@ export function buildCli(): Command {
 		.description("Connect an agent to a provider")
 		.requiredOption("--provider <url>", "provider URL or name")
 		.option("--capabilities <ids...>", "capability IDs to request")
-		.option("--constraints <json>", "JSON constraints map, e.g. '{\"transfer\":{\"amount\":{\"max\":1000}}}'")
+		.option(
+			"--constraints <json>",
+			'JSON constraints map, e.g. \'{"transfer":{"amount":{"max":1000}}}\''
+		)
 		.option("--mode <mode>", "agent mode (delegated|autonomous)", "delegated")
 		.option("--name <name>", "agent name")
 		.option("--reason <reason>", "reason for requesting capabilities")
-		.option("--force-new", "skip identity reuse and always register a new agent")
-		.option("--preferred-method <method>", "preferred approval method (e.g. device_authorization, ciba)")
-		.option("--login-hint <hint>", "login hint for CIBA approval (e.g. user email)")
+		.option(
+			"--force-new",
+			"skip identity reuse and always register a new agent"
+		)
+		.option(
+			"--preferred-method <method>",
+			"preferred approval method (e.g. device_authorization, ciba)"
+		)
+		.option(
+			"--login-hint <hint>",
+			"login hint for CIBA approval (e.g. user email)"
+		)
 		.option("--binding-message <msg>", "binding message shown during approval")
 		.action((opts) =>
 			run(async () => {
-				const capabilities = mergeConstraints(opts.capabilities, opts.constraints);
+				const capabilities = mergeConstraints(
+					opts.capabilities,
+					opts.constraints
+				);
 				const result = await client().connectAgent({
 					provider: opts.provider,
 					capabilities,
@@ -152,7 +186,7 @@ export function buildCli(): Command {
 					bindingMessage: opts.bindingMessage,
 				});
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -162,7 +196,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().agentStatus(agentId);
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -176,21 +210,32 @@ export function buildCli(): Command {
 					capabilities: opts.capabilities,
 				});
 				json(result);
-			}),
+			})
 		);
 
 	program
 		.command("request <agent-id>")
 		.description("Request additional capabilities for an agent")
 		.requiredOption("--capabilities <ids...>", "capability IDs to request")
-		.option("--constraints <json>", "JSON constraints map, e.g. '{\"transfer\":{\"amount\":{\"max\":1000}}}'")
+		.option(
+			"--constraints <json>",
+			'JSON constraints map, e.g. \'{"transfer":{"amount":{"max":1000}}}\''
+		)
 		.option("--reason <reason>", "reason for request")
-		.option("--preferred-method <method>", "preferred approval method (e.g. device_authorization, ciba)")
-		.option("--login-hint <hint>", "login hint for CIBA approval (e.g. user email)")
+		.option(
+			"--preferred-method <method>",
+			"preferred approval method (e.g. device_authorization, ciba)"
+		)
+		.option(
+			"--login-hint <hint>",
+			"login hint for CIBA approval (e.g. user email)"
+		)
 		.option("--binding-message <msg>", "binding message shown during approval")
 		.action((agentId: string, opts) =>
 			run(async () => {
-				const capabilities = mergeConstraints(opts.capabilities as string[], opts.constraints) ?? opts.capabilities as string[];
+				const capabilities =
+					mergeConstraints(opts.capabilities as string[], opts.constraints) ??
+					(opts.capabilities as string[]);
 				const result = await client().requestCapability({
 					agentId,
 					capabilities,
@@ -200,7 +245,7 @@ export function buildCli(): Command {
 					bindingMessage: opts.bindingMessage,
 				});
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -210,7 +255,7 @@ export function buildCli(): Command {
 			run(async () => {
 				await client().disconnectAgent(agentId);
 				json({ ok: true, agentId });
-			}),
+			})
 		);
 
 	program
@@ -220,7 +265,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().reactivateAgent(agentId);
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -236,7 +281,7 @@ export function buildCli(): Command {
 					arguments: args,
 				});
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -254,9 +299,9 @@ export function buildCli(): Command {
 						mode: c.mode,
 						capabilityGrants: c.capabilityGrants,
 						createdAt: c.createdAt,
-					})),
+					}))
 				);
-			}),
+			})
 		);
 
 	program
@@ -278,7 +323,7 @@ export function buildCli(): Command {
 					capabilityGrants: conn.capabilityGrants,
 					createdAt: conn.createdAt,
 				});
-			}),
+			})
 		);
 
 	program
@@ -288,7 +333,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().rotateAgentKey(agentId);
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -298,7 +343,7 @@ export function buildCli(): Command {
 			run(async () => {
 				const result = await client().rotateHostKey(issuer);
 				json(result);
-			}),
+			})
 		);
 
 	program
@@ -315,7 +360,7 @@ export function buildCli(): Command {
 					name: opts.name,
 				});
 				json(result);
-			}),
+			})
 		);
 
 	return program;

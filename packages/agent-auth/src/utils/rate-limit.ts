@@ -11,15 +11,12 @@ export function buildRateLimits(overrides: AgentAuthOptions["rateLimit"]) {
 			pathMatcher(path: string) {
 				return path === "/agent/register";
 			},
-			window:
-				overrides?.["/agent/register"]?.window ?? DEFAULT_WINDOW,
+			window: overrides?.["/agent/register"]?.window ?? DEFAULT_WINDOW,
 			max: overrides?.["/agent/register"]?.max ?? CREATE_MAX,
 		},
 		{
 			pathMatcher(path: string) {
-				return (
-					path === "/agent/rotate-key" || path === "/agent/cleanup"
-				);
+				return path === "/agent/rotate-key" || path === "/agent/cleanup";
 			},
 			window:
 				overrides?.["/agent/rotate-key"]?.window ??
@@ -35,20 +32,15 @@ export function buildRateLimits(overrides: AgentAuthOptions["rateLimit"]) {
 				return path === "/agent/approve-capability";
 			},
 			window:
-				overrides?.["/agent/approve-capability"]?.window ??
-				DEFAULT_WINDOW,
-			max:
-				overrides?.["/agent/approve-capability"]?.max ??
-				SENSITIVE_MAX,
+				overrides?.["/agent/approve-capability"]?.window ?? DEFAULT_WINDOW,
+			max: overrides?.["/agent/approve-capability"]?.max ?? SENSITIVE_MAX,
 		},
 		{
 			pathMatcher(path: string) {
 				return path === "/agent/ciba/authorize";
 			},
-			window:
-				overrides?.["/agent/ciba/authorize"]?.window ?? DEFAULT_WINDOW,
-			max:
-				overrides?.["/agent/ciba/authorize"]?.max ?? SENSITIVE_MAX,
+			window: overrides?.["/agent/ciba/authorize"]?.window ?? DEFAULT_WINDOW,
+			max: overrides?.["/agent/ciba/authorize"]?.max ?? SENSITIVE_MAX,
 		},
 		{
 			pathMatcher(path: string) {

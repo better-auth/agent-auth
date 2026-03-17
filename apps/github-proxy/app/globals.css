@@ -1,50 +1,50 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0d1117;
-  --foreground: #e6edf3;
-  --accent: #58a6ff;
-  --muted: #7d8590;
-  --border: #30363d;
-  --border-muted: #21262d;
-  --surface: #161b22;
-  --surface-hover: #1c2128;
-  --header: #010409;
-  --green: #238636;
-  --green-hover: #2ea043;
-  --green-emphasis: #3fb950;
-  --danger: #f85149;
-  --attention: #d29922;
-  --done: #a371f7;
-  --tab-active: #f78166;
-  --btn-text: #ffffff;
-  --inset: #010409;
+	--background: #0d1117;
+	--foreground: #e6edf3;
+	--accent: #58a6ff;
+	--muted: #7d8590;
+	--border: #30363d;
+	--border-muted: #21262d;
+	--surface: #161b22;
+	--surface-hover: #1c2128;
+	--header: #010409;
+	--green: #238636;
+	--green-hover: #2ea043;
+	--green-emphasis: #3fb950;
+	--danger: #f85149;
+	--attention: #d29922;
+	--done: #a371f7;
+	--tab-active: #f78166;
+	--btn-text: #ffffff;
+	--inset: #010409;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-accent: var(--accent);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-border-muted: var(--border-muted);
-  --color-surface: var(--surface);
-  --color-surface-hover: var(--surface-hover);
-  --color-header: var(--header);
-  --color-gh-green: var(--green);
-  --color-gh-green-hover: var(--green-hover);
-  --color-gh-green-emphasis: var(--green-emphasis);
-  --color-gh-danger: var(--danger);
-  --color-gh-attention: var(--attention);
-  --color-gh-done: var(--done);
-  --color-gh-tab-active: var(--tab-active);
-  --color-gh-btn-text: var(--btn-text);
-  --color-inset: var(--inset);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-accent: var(--accent);
+	--color-muted: var(--muted);
+	--color-border: var(--border);
+	--color-border-muted: var(--border-muted);
+	--color-surface: var(--surface);
+	--color-surface-hover: var(--surface-hover);
+	--color-header: var(--header);
+	--color-gh-green: var(--green);
+	--color-gh-green-hover: var(--green-hover);
+	--color-gh-green-emphasis: var(--green-emphasis);
+	--color-gh-danger: var(--danger);
+	--color-gh-attention: var(--attention);
+	--color-gh-done: var(--done);
+	--color-gh-tab-active: var(--tab-active);
+	--color-gh-btn-text: var(--btn-text);
+	--color-inset: var(--inset);
+	--font-sans: var(--font-geist-sans);
+	--font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+	color: var(--foreground);
+	background: var(--background);
 }

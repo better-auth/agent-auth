@@ -12,9 +12,9 @@ export default async function DeviceCapabilitiesPage({
 			fallback={
 				<div className="flex min-h-screen items-center justify-center">
 					<svg
-						className="animate-spin h-4 w-4 text-muted"
-						viewBox="0 0 24 24"
+						className="h-4 w-4 animate-spin text-muted"
 						fill="none"
+						viewBox="0 0 24 24"
 					>
 						<circle
 							className="opacity-25"
@@ -26,8 +26,8 @@ export default async function DeviceCapabilitiesPage({
 						/>
 						<path
 							className="opacity-75"
-							fill="currentColor"
 							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+							fill="currentColor"
 						/>
 					</svg>
 				</div>

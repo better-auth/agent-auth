@@ -1,14 +1,14 @@
 import { exec } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { AgentAuthClient } from "@auth/agent";
-import { FileStorage } from "./storage.js";
+import { FileStorage } from "./storage";
 
 export interface ClientConfig {
-	storageDir?: string;
-	registryUrl?: string;
 	hostName?: string;
 	noBrowser?: boolean;
-	providers?: Array<Record<string, unknown>>;
+	providers?: Record<string, unknown>[];
+	registryUrl?: string;
+	storageDir?: string;
 	urls?: string[];
 }
 
@@ -35,7 +35,7 @@ export function createClient(config: ClientConfig = {}): AgentAuthClient {
 				if (config.noBrowser) {
 					console.error(`\nApproval required. Open: ${url}`);
 				} else {
-					console.error(`\nApproval required — opening browser…`);
+					console.error("\nApproval required — opening browser…");
 					openBrowser(url);
 				}
 				if (info.user_code) {
@@ -52,29 +52,29 @@ export function createClient(config: ClientConfig = {}): AgentAuthClient {
 }
 
 function normalizeProviders(
-	raw: unknown,
-): Array<Record<string, unknown>> | undefined {
-	if (Array.isArray(raw)) return raw;
-	if (raw && typeof raw === "object") return [raw as Record<string, unknown>];
+	raw: unknown
+): Record<string, unknown>[] | undefined {
+	if (Array.isArray(raw)) {
+		return raw;
+	}
+	if (raw && typeof raw === "object") {
+		return [raw as Record<string, unknown>];
+	}
 	return undefined;
 }
 
-function loadProviders(): Array<Record<string, unknown>> | undefined {
+function loadProviders(): Record<string, unknown>[] | undefined {
 	const filePath = process.env.AGENT_AUTH_PROVIDERS_FILE;
 	if (filePath) {
 		try {
-			return normalizeProviders(
-				JSON.parse(readFileSync(filePath, "utf-8")),
-			);
+			return normalizeProviders(JSON.parse(readFileSync(filePath, "utf-8")));
 		} catch (err) {
 			console.error(`Warning: could not load providers from ${filePath}:`, err);
 		}
 	}
 	if (process.env.AGENT_AUTH_PROVIDERS) {
 		try {
-			return normalizeProviders(
-				JSON.parse(process.env.AGENT_AUTH_PROVIDERS),
-			);
+			return normalizeProviders(JSON.parse(process.env.AGENT_AUTH_PROVIDERS));
 		} catch {
 			console.error("Warning: could not parse AGENT_AUTH_PROVIDERS env var");
 		}
@@ -84,8 +84,13 @@ function loadProviders(): Array<Record<string, unknown>> | undefined {
 
 function loadUrls(): string[] | undefined {
 	const raw = process.env.AGENT_AUTH_URLS;
-	if (!raw) return undefined;
-	return raw.split(",").map((u) => u.trim()).filter(Boolean);
+	if (!raw) {
+		return undefined;
+	}
+	return raw
+		.split(",")
+		.map((u) => u.trim())
+		.filter(Boolean);
 }
 
 export function getClientConfig(): ClientConfig {

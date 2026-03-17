@@ -6,7 +6,7 @@ import type { AsyncExecuteResult, StreamExecuteResult } from "./types";
  */
 export function asyncResult(
 	statusUrl: string,
-	retryAfter?: number,
+	retryAfter?: number
 ): AsyncExecuteResult {
 	return { __type: "async", statusUrl, retryAfter };
 }
@@ -17,7 +17,7 @@ export function asyncResult(
  */
 export function streamResult(
 	body: ReadableStream,
-	headers?: Record<string, string>,
+	headers?: Record<string, string>
 ): StreamExecuteResult {
 	return { __type: "stream", body, headers };
 }

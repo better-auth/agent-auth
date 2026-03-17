@@ -1,15 +1,15 @@
 import { agentAuth } from "@better-auth/agent-auth";
 import { fromOpenAPI } from "@better-auth/agent-auth/openapi";
 import { betterAuth } from "better-auth";
-import { genericOAuth, anonymous } from "better-auth/plugins";
+import { anonymous, genericOAuth } from "better-auth/plugins";
 import {
 	db,
+	getRegistration,
 	getSetting,
 	insertLog,
-	getRegistration,
 	setRegistration,
 } from "./db";
-import { registerMcpClient, callMcpTool, parseToolResult } from "./mcp-client";
+import { callMcpTool, parseToolResult, registerMcpClient } from "./mcp-client";
 
 const MCP_BASE = "https://mcp.cloudflare.com";
 const REDIRECT_URI = `${process.env.BETTER_AUTH_URL}/callback`;
@@ -33,13 +33,13 @@ if (!clientId) {
 				clientId = process.env.CLOUDFLARE_CLIENT_ID;
 				useMcpOAuth = false;
 				console.log(
-					"[cloudflare-proxy] MCP dynamic registration failed, using manual CLOUDFLARE_CLIENT_ID.",
+					"[cloudflare-proxy] MCP dynamic registration failed, using manual CLOUDFLARE_CLIENT_ID."
 				);
 			} else {
 				throw new Error(
 					`MCP dynamic registration failed (${(e as Error).message}). ` +
-						`For local dev, either set BETTER_AUTH_URL to an HTTPS URL (e.g. via cloudflared tunnel) ` +
-						`or provide CLOUDFLARE_CLIENT_ID and CLOUDFLARE_CLIENT_SECRET env vars.`,
+						"For local dev, either set BETTER_AUTH_URL to an HTTPS URL (e.g. via cloudflared tunnel) " +
+						"or provide CLOUDFLARE_CLIENT_ID and CLOUDFLARE_CLIENT_SECRET env vars."
 				);
 			}
 		}
@@ -51,23 +51,23 @@ const cloudflareSpec = isBuild
 	: await fetch(CLOUDFLARE_OPENAPI_URL).then((r) => r.json());
 
 interface OpenAPIOperation {
-	operationId?: string;
-	summary?: string;
 	description?: string;
+	operationId?: string;
 	parameters?: Array<{
 		name: string;
 		in: string;
 		required?: boolean;
 	}>;
 	requestBody?: unknown;
+	summary?: string;
 }
 
 interface OperationMeta {
+	hasBody: boolean;
 	method: string;
 	path: string;
 	pathParams: string[];
 	queryParams: string[];
-	hasBody: boolean;
 }
 
 const opMap = new Map<string, OperationMeta>();
@@ -76,7 +76,12 @@ const spec = cloudflareSpec as {
 };
 for (const [path, pathItem] of Object.entries(spec.paths ?? {})) {
 	for (const [method, op] of Object.entries(pathItem ?? {})) {
-		if (!op?.operationId || ["parameters", "servers", "summary", "description"].includes(method)) continue;
+		if (
+			!op?.operationId ||
+			["parameters", "servers", "summary", "description"].includes(method)
+		) {
+			continue;
+		}
 		const params = op.parameters ?? [];
 		opMap.set(op.operationId, {
 			method: method.toUpperCase(),
@@ -97,7 +102,7 @@ async function getMcpToken(
 			model: string;
 			where: Array<{ field: string; value: string }>;
 		}) => Promise<{ accessToken: string | null } | null>;
-	},
+	}
 ) {
 	const account = await adapter.findOne({
 		model: "account",
@@ -108,7 +113,7 @@ async function getMcpToken(
 	});
 	if (!account?.accessToken) {
 		throw new Error(
-			"No Cloudflare MCP token found. User must sign in with Cloudflare first.",
+			"No Cloudflare MCP token found. User must sign in with Cloudflare first."
 		);
 	}
 	return account.accessToken;
@@ -125,8 +130,7 @@ export const auth = betterAuth({
 					...(useMcpOAuth
 						? {}
 						: {
-								clientSecret:
-									process.env.CLOUDFLARE_CLIENT_SECRET,
+								clientSecret: process.env.CLOUDFLARE_CLIENT_SECRET,
 							}),
 					redirectURI: REDIRECT_URI,
 					authorizationUrl: useMcpOAuth
@@ -152,35 +156,24 @@ export const auth = betterAuth({
 								"pages:read",
 								"pages:write",
 							]
-						: [
-								"openid",
-								"email",
-								"profile",
-								"offline_access",
-							],
+						: ["openid", "email", "profile", "offline_access"],
 					pkce: true,
 					prompt: "consent",
 					getUserInfo: async (tokens) => {
 						if (!tokens.accessToken) {
-							throw new Error(
-								"No access token received from Cloudflare",
-							);
+							throw new Error("No access token received from Cloudflare");
 						}
 
 						if (useMcpOAuth) {
-							const result = await callMcpTool(
-								tokens.accessToken,
-								"execute",
-								{
-									code: `async () => {
+							const result = await callMcpTool(tokens.accessToken, "execute", {
+								code: `async () => {
 										const response = await cloudflare.request({
 											method: 'GET',
 											path: '/user'
 										});
 										return response;
 									}`,
-								},
-							);
+							});
 
 							const data = parseToolResult(result) as {
 								result?: {
@@ -195,7 +188,7 @@ export const auth = betterAuth({
 							const user = data?.result;
 							if (!user) {
 								throw new Error(
-									"Failed to fetch user info from Cloudflare MCP",
+									"Failed to fetch user info from Cloudflare MCP"
 								);
 							}
 
@@ -203,9 +196,7 @@ export const auth = betterAuth({
 								id: user.id,
 								email: user.email,
 								name:
-									[user.first_name, user.last_name]
-										.filter(Boolean)
-										.join(" ") ||
+									[user.first_name, user.last_name].filter(Boolean).join(" ") ||
 									user.username ||
 									user.email,
 								image: undefined,
@@ -219,12 +210,12 @@ export const auth = betterAuth({
 								headers: {
 									Authorization: `Bearer ${tokens.accessToken}`,
 								},
-							},
+							}
 						);
 
 						if (!response.ok) {
 							throw new Error(
-								`Failed to fetch user info: ${await response.text()}`,
+								`Failed to fetch user info: ${await response.text()}`
 							);
 						}
 
@@ -245,9 +236,7 @@ export const auth = betterAuth({
 							id: user.id,
 							email: user.email,
 							name:
-								[user.first_name, user.last_name]
-									.filter(Boolean)
-									.join(" ") ||
+								[user.first_name, user.last_name].filter(Boolean).join(" ") ||
 								user.username ||
 								user.email,
 							image: undefined,
@@ -260,11 +249,10 @@ export const auth = betterAuth({
 		anonymous(),
 		agentAuth({
 			freshSessionWindow: () => {
-				if (getSetting("freshSessionEnabled") !== "true") return 0;
-				return parseInt(
-					getSetting("freshSessionWindow") ?? "300",
-					10,
-				);
+				if (getSetting("freshSessionEnabled") !== "true") {
+					return 0;
+				}
+				return Number.parseInt(getSetting("freshSessionWindow") ?? "300", 10);
 			},
 			capabilities,
 			defaultHostCapabilities: capabilities
@@ -276,13 +264,13 @@ export const auth = betterAuth({
 			async onExecute({ ctx, capability, arguments: args, agentSession }) {
 				const token = await getMcpToken(
 					agentSession.user.id,
-					ctx.context.adapter,
+					ctx.context.adapter
 				);
 
 				const op = opMap.get(capability);
 				if (!op) {
 					throw new Error(
-						`No operation mapping for capability "${capability}".`,
+						`No operation mapping for capability "${capability}".`
 					);
 				}
 
@@ -294,7 +282,7 @@ export const auth = betterAuth({
 					if (op.pathParams.includes(key)) {
 						resolvedPath = resolvedPath.replace(
 							`{${key}}`,
-							encodeURIComponent(String(value)),
+							encodeURIComponent(String(value))
 						);
 					} else if (op.queryParams.includes(key)) {
 						queryEntries.push([key, value]);
@@ -308,32 +296,22 @@ export const auth = betterAuth({
 						? Object.fromEntries(queryEntries)
 						: undefined;
 				const bodyObj =
-					bodyEntries.length > 0
-						? Object.fromEntries(bodyEntries)
-						: undefined;
+					bodyEntries.length > 0 ? Object.fromEntries(bodyEntries) : undefined;
 
 				if (useMcpOAuth) {
 					const codeParts = [
-						`async () => {`,
-						`  const response = await cloudflare.request({`,
+						"async () => {",
+						"  const response = await cloudflare.request({",
 						`    method: '${op.method}',`,
 						`    path: '${resolvedPath}',`,
 					];
 					if (queryObj) {
-						codeParts.push(
-							`    query: ${JSON.stringify(queryObj)},`,
-						);
+						codeParts.push(`    query: ${JSON.stringify(queryObj)},`);
 					}
-					if (
-						bodyObj &&
-						op.method !== "GET" &&
-						op.method !== "HEAD"
-					) {
-						codeParts.push(
-							`    body: ${JSON.stringify(bodyObj)},`,
-						);
+					if (bodyObj && op.method !== "GET" && op.method !== "HEAD") {
+						codeParts.push(`    body: ${JSON.stringify(bodyObj)},`);
 					}
-					codeParts.push(`  });`, `  return response;`, `}`);
+					codeParts.push("  });", "  return response;", "}");
 
 					const result = await callMcpTool(token, "execute", {
 						code: codeParts.join("\n"),
@@ -345,12 +323,11 @@ export const auth = betterAuth({
 				let url = `https://api.cloudflare.com/client/v4${resolvedPath}`;
 				if (queryObj) {
 					const qs = new URLSearchParams(
-						Object.entries(queryObj).map(([k, v]) => [
-							k,
-							String(v),
-						]),
+						Object.entries(queryObj).map(([k, v]) => [k, String(v)])
 					).toString();
-					if (qs) url += `?${qs}`;
+					if (qs) {
+						url += `?${qs}`;
+					}
 				}
 
 				const fetchOpts: RequestInit = {
@@ -361,11 +338,7 @@ export const auth = betterAuth({
 					},
 				};
 
-				if (
-					bodyObj &&
-					op.method !== "GET" &&
-					op.method !== "HEAD"
-				) {
+				if (bodyObj && op.method !== "GET" && op.method !== "HEAD") {
 					fetchOpts.body = JSON.stringify(bodyObj);
 				}
 
@@ -374,7 +347,7 @@ export const auth = betterAuth({
 				if (!response.ok) {
 					const errorBody = await response.text();
 					throw new Error(
-						`Cloudflare API error ${response.status}: ${errorBody}`,
+						`Cloudflare API error ${response.status}: ${errorBody}`
 					);
 				}
 
@@ -388,26 +361,19 @@ export const auth = betterAuth({
 			providerDescription:
 				"Cloudflare is a global cloud platform providing CDN, DNS, DDoS protection, serverless compute (Workers), object storage (R2), and a suite of security and performance services for web applications.",
 			modes: ["delegated"],
-		approvalMethods: ["ciba", "device_authorization"],
-		resolveApprovalMethod: ({ preferredMethod, supportedMethods }) => {
-			const serverPreferred =
-				getSetting("preferredApprovalMethod") ?? "device_authorization";
-			const method = preferredMethod ?? serverPreferred;
-			return supportedMethods.includes(method)
-				? method
-				: "device_authorization";
-		},
-		onEvent: (event) => {
+			approvalMethods: ["ciba", "device_authorization"],
+			resolveApprovalMethod: ({ preferredMethod, supportedMethods }) => {
+				const serverPreferred =
+					getSetting("preferredApprovalMethod") ?? "device_authorization";
+				const method = preferredMethod ?? serverPreferred;
+				return supportedMethods.includes(method)
+					? method
+					: "device_authorization";
+			},
+			onEvent: (event) => {
 				try {
-					const {
-						type,
-						actorId,
-						actorType,
-						agentId,
-						hostId,
-						orgId,
-						...rest
-					} = event as unknown as Record<string, unknown>;
+					const { type, actorId, actorType, agentId, hostId, orgId, ...rest } =
+						event as unknown as Record<string, unknown>;
 					insertLog.run(
 						type ?? null,
 						(actorId as string) ?? null,
@@ -415,7 +381,7 @@ export const auth = betterAuth({
 						(agentId as string) ?? null,
 						(hostId as string) ?? null,
 						(orgId as string) ?? null,
-						JSON.stringify(rest),
+						JSON.stringify(rest)
 					);
 				} catch {
 					// never let logging break the flow

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/jscpd.json",
+  "threshold": 15,
+  "minTokens": 70,
+  "minLines": 5,
+  "mode": "strict",
+  "reporters": ["console"],
+  "format": ["typescript", "typescriptreact"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.next/**",
+    "**/.turbo/**",
+    "**/coverage/**",
+    "**/*.d.ts"
+  ]
+}

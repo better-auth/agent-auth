@@ -8,9 +8,7 @@ const MCP_BASE = "https://mcp.cloudflare.com";
  * Returns the issued `client_id`. No client secret is needed since we
  * register with `token_endpoint_auth_method: "none"`.
  */
-export async function registerMcpClient(
-	redirectUri: string,
-): Promise<string> {
+export async function registerMcpClient(redirectUri: string): Promise<string> {
 	const res = await fetch(`${MCP_BASE}/register`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -25,7 +23,7 @@ export async function registerMcpClient(
 
 	if (!res.ok) {
 		throw new Error(
-			`MCP dynamic registration failed: ${res.status} ${await res.text()}`,
+			`MCP dynamic registration failed: ${res.status} ${await res.text()}`
 		);
 	}
 
@@ -40,7 +38,7 @@ export async function registerMcpClient(
 export async function callMcpTool(
 	mcpToken: string,
 	toolName: string,
-	args: Record<string, unknown>,
+	args: Record<string, unknown>
 ): Promise<{ content: Array<{ type: string; text?: string }> }> {
 	const transport = new StreamableHTTPClientTransport(
 		new URL(`${MCP_BASE}/mcp`),
@@ -50,12 +48,12 @@ export async function callMcpTool(
 					Authorization: `Bearer ${mcpToken}`,
 				},
 			},
-		},
+		}
 	);
 
 	const client = new Client(
 		{ name: "cloudflare-proxy", version: "0.1.0" },
-		{ capabilities: {} },
+		{ capabilities: {} }
 	);
 
 	await client.connect(transport);
@@ -76,11 +74,13 @@ export async function callMcpTool(
 /**
  * Parse the text content from an MCP tool result.
  */
-export function parseToolResult(
-	result: { content: Array<{ type: string; text?: string }> },
-): unknown {
+export function parseToolResult(result: {
+	content: Array<{ type: string; text?: string }>;
+}): unknown {
 	const textContent = result.content?.find((c) => c.type === "text");
-	if (!textContent?.text) return null;
+	if (!textContent?.text) {
+		return null;
+	}
 	try {
 		return JSON.parse(textContent.text);
 	} catch {

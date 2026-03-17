@@ -1,6 +1,4 @@
 import { TABLE } from "./constants";
-import { parseCapabilityIds } from "./utils/capabilities";
-import { resolveGrantExpiresAt } from "./utils/grant-ttl";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -9,10 +7,12 @@ import type {
 	FullAdapter,
 	ResolvedAgentAuthOptions,
 } from "./types";
+import { parseCapabilityIds } from "./utils/capabilities";
+import { resolveGrantExpiresAt } from "./utils/grant-ttl";
 
 export function getAgentAuthAdapter(
 	adapter: FullAdapter,
-	opts: ResolvedAgentAuthOptions,
+	opts: ResolvedAgentAuthOptions
 ) {
 	const findAgentById = (id: string) =>
 		adapter.findOne<Agent>({
@@ -42,7 +42,7 @@ export function getAgentAuthAdapter(
 			hostId?: string;
 			limit?: number;
 			sortBy?: { field: string; direction: "asc" | "desc" };
-		},
+		}
 	) =>
 		adapter.findMany<Agent>({
 			model: TABLE.agent,
@@ -99,10 +99,7 @@ export function getAgentAuthAdapter(
 			where: [{ field: "enrollmentTokenHash", value: hash }],
 		});
 
-	const findHostsForUser = (
-		userId: string,
-		filters?: { status?: string },
-	) =>
+	const findHostsForUser = (userId: string, filters?: { status?: string }) =>
 		adapter.findMany<AgentHost>({
 			model: TABLE.host,
 			where: [
@@ -176,7 +173,7 @@ export function getAgentAuthAdapter(
 		ttlContext?: {
 			hostId: string | null;
 			userId: string | null;
-		},
+		}
 	): Promise<void> => {
 		if (grantOpts?.clearExisting) {
 			await deleteGrantsByAgent(agentId);
@@ -193,21 +190,21 @@ export function getAgentAuthAdapter(
 							userId: ttlContext.userId,
 						})
 					: null;
-		await adapter.create({
-			model: TABLE.grant,
-			data: {
-				agentId,
-				capability: cap,
-				constraints: null,
-				grantedBy,
-				deniedBy: null,
-				expiresAt,
-				status,
-				reason: grantOpts?.reason ?? null,
-				createdAt: now,
-				updatedAt: now,
-			},
-		});
+			await adapter.create({
+				model: TABLE.grant,
+				data: {
+					agentId,
+					capability: cap,
+					constraints: null,
+					grantedBy,
+					deniedBy: null,
+					expiresAt,
+					status,
+					reason: grantOpts?.reason ?? null,
+					createdAt: now,
+					updatedAt: now,
+				},
+			});
 		}
 	};
 
@@ -257,15 +254,19 @@ export function getAgentAuthAdapter(
 	 * replaced with the host's current defaults.
 	 */
 	const transparentReactivation = async (
-		agent: Agent,
+		agent: Agent
 	): Promise<Agent | null> => {
-		if (!agent.publicKey) return null;
+		if (!agent.publicKey) {
+			return null;
+		}
 
 		const now = new Date();
 
 		if (agent.hostId) {
 			const host = await findHostById(agent.hostId);
-			if (!host || host.status === "revoked") return null;
+			if (!host || host.status === "revoked") {
+				return null;
+			}
 
 			const baseCaps = parseCapabilityIds(host.defaultCapabilities);
 			await createGrantRows(
@@ -273,7 +274,7 @@ export function getAgentAuthAdapter(
 				baseCaps,
 				agent.userId,
 				{ clearExisting: true },
-				{ hostId: agent.hostId, userId: agent.userId },
+				{ hostId: agent.hostId, userId: agent.userId }
 			);
 		}
 

@@ -23,6 +23,6 @@ export function getAgentSession() {
 			}
 
 			return ctx.json(agentSession);
-		},
+		}
 	);
 }

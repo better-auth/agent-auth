@@ -1,12 +1,12 @@
-import { describe, expect, it, beforeAll } from "vitest";
-import { getTestInstance } from "better-auth/test";
 import { passkey as _passkey } from "@better-auth/passkey";
+import { getTestInstance } from "better-auth/test";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
 	agentAuth,
 	agentAuthClientPlugin,
+	createTestClient,
 	generateTestKeypair,
 	json,
-	createTestClient,
 } from "./helpers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,7 +32,7 @@ const CAPABILITIES_WITH_STRENGTH = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let auth: any;
 let sessionCookie: string;
-let testUserId: string;
+let _testUserId: string;
 let client: ReturnType<typeof createTestClient>;
 
 beforeAll(async () => {
@@ -54,14 +54,14 @@ beforeAll(async () => {
 		},
 		{
 			clientOptions: { plugins: [agentAuthClientPlugin()] },
-		},
+		}
 	);
 	auth = t.auth;
 	client = createTestClient((req) => auth.handler(req));
 
 	const { headers, user } = await t.signInWithTestUser();
 	sessionCookie = headers.get("cookie") ?? "";
-	testUserId = user.id;
+	_testUserId = user.id;
 });
 
 describe("WebAuthn Proof of Presence", () => {
@@ -81,32 +81,27 @@ describe("WebAuthn Proof of Presence", () => {
 			const res = await client.api("/capability/list", { method: "GET" });
 			expect(res.ok).toBe(true);
 			const body = await json<{
-				capabilities: Array<Record<string, unknown>>;
+				capabilities: Record<string, unknown>[];
 			}>(res);
 
 			const deleteProject = body.capabilities.find(
-				(c) => c.name === "delete_project",
+				(c) => c.name === "delete_project"
 			);
 			expect(deleteProject?.approval_strength).toBe("webauthn");
 
-			const readData = body.capabilities.find(
-				(c) => c.name === "read_data",
-			);
+			const readData = body.capabilities.find((c) => c.name === "read_data");
 			expect(readData?.approval_strength).toBe("session");
 
-			const listItems = body.capabilities.find(
-				(c) => c.name === "list_items",
-			);
+			const listItems = body.capabilities.find((c) => c.name === "list_items");
 			expect(listItems?.approval_strength).toBeUndefined();
 		});
 	});
 
 	describe("Capability describe", () => {
 		it("includes approval_strength in describe response", async () => {
-			const res = await client.api(
-				"/capability/describe?name=delete_project",
-				{ method: "GET" },
-			);
+			const res = await client.api("/capability/describe?name=delete_project", {
+				method: "GET",
+			});
 			expect(res.ok).toBe(true);
 			const body = await json<Record<string, unknown>>(res);
 			expect(body.approval_strength).toBe("webauthn");
@@ -123,7 +118,7 @@ describe("WebAuthn Proof of Presence", () => {
 					public_key: hostKeypair.publicKey,
 					default_capabilities: ["read_data"],
 				},
-				sessionCookie,
+				sessionCookie
 			);
 			const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -135,7 +130,8 @@ describe("WebAuthn Proof of Presence", () => {
 				name: "WebAuthn Test Agent",
 				capabilities: ["read_data", "delete_project"],
 			});
-			const userCode = (regBody.approval as Record<string, unknown>).user_code as string;
+			const userCode = (regBody.approval as Record<string, unknown>)
+				.user_code as string;
 
 			const approveRes = await client.authedPost(
 				"/agent/approve-capability",
@@ -144,7 +140,7 @@ describe("WebAuthn Proof of Presence", () => {
 					action: "approve",
 					user_code: userCode,
 				},
-				sessionCookie,
+				sessionCookie
 			);
 			const body = await json<{ error: string }>(approveRes);
 			expect(body.error).toBe("webauthn_not_enrolled");
@@ -162,7 +158,7 @@ describe("WebAuthn Proof of Presence", () => {
 					public_key: hostKeypair.publicKey,
 					default_capabilities: [],
 				},
-				sessionCookie,
+				sessionCookie
 			);
 			const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -174,7 +170,8 @@ describe("WebAuthn Proof of Presence", () => {
 				name: "Session-Only Agent",
 				capabilities: ["read_data"],
 			});
-			const userCode = (regBody.approval as Record<string, unknown>).user_code as string;
+			const userCode = (regBody.approval as Record<string, unknown>)
+				.user_code as string;
 
 			const approveRes = await client.authedPost(
 				"/agent/approve-capability",
@@ -183,7 +180,7 @@ describe("WebAuthn Proof of Presence", () => {
 					action: "approve",
 					user_code: userCode,
 				},
-				sessionCookie,
+				sessionCookie
 			);
 
 			expect(approveRes.ok).toBe(true);
@@ -204,7 +201,7 @@ describe("WebAuthn Proof of Presence", () => {
 					public_key: hostKeypair.publicKey,
 					default_capabilities: ["read_data"],
 				},
-				sessionCookie,
+				sessionCookie
 			);
 			const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -223,7 +220,7 @@ describe("WebAuthn Proof of Presence", () => {
 					agent_id: agentId,
 					action: "deny",
 				},
-				sessionCookie,
+				sessionCookie
 			);
 
 			expect(denyRes.ok).toBe(true);

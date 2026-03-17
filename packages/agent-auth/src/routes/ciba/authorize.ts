@@ -1,14 +1,14 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
-import { TABLE, DEFAULTS } from "../../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import { DEFAULTS, TABLE } from "../../constants";
 import { emit } from "../../emit";
-import { hashToken } from "../../utils/approval";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import type {
 	ApprovalRequest,
 	HostSession,
 	ResolvedAgentAuthOptions,
 } from "../../types";
+import { hashToken } from "../../utils/approval";
 
 export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -57,8 +57,7 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 				agent_id: agentId,
 			} = ctx.body;
 
-			const user =
-				await ctx.context.internalAdapter.findUserByEmail(loginHint);
+			const user = await ctx.context.internalAdapter.findUserByEmail(loginHint);
 
 			if (!user) {
 				// Timing ballast: approximate the DB write latency on the success path
@@ -72,13 +71,9 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 			}
 
 			const now = new Date();
-			const expiresAt = new Date(
-				now.getTime() + DEFAULTS.cibaExpiresIn * 1000,
-			);
+			const expiresAt = new Date(now.getTime() + DEFAULTS.cibaExpiresIn * 1000);
 
-			const capabilitiesStr = capabilityIds
-				? capabilityIds.join(" ")
-				: null;
+			const capabilitiesStr = capabilityIds ? capabilityIds.join(" ") : null;
 
 			const request = await ctx.context.adapter.create<
 				Record<string, unknown>,
@@ -106,25 +101,29 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
 				},
 			});
 
-			emit(opts, {
-				type: "approval.created",
-				actorId: user.user.id,
-				hostId: hostSession.host.id,
-				targetId: request.id,
-				targetType: "approvalRequest",
-				metadata: {
-					method: "ciba",
-					capabilities: capabilityIds,
-					bindingMessage,
-					agentId,
+			emit(
+				opts,
+				{
+					type: "approval.created",
+					actorId: user.user.id,
+					hostId: hostSession.host.id,
+					targetId: request.id,
+					targetType: "approvalRequest",
+					metadata: {
+						method: "ciba",
+						capabilities: capabilityIds,
+						bindingMessage,
+						agentId,
+					},
 				},
-			}, ctx);
+				ctx
+			);
 
 			return ctx.json({
 				auth_req_id: request.id,
 				expires_in: DEFAULTS.cibaExpiresIn,
 				interval: DEFAULTS.cibaInterval,
 			});
-		},
+		}
 	);
 }

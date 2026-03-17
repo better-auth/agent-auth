@@ -1,15 +1,26 @@
+import type { ResolvedAgentAuthOptions } from "../types";
 import type { JtiCacheStore } from "../utils/jti-cache";
 import type { JwksCacheStore } from "../utils/jwks-cache";
 import { WebAuthnChallengeCache } from "../utils/webauthn-challenge-cache";
-import type { ResolvedAgentAuthOptions } from "../types";
 import { approveCapability } from "./approve-capability";
+import { cibaAuthorize } from "./ciba/authorize";
+import { cibaPending } from "./ciba/pending";
 import { cleanupAgents } from "./cleanup";
 import { describeCapability } from "./describe-capability";
+import { deviceCode } from "./device/code";
 import { agentConfiguration } from "./discover";
 import { executeCapability } from "./execute-capability";
 import { getAgent } from "./get-agent";
 import { getAgentSession } from "./get-session";
 import { grantCapability } from "./grant-capability";
+import { createHost } from "./host/create";
+import { enrollHost } from "./host/enroll";
+import { getHost } from "./host/get";
+import { listHosts } from "./host/list";
+import { revokeHost } from "./host/revoke";
+import { rotateHostKey } from "./host/rotate-key";
+import { switchHostAccount } from "./host/switch-account";
+import { updateHost } from "./host/update";
 import { introspect } from "./introspect";
 import { listAgents } from "./list-agents";
 import { listCapabilities } from "./list-capabilities";
@@ -20,23 +31,11 @@ import { revokeAgent } from "./revoke";
 import { rotateKey } from "./rotate-key";
 import { agentStatus } from "./status";
 import { updateAgent } from "./update-agent";
-import { createHost } from "./host/create";
-import { enrollHost } from "./host/enroll";
-import { getHost } from "./host/get";
-import { listHosts } from "./host/list";
-
-import { revokeHost } from "./host/revoke";
-import { rotateHostKey } from "./host/rotate-key";
-import { switchHostAccount } from "./host/switch-account";
-import { updateHost } from "./host/update";
-import { cibaAuthorize } from "./ciba/authorize";
-import { cibaPending } from "./ciba/pending";
-import { deviceCode } from "./device/code";
 
 export function createAgentRoutes(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiCacheStore,
-	jwksCache?: JwksCacheStore,
+	jwksCache?: JwksCacheStore
 ) {
 	const webauthnChallengeCache = opts.proofOfPresence.enabled
 		? new WebAuthnChallengeCache()

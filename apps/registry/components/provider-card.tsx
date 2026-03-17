@@ -2,13 +2,13 @@ import { CheckCircle, ExternalLink, Shield } from "lucide-react";
 import Link from "next/link";
 
 interface ProviderCardProps {
-	name: string;
-	displayName: string;
-	description: string;
 	categories: string[];
-	verified: boolean;
+	description: string;
+	displayName: string;
 	modes: string[];
+	name: string;
 	url: string;
+	verified: boolean;
 }
 
 export function ProviderCard({
@@ -24,36 +24,36 @@ export function ProviderCard({
 
 	return (
 		<Link
+			className="group block border border-foreground/[0.08] bg-foreground/[0.02] transition-all hover:border-foreground/[0.14] hover:bg-foreground/[0.04]"
 			href={providerPath}
-			className="group block border border-foreground/[0.08] bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/[0.14] transition-all"
 		>
-			<div className="p-5 space-y-3">
+			<div className="space-y-3 p-5">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0 flex-1">
 						<div className="flex items-center gap-2">
-							<h3 className="text-sm font-medium text-foreground truncate">
+							<h3 className="truncate font-medium text-foreground text-sm">
 								{displayName}
 							</h3>
 							{verified && (
-								<CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
+								<CheckCircle className="h-3.5 w-3.5 shrink-0 text-success" />
 							)}
 						</div>
-						<p className="text-[11px] font-mono text-foreground/40 mt-0.5">
+						<p className="mt-0.5 font-mono text-[11px] text-foreground/40">
 							{name}
 						</p>
 					</div>
-					<ExternalLink className="h-3.5 w-3.5 text-foreground/20 group-hover:text-foreground/40 transition-colors shrink-0 mt-0.5" />
+					<ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/20 transition-colors group-hover:text-foreground/40" />
 				</div>
 
-				<p className="text-xs text-foreground/55 leading-relaxed line-clamp-2">
+				<p className="line-clamp-2 text-foreground/55 text-xs leading-relaxed">
 					{description}
 				</p>
 
-				<div className="flex items-center gap-2 flex-wrap">
+				<div className="flex flex-wrap items-center gap-2">
 					{modes.map((mode) => (
 						<span
+							className="inline-flex items-center gap-1 border border-foreground/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-foreground/35"
 							key={mode}
-							className="inline-flex items-center gap-1 text-[10px] font-mono text-foreground/35 border border-foreground/[0.06] px-1.5 py-0.5"
 						>
 							<Shield className="h-2.5 w-2.5" />
 							{mode}
@@ -61,8 +61,8 @@ export function ProviderCard({
 					))}
 					{categories.slice(0, 3).map((cat) => (
 						<span
+							className="border border-foreground/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-foreground/35"
 							key={cat}
-							className="text-[10px] font-mono text-foreground/35 border border-foreground/[0.06] px-1.5 py-0.5"
 						>
 							{cat}
 						</span>
@@ -70,8 +70,8 @@ export function ProviderCard({
 				</div>
 			</div>
 
-			<div className="border-t border-foreground/[0.06] px-5 py-2.5">
-				<span className="text-[10px] font-mono text-foreground/30 truncate block">
+			<div className="border-foreground/[0.06] border-t px-5 py-2.5">
+				<span className="block truncate font-mono text-[10px] text-foreground/30">
 					{url}
 				</span>
 			</div>

@@ -14,7 +14,7 @@ export function agentError(
 	err: ErrorDef,
 	overrideMessage?: string,
 	headers?: Record<string, string>,
-	extra?: Record<string, unknown>,
+	extra?: Record<string, unknown>
 ): APIError {
 	return new APIError(
 		status,
@@ -23,7 +23,7 @@ export function agentError(
 			error_description: overrideMessage ?? err.message,
 			...extra,
 		},
-		headers ?? {},
+		headers ?? {}
 	);
 }
 
@@ -40,7 +40,8 @@ export function agentAuthChallenge(baseURL: string): Record<string, string> {
 export const AGENT_AUTH_ERROR_CODES = {
 	INVALID_REQUEST: {
 		code: "invalid_request",
-		message: "Malformed request, missing required fields, or invalid parameter types",
+		message:
+			"Malformed request, missing required fields, or invalid parameter types",
 	},
 	INVALID_JWT: {
 		code: "invalid_jwt",
@@ -104,7 +105,8 @@ export const AGENT_AUTH_ERROR_CODES = {
 	},
 	INVALID_CAPABILITIES: {
 		code: "invalid_capabilities",
-		message: "One or more requested capability names don't exist or are blocked",
+		message:
+			"One or more requested capability names don't exist or are blocked",
 	},
 	AGENT_EXISTS: {
 		code: "agent_exists",
@@ -253,11 +255,13 @@ export const AGENT_AUTH_ERROR_CODES = {
 	},
 	WEBAUTHN_NOT_ENROLLED: {
 		code: "webauthn_not_enrolled",
-		message: "No passkeys registered. Register a passkey before approving capabilities that require proof of physical presence.",
+		message:
+			"No passkeys registered. Register a passkey before approving capabilities that require proof of physical presence.",
 	},
 	WEBAUTHN_REQUIRED: {
 		code: "webauthn_required",
-		message: "This approval requires proof of physical presence. Complete the WebAuthn challenge.",
+		message:
+			"This approval requires proof of physical presence. Complete the WebAuthn challenge.",
 	},
 	WEBAUTHN_VERIFICATION_FAILED: {
 		code: "webauthn_verification_failed",

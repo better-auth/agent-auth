@@ -1,0 +1,7 @@
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      run: pnpm biome check --staged --no-errors-on-unmatched
+    sherif:
+      run: pnpm sherif

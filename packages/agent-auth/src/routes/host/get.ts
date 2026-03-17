@@ -1,10 +1,10 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
-import { parseCapabilityIds } from "../../utils/capabilities";
 import type { AgentHost } from "../../types";
-import { sessionMiddleware } from "better-auth/api";
+import { parseCapabilityIds } from "../../utils/capabilities";
 
 export function getHost() {
 	return createAuthEndpoint(
@@ -48,6 +48,6 @@ export function getHost() {
 				created_at: host.createdAt,
 				updated_at: host.updatedAt,
 			});
-		},
+		}
 	);
 }

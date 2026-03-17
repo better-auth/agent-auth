@@ -1,8 +1,8 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type { Agent, HostSession, ResolvedAgentAuthOptions } from "../types";
 import { validateKeyAlgorithm } from "./_helpers";
 
@@ -23,15 +23,13 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 			}),
 			metadata: {
 				openapi: {
-					description:
-						"Rotate an agent's public key via host JWT (§6.8).",
+					description: "Rotate an agent's public key via host JWT (§6.8).",
 				},
 			},
 		},
 		async (ctx) => {
-			const hostSession = (
-				ctx.context as { hostSession?: HostSession }
-			).hostSession;
+			const hostSession = (ctx.context as { hostSession?: HostSession })
+				.hostSession;
 
 			if (!hostSession) {
 				throw agentError("UNAUTHORIZED", ERR.UNAUTHORIZED_SESSION);
@@ -53,7 +51,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 			if (agent.status !== "active") {
 				throw agentError(
 					"FORBIDDEN",
-					agent.status === "revoked" ? ERR.AGENT_REVOKED : ERR.AGENT_PENDING,
+					agent.status === "revoked" ? ERR.AGENT_REVOKED : ERR.AGENT_PENDING
 				);
 			}
 
@@ -61,8 +59,7 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
-			const kid =
-				typeof publicKey.kid === "string" ? publicKey.kid : null;
+			const kid = typeof publicKey.kid === "string" ? publicKey.kid : null;
 
 			await ctx.context.adapter.update({
 				model: TABLE.agent,
@@ -74,18 +71,22 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
 				},
 			});
 
-			emit(opts, {
-				type: "agent.key_rotated",
-				agentId,
-				actorType: "system",
-				actorId: hostSession.host.userId ?? undefined,
-				hostId: hostSession.host.id,
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "agent.key_rotated",
+					agentId,
+					actorType: "system",
+					actorId: hostSession.host.userId ?? undefined,
+					hostId: hostSession.host.id,
+				},
+				ctx
+			);
 
 			return ctx.json({
 				agent_id: agentId,
 				status: "active" as const,
 			});
-		},
+		}
 	);
 }

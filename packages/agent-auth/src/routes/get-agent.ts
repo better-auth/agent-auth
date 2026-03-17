@@ -1,4 +1,5 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
@@ -8,13 +9,14 @@ import type {
 	AgentMetadata,
 	ResolvedAgentAuthOptions,
 } from "../types";
-import { sessionMiddleware } from "better-auth/api";
 import { formatGrantsResponse } from "./_helpers";
 
 function parseMetadata(
-	metadata: AgentMetadata | string | null,
+	metadata: AgentMetadata | string | null
 ): AgentMetadata | null {
-	if (metadata === null || metadata === undefined) return null;
+	if (metadata === null || metadata === undefined) {
+		return null;
+	}
 	if (typeof metadata === "string") {
 		try {
 			return JSON.parse(metadata) as AgentMetadata;
@@ -61,11 +63,10 @@ export function getAgent(opts: ResolvedAgentAuthOptions) {
 				throw agentError("NOT_FOUND", ERR.AGENT_NOT_FOUND);
 			}
 
-			const grants =
-				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-					model: TABLE.grant,
-					where: [{ field: "agentId", value: agent.id }],
-				});
+			const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+				model: TABLE.grant,
+				where: [{ field: "agentId", value: agent.id }],
+			});
 
 			return ctx.json({
 				agent_id: agent.id,
@@ -74,13 +75,16 @@ export function getAgent(opts: ResolvedAgentAuthOptions) {
 				mode: agent.mode,
 				host_id: agent.hostId,
 				user_id: agent.userId,
-				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+				agent_capability_grants: formatGrantsResponse(
+					grants,
+					opts.capabilities
+				),
 				metadata: parseMetadata(agent.metadata),
 				created_at: agent.createdAt,
 				activated_at: agent.activatedAt,
 				last_used_at: agent.lastUsedAt,
 				expires_at: agent.expiresAt,
 			});
-		},
+		}
 	);
 }

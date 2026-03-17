@@ -1,16 +1,16 @@
 "use client";
 
-import { signOut, useSession } from "@/lib/auth-client";
-import { useRouter, usePathname } from "next/navigation";
-import { useEffect } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { signOut, useSession } from "@/lib/auth-client";
 
 function CloudflareLogo({ className }: { className?: string }) {
 	return (
 		<svg
 			className={className}
-			viewBox="0 0 65 65"
 			fill="none"
+			viewBox="0 0 65 65"
 			xmlns="http://www.w3.org/2000/svg"
 		>
 			<path
@@ -45,7 +45,7 @@ export default function DashboardLayout({
 	const pathname = usePathname();
 
 	useEffect(() => {
-		if (!isPending && !session) {
+		if (!(isPending || session)) {
 			router.push("/");
 		}
 	}, [session, isPending, router]);
@@ -54,9 +54,9 @@ export default function DashboardLayout({
 		return (
 			<div className="flex min-h-screen items-center justify-center">
 				<svg
-					className="animate-spin h-4 w-4 text-muted"
-					viewBox="0 0 24 24"
+					className="h-4 w-4 animate-spin text-muted"
 					fill="none"
+					viewBox="0 0 24 24"
 				>
 					<circle
 						className="opacity-25"
@@ -68,8 +68,8 @@ export default function DashboardLayout({
 					/>
 					<path
 						className="opacity-75"
-						fill="currentColor"
 						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+						fill="currentColor"
 					/>
 				</svg>
 			</div>
@@ -78,22 +78,21 @@ export default function DashboardLayout({
 
 	return (
 		<div className="flex min-h-screen flex-col">
-			<header className="border-b border-border">
+			<header className="border-border border-b">
 				<div className="flex h-14 items-center justify-between px-6">
 					<div className="flex items-center gap-3">
 						<CloudflareLogo className="h-4 w-6 text-white" />
 						<div className="h-4 w-px bg-border" />
-						<span className="text-sm font-medium text-muted">
-							Agent Auth
-						</span>
+						<span className="font-medium text-muted text-sm">Agent Auth</span>
 					</div>
 					<div className="flex items-center gap-4">
 						<div className="flex items-center gap-2">
-							<span className="text-sm text-foreground">
+							<span className="text-foreground text-sm">
 								{session.user.name}
 							</span>
 						</div>
 						<button
+							className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-muted text-xs transition-colors hover:border-foreground/20 hover:text-foreground"
 							onClick={() =>
 								signOut({
 									fetchOptions: {
@@ -101,7 +100,6 @@ export default function DashboardLayout({
 									},
 								})
 							}
-							className="cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:border-foreground/20 hover:text-foreground"
 						>
 							Sign out
 						</button>
@@ -115,17 +113,15 @@ export default function DashboardLayout({
 								: pathname.startsWith(item.href);
 						return (
 							<Link
-								key={item.href}
-								href={item.href}
-								className={`relative px-3 pb-3 pt-1 text-sm transition-colors ${
-									isActive
-										? "text-white"
-										: "text-muted hover:text-foreground"
+								className={`relative px-3 pt-1 pb-3 text-sm transition-colors ${
+									isActive ? "text-white" : "text-muted hover:text-foreground"
 								}`}
+								href={item.href}
+								key={item.href}
 							>
 								{item.label}
 								{isActive && (
-									<span className="absolute bottom-0 left-0 right-0 h-px bg-white" />
+									<span className="absolute right-0 bottom-0 left-0 h-px bg-white" />
 								)}
 							</Link>
 						);

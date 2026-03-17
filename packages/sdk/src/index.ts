@@ -1,61 +1,69 @@
 export { AgentAuthClient } from "./client";
-export { MemoryStorage } from "./storage";
-export { generateKeypair, signHostJWT, signAgentJWT } from "./crypto";
-export { discoverProvider, searchProviders, searchRegistryFull, lookupByUrl } from "./discovery";
-export { detectHostName, detectTool } from "./host-name";
-export { AgentAuthSDKError } from "./types";
-export { getAgentAuthTools, filterTools, toOpenAITools, toAISDKTools, toAnthropicTools } from "./tools";
-
 export type {
-	AgentJWK,
-	Keypair,
-	Capability,
-	ApprovalStrength,
-	AgentMode,
-	AgentStatus,
-	CapabilityGrant,
-	CapabilityConstraints,
-	CapabilityRequestItem,
-	ConstraintPrimitive,
-	ConstraintOperators,
-	ConstraintValue,
-	ProviderConfig,
-	ApprovalInfo,
-	RegisterResponse,
-	StatusResponse,
-	RequestCapabilityResponse,
-	IntrospectResponse,
-	ExecuteCapabilityResponse,
-	CapabilitiesResponse,
-	AgentSessionResponse,
-	EnrollHostResponse,
-	AgentConnection,
-	HostIdentity,
-	Storage,
-	ProviderInfo,
-	AgentAuthClientOptions,
-	AgentAuthError,
-} from "./types";
-
-export type {
-	SignHostJWTOptions,
 	SignAgentJWTOptions,
+	SignHostJWTOptions,
 } from "./crypto";
-
+export { generateKeypair, signAgentJWT, signHostJWT } from "./crypto";
+export {
+	discoverProvider,
+	lookupByUrl,
+	searchProviders,
+	searchRegistryFull,
+} from "./discovery";
 export type { ToolDetection } from "./host-name";
+export { detectHostName, detectTool } from "./host-name";
+export { MemoryStorage } from "./storage";
 export type {
 	AgentAuthTool,
-	ToolParameters,
-	ToolContext,
-	ToolErrorResult,
+	AISDKTool,
+	AISDKToolsOptions,
+	AnthropicToolDefinition,
+	AnthropicToolResultBlock,
+	AnthropicTools,
+	AnthropicToolUseBlock,
 	FilterToolsOptions,
 	OpenAIToolDefinition,
 	OpenAITools,
 	OpenAIToolsOptions,
-	AISDKTool,
-	AISDKToolsOptions,
-	AnthropicToolDefinition,
-	AnthropicToolUseBlock,
-	AnthropicToolResultBlock,
-	AnthropicTools,
+	ToolContext,
+	ToolErrorResult,
+	ToolParameters,
 } from "./tools";
+export {
+	filterTools,
+	getAgentAuthTools,
+	toAISDKTools,
+	toAnthropicTools,
+	toOpenAITools,
+} from "./tools";
+export type {
+	AgentAuthClientOptions,
+	AgentAuthError,
+	AgentConnection,
+	AgentJWK,
+	AgentMode,
+	AgentSessionResponse,
+	AgentStatus,
+	ApprovalInfo,
+	ApprovalStrength,
+	CapabilitiesResponse,
+	Capability,
+	CapabilityConstraints,
+	CapabilityGrant,
+	CapabilityRequestItem,
+	ConstraintOperators,
+	ConstraintPrimitive,
+	ConstraintValue,
+	EnrollHostResponse,
+	ExecuteCapabilityResponse,
+	HostIdentity,
+	IntrospectResponse,
+	Keypair,
+	ProviderConfig,
+	ProviderInfo,
+	RegisterResponse,
+	RequestCapabilityResponse,
+	StatusResponse,
+	Storage,
+} from "./types";
+export { AgentAuthSDKError } from "./types";

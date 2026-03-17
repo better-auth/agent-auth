@@ -3,13 +3,8 @@ import { APIError } from "@better-auth/core/error";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
-import { hasCapability, parseCapabilityIds } from "../utils/capabilities";
-import { verifyJWT } from "../utils/crypto";
-import type { JwksCacheStore } from "../utils/jwks-cache";
-import { MemoryJwksCache } from "../utils/jwks-cache";
-import type { JtiCacheStore } from "../utils/jti-cache";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -19,6 +14,11 @@ import type {
 	ResolvedAgentAuthOptions,
 } from "../types";
 import { normalizeCapabilityRequests } from "../types";
+import { hasCapability, parseCapabilityIds } from "../utils/capabilities";
+import { verifyJWT } from "../utils/crypto";
+import type { JtiCacheStore } from "../utils/jti-cache";
+import type { JwksCacheStore } from "../utils/jwks-cache";
+import { MemoryJwksCache } from "../utils/jwks-cache";
 import {
 	buildApprovalInfo,
 	capabilityItemZ,
@@ -26,15 +26,14 @@ import {
 	findHostByKey,
 	formatGrantsResponse,
 	isDynamicHostAllowed,
-	normalizeCapabilities,
 	resolveDefaultHostCapabilities,
-	validateCapabilityIds,
 	validateCapabilitiesExist,
+	validateCapabilityIds,
 	validateKeyAlgorithm,
 	verifyAudience,
 } from "./_helpers";
 
-const capabilityRequestItem = z.union([
+const _capabilityRequestItem = z.union([
 	z.string(),
 	z.object({
 		name: z.string(),
@@ -57,7 +56,7 @@ const registerBodySchema = z.object({
 export function register(
 	opts: ResolvedAgentAuthOptions,
 	jtiCache?: JtiCacheStore,
-	jwksCache?: JwksCacheStore,
+	jwksCache?: JwksCacheStore
 ) {
 	const cache = jwksCache ?? new MemoryJwksCache();
 	return createAuthEndpoint(
@@ -73,28 +72,32 @@ export function register(
 			},
 		},
 		async (ctx) => {
-		const {
-			name,
-			capabilities: rawCapabilities,
-			reason,
-			mode: rawMode,
-			preferred_method: preferredMethod,
-			host_name: bodyHostName,
-			login_hint: loginHint,
-			binding_message: bindingMessage,
-			force_approval: forceApproval,
-		} = ctx.body;
+			const {
+				name,
+				capabilities: rawCapabilities,
+				reason,
+				mode: rawMode,
+				preferred_method: preferredMethod,
+				host_name: bodyHostName,
+				login_hint: loginHint,
+				binding_message: bindingMessage,
+				force_approval: forceApproval,
+			} = ctx.body;
 
-		const normalizedCaps = rawCapabilities
-			? normalizeCapabilityRequests(rawCapabilities as Array<string | { name: string; constraints?: Constraints }>)
-			: null;
-		const requestedCapIds = normalizedCaps?.map((c) => c.name) ?? null;
-		const constraintsMap = new Map<string, Constraints | null>();
-		if (normalizedCaps) {
-			for (const c of normalizedCaps) {
-				constraintsMap.set(c.name, c.constraints);
+			const normalizedCaps = rawCapabilities
+				? normalizeCapabilityRequests(
+						rawCapabilities as Array<
+							string | { name: string; constraints?: Constraints }
+						>
+					)
+				: null;
+			const requestedCapIds = normalizedCaps?.map((c) => c.name) ?? null;
+			const constraintsMap = new Map<string, Constraints | null>();
+			if (normalizedCaps) {
+				for (const c of normalizedCaps) {
+					constraintsMap.set(c.name, c.constraints);
+				}
 			}
-		}
 
 			// ---------- Require host JWT ----------
 			const authHeader = ctx.headers?.get("authorization");
@@ -132,7 +135,9 @@ export function register(
 					hostIdFromJwt = decoded.iss;
 				}
 			} catch (e) {
-				if (e instanceof APIError) throw e;
+				if (e instanceof APIError) {
+					throw e;
+				}
 				throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 			}
 
@@ -143,10 +148,7 @@ export function register(
 				decoded.agent_public_key &&
 				typeof decoded.agent_public_key === "object"
 			) {
-				agentPublicKey = decoded.agent_public_key as Record<
-					string,
-					unknown
-				>;
+				agentPublicKey = decoded.agent_public_key as Record<string, unknown>;
 			}
 			if (
 				decoded.agent_jwks_url &&
@@ -156,13 +158,11 @@ export function register(
 			}
 
 			const hostJwksUrl =
-				decoded.host_jwks_url &&
-				typeof decoded.host_jwks_url === "string"
+				decoded.host_jwks_url && typeof decoded.host_jwks_url === "string"
 					? decoded.host_jwks_url
 					: null;
 			const hostInlinePubKey =
-				decoded.host_public_key &&
-				typeof decoded.host_public_key === "object"
+				decoded.host_public_key && typeof decoded.host_public_key === "object"
 					? (decoded.host_public_key as AgentJWK)
 					: null;
 
@@ -185,14 +185,11 @@ export function register(
 					throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 				}
 
-				if (
-					hostRecord.status !== "active" &&
-					hostRecord.status !== "pending"
-				) {
+				if (hostRecord.status !== "active" && hostRecord.status !== "pending") {
 					throw agentError("FORBIDDEN", ERR.HOST_EXPIRED);
 				}
 
-				if (!hostRecord.publicKey && !hostRecord.jwksUrl) {
+				if (!(hostRecord.publicKey || hostRecord.jwksUrl)) {
 					throw agentError("FORBIDDEN", ERR.HOST_REVOKED);
 				}
 
@@ -200,32 +197,18 @@ export function register(
 				if (hostRecord.jwksUrl) {
 					const header = await decodeProtectedHeader(hostJWT);
 					if (!header.kid) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_JWT,
-						);
+						throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 					}
-					const key = await cache.getKeyByKid(
-						hostRecord.jwksUrl,
-						header.kid,
-					);
+					const key = await cache.getKeyByKid(hostRecord.jwksUrl, header.kid);
 					if (!key) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_PUBLIC_KEY,
-						);
+						throw agentError("UNAUTHORIZED", ERR.INVALID_PUBLIC_KEY);
 					}
 					hostPubKey = key;
 				} else {
 					try {
-						hostPubKey = JSON.parse(
-							hostRecord.publicKey!,
-						) as AgentJWK;
+						hostPubKey = JSON.parse(hostRecord.publicKey!) as AgentJWK;
 					} catch {
-						throw agentError(
-							"FORBIDDEN",
-							ERR.INVALID_PUBLIC_KEY,
-						);
+						throw agentError("FORBIDDEN", ERR.INVALID_PUBLIC_KEY);
 					}
 				}
 
@@ -240,36 +223,26 @@ export function register(
 					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
-				if (payload.aud) {
-					if (
-						!verifyAudience(
-							payload.aud,
-							ctx.context.baseURL,
-							ctx.headers,
-							opts.trustProxy,
-						)
-					) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_JWT,
-						);
-					}
+				if (
+					payload.aud &&
+					!verifyAudience(
+						payload.aud,
+						ctx.context.baseURL,
+						ctx.headers,
+						opts.trustProxy
+					)
+				) {
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
 				// JTI replay (§5.6) — partitioned by host identity
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_JWT,
-						);
+						throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 					}
 					const jtiKey = `host:${hostRecord.id}:${payload.jti}`;
 					if (jtiCache && (await jtiCache.has(jtiKey))) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.JWT_REPLAY,
-						);
+						throw agentError("UNAUTHORIZED", ERR.JWT_REPLAY);
 					}
 					if (jtiCache) {
 						await jtiCache.add(jtiKey, opts.jwtMaxAge);
@@ -278,18 +251,14 @@ export function register(
 
 				userId = hostRecord.userId ?? null;
 				hostId = hostRecord.id;
-				hostDefaultCaps = parseCapabilityIds(
-					hostRecord.defaultCapabilities,
-				);
+				hostDefaultCaps = parseCapabilityIds(hostRecord.defaultCapabilities);
 
 				const bgUpdates: Record<string, unknown> = {};
 				if (hostJwksUrl && !hostRecord.jwksUrl) {
 					bgUpdates.jwksUrl = hostJwksUrl;
 				}
 				const jwtHostName =
-					typeof decoded.host_name === "string"
-						? decoded.host_name
-						: null;
+					typeof decoded.host_name === "string" ? decoded.host_name : null;
 				const resolvedHostName = jwtHostName ?? bodyHostName ?? null;
 				if (resolvedHostName && resolvedHostName !== hostRecord.name) {
 					bgUpdates.name = resolvedHostName;
@@ -328,14 +297,15 @@ export function register(
 						ctx.context.adapter
 							.update({
 								model: TABLE.host,
-								where: [
-									{ field: "id", value: hostRecord.id },
-								],
+								where: [{ field: "id", value: hostRecord.id }],
 								update: bgUpdates,
 							})
 							.catch((err) => {
-								console.error("[agent-auth] background host-update failed:", err);
-							}),
+								console.error(
+									"[agent-auth] background host-update failed:",
+									err
+								);
+							})
 					);
 				}
 
@@ -344,29 +314,27 @@ export function register(
 				};
 				if (opts.agentSessionTTL > 0) {
 					heartbeat.expiresAt = new Date(
-						Date.now() + opts.agentSessionTTL * 1000,
+						Date.now() + opts.agentSessionTTL * 1000
 					);
 				}
 				ctx.context.runInBackground(
 					ctx.context.adapter
 						.update({
 							model: TABLE.host,
-							where: [
-								{ field: "id", value: hostRecord.id },
-							],
+							where: [{ field: "id", value: hostRecord.id }],
 							update: heartbeat,
 						})
 						.catch((err) => {
-							console.error("[agent-auth] background host-heartbeat failed:", err);
-						}),
+							console.error(
+								"[agent-auth] background host-heartbeat failed:",
+								err
+							);
+						})
 				);
 			} else {
 				// ---- Unknown host — dynamic registration ----
 				if (!(await isDynamicHostAllowed(opts, ctx))) {
-					throw agentError(
-						"FORBIDDEN",
-						ERR.DYNAMIC_HOST_REGISTRATION_DISABLED,
-					);
+					throw agentError("FORBIDDEN", ERR.DYNAMIC_HOST_REGISTRATION_DISABLED);
 				}
 
 				let resolvedHostPubKey: AgentJWK | null = null;
@@ -374,11 +342,10 @@ export function register(
 				if (hostJwksUrl) {
 					const header = decodeProtectedHeader(hostJWT);
 					if (header.kid) {
-						const key = await cache.getKeyByKid(
-							hostJwksUrl,
-							header.kid,
-						);
-						if (key) resolvedHostPubKey = key;
+						const key = await cache.getKeyByKid(hostJwksUrl, header.kid);
+						if (key) {
+							resolvedHostPubKey = key;
+						}
 					}
 				}
 
@@ -400,130 +367,110 @@ export function register(
 					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
-				if (payload.aud) {
-					if (
-						!verifyAudience(
-							payload.aud,
-							ctx.context.baseURL,
-							ctx.headers,
-							opts.trustProxy,
-						)
-					) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_JWT,
-						);
-					}
+				if (
+					payload.aud &&
+					!verifyAudience(
+						payload.aud,
+						ctx.context.baseURL,
+						ctx.headers,
+						opts.trustProxy
+					)
+				) {
+					throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 				}
 
 				// JTI replay (§5.6) — partitioned by sub (host identity)
 				if (!opts.dangerouslySkipJtiCheck) {
 					if (!payload.jti) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.INVALID_JWT,
-						);
+						throw agentError("UNAUTHORIZED", ERR.INVALID_JWT);
 					}
 					const jtiKey = `host:${payload.iss ?? "dynamic"}:${payload.jti}`;
 					if (jtiCache && (await jtiCache.has(jtiKey))) {
-						throw agentError(
-							"UNAUTHORIZED",
-							ERR.JWT_REPLAY,
-						);
+						throw agentError("UNAUTHORIZED", ERR.JWT_REPLAY);
 					}
 					if (jtiCache) {
 						await jtiCache.add(jtiKey, opts.jwtMaxAge);
 					}
 				}
 
-			const existingHost = await findHostByKey(
-				ctx.context.adapter,
-				resolvedHostPubKey,
-			);
-			if (existingHost) {
-				hostRecord = existingHost;
-				hostId = existingHost.id;
-				userId = existingHost.userId ?? null;
-				hostDefaultCaps = parseCapabilityIds(
-					existingHost.defaultCapabilities,
+				const existingHost = await findHostByKey(
+					ctx.context.adapter,
+					resolvedHostPubKey
 				);
+				if (existingHost) {
+					hostRecord = existingHost;
+					hostId = existingHost.id;
+					userId = existingHost.userId ?? null;
+					hostDefaultCaps = parseCapabilityIds(
+						existingHost.defaultCapabilities
+					);
 
-				const jwtHostName =
-					typeof decoded.host_name === "string"
-						? decoded.host_name
-						: null;
-				const resolvedName = jwtHostName ?? bodyHostName ?? null;
-				const bgUpdates: Record<string, unknown> = {};
-				if (resolvedName && resolvedName !== existingHost.name) {
-					bgUpdates.name = resolvedName;
-				}
-				if (hostJwksUrl && !existingHost.jwksUrl) {
-					bgUpdates.jwksUrl = hostJwksUrl;
-				}
-				if (
-					mode === "autonomous" &&
-					!existingHost.userId &&
-					existingHost.status === "pending"
-				) {
-					bgUpdates.status = "active";
-					bgUpdates.activatedAt = new Date();
-					hostRecord = {
-						...hostRecord,
-						status: "active",
-						activatedAt: bgUpdates.activatedAt,
-					} as AgentHost;
-
-					const dynCaps = await resolveDefaultHostCapabilities(opts, {
-						ctx,
-						mode,
-						userId: null,
-						hostId: existingHost.id,
-						hostName: resolvedName ?? existingHost.name,
-					});
-					if (dynCaps.length > 0) {
-						bgUpdates.defaultCapabilities = dynCaps;
-						hostDefaultCaps = dynCaps;
+					const jwtHostName =
+						typeof decoded.host_name === "string" ? decoded.host_name : null;
+					const resolvedName = jwtHostName ?? bodyHostName ?? null;
+					const bgUpdates: Record<string, unknown> = {};
+					if (resolvedName && resolvedName !== existingHost.name) {
+						bgUpdates.name = resolvedName;
+					}
+					if (hostJwksUrl && !existingHost.jwksUrl) {
+						bgUpdates.jwksUrl = hostJwksUrl;
+					}
+					if (
+						mode === "autonomous" &&
+						!existingHost.userId &&
+						existingHost.status === "pending"
+					) {
+						bgUpdates.status = "active";
+						bgUpdates.activatedAt = new Date();
 						hostRecord = {
 							...hostRecord,
-							defaultCapabilities: dynCaps,
+							status: "active",
+							activatedAt: bgUpdates.activatedAt,
 						} as AgentHost;
+
+						const dynCaps = await resolveDefaultHostCapabilities(opts, {
+							ctx,
+							mode,
+							userId: null,
+							hostId: existingHost.id,
+							hostName: resolvedName ?? existingHost.name,
+						});
+						if (dynCaps.length > 0) {
+							bgUpdates.defaultCapabilities = dynCaps;
+							hostDefaultCaps = dynCaps;
+							hostRecord = {
+								...hostRecord,
+								defaultCapabilities: dynCaps,
+							} as AgentHost;
+						}
 					}
-				}
-				if (Object.keys(bgUpdates).length > 0) {
-					bgUpdates.updatedAt = new Date();
-					hostRecord = { ...hostRecord, ...bgUpdates } as AgentHost;
-					ctx.context.runInBackground(
-						ctx.context.adapter
-							.update({
-								model: TABLE.host,
-								where: [
-									{ field: "id", value: existingHost.id },
-								],
-								update: bgUpdates,
-							})
-							.catch(() => {}),
-					);
-				}
-			} else {
+					if (Object.keys(bgUpdates).length > 0) {
+						bgUpdates.updatedAt = new Date();
+						hostRecord = { ...hostRecord, ...bgUpdates } as AgentHost;
+						ctx.context.runInBackground(
+							ctx.context.adapter
+								.update({
+									model: TABLE.host,
+									where: [{ field: "id", value: existingHost.id }],
+									update: bgUpdates,
+								})
+								.catch(() => {})
+						);
+					}
+				} else {
 					const isAutonomous = mode === "autonomous";
 					const hostNow = new Date();
 					const hostKid = resolvedHostPubKey.kid ?? null;
 					const jwtHostName =
-						typeof decoded.host_name === "string"
-							? decoded.host_name
-							: null;
+						typeof decoded.host_name === "string" ? decoded.host_name : null;
 					const resolvedDynHostName = jwtHostName ?? bodyHostName ?? null;
-					const dynCaps =
-						await resolveDefaultHostCapabilities(
-							opts,
-							{
-								ctx,
-								mode,
-								userId: null,
-								hostId: null,
-								hostName: resolvedDynHostName,
-							},
-						);
+					const dynCaps = await resolveDefaultHostCapabilities(opts, {
+						ctx,
+						mode,
+						userId: null,
+						hostId: null,
+						hostName: resolvedDynHostName,
+					});
 					const newHost = await ctx.context.adapter.create<
 						Record<string, unknown>,
 						AgentHost
@@ -561,11 +508,7 @@ export function register(
 			const publicKey = agentPublicKey;
 			if (agentJwksUrl && !publicKey) {
 				// Key resolved from JWKS at verification time
-			} else if (
-				!publicKey ||
-				!publicKey.kty ||
-				!publicKey.x
-			) {
+			} else if (!(publicKey?.kty && publicKey.x)) {
 				throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 			}
 
@@ -583,63 +526,58 @@ export function register(
 					],
 				});
 				if (activeCount >= opts.maxAgentsPerUser) {
-					throw agentError(
-						"BAD_REQUEST",
-						ERR.AGENT_LIMIT_REACHED,
-					);
+					throw agentError("BAD_REQUEST", ERR.AGENT_LIMIT_REACHED);
 				}
 			}
 
 			// ---------- Resolve capabilities ----------
 			const isHostPending = hostRecord?.status === "pending";
 
-		let resolvedCapNames: string[];
-		let pendingCapNames: string[] = [];
+			let resolvedCapNames: string[];
+			let pendingCapNames: string[] = [];
 
-		if (hostDefaultCaps !== null && hostDefaultCaps.length > 0) {
-			const budget = hostDefaultCaps;
-			if (requestedCapIds && requestedCapIds.length > 0) {
-				resolvedCapNames = requestedCapIds.filter((c) =>
-					hasCapability(budget, c),
-				);
-				pendingCapNames = requestedCapIds.filter(
-					(c) => !hasCapability(budget, c),
-				);
+			if (hostDefaultCaps !== null && hostDefaultCaps.length > 0) {
+				const budget = hostDefaultCaps;
+				if (requestedCapIds && requestedCapIds.length > 0) {
+					resolvedCapNames = requestedCapIds.filter((c) =>
+						hasCapability(budget, c)
+					);
+					pendingCapNames = requestedCapIds.filter(
+						(c) => !hasCapability(budget, c)
+					);
+				} else {
+					resolvedCapNames = budget;
+				}
+			} else if (requestedCapIds && requestedCapIds.length > 0) {
+				if (
+					hostId &&
+					hostDefaultCaps !== null &&
+					(hostRecord?.status === "active" || isHostPending)
+				) {
+					resolvedCapNames = [];
+					pendingCapNames = requestedCapIds;
+				} else {
+					resolvedCapNames = requestedCapIds;
+				}
 			} else {
-				resolvedCapNames = budget;
-			}
-		} else if (requestedCapIds && requestedCapIds.length > 0) {
-			if (
-				hostId &&
-				hostDefaultCaps !== null &&
-				(hostRecord?.status === "active" || isHostPending)
-			) {
 				resolvedCapNames = [];
-				pendingCapNames = requestedCapIds;
-			} else {
-				resolvedCapNames = requestedCapIds;
 			}
-		} else {
-			resolvedCapNames = [];
-		}
 
-		if (pendingCapNames.length > 0 && mode === "autonomous") {
-			if (!userId) {
+			if (pendingCapNames.length > 0 && mode === "autonomous" && !userId) {
 				pendingCapNames = [];
 			}
-		}
 
-		const allRequestedCaps = [...resolvedCapNames, ...pendingCapNames];
-		validateCapabilityIds(allRequestedCaps, opts);
-		await validateCapabilitiesExist(allRequestedCaps, opts);
+			const allRequestedCaps = [...resolvedCapNames, ...pendingCapNames];
+			validateCapabilityIds(allRequestedCaps, opts);
+			await validateCapabilitiesExist(allRequestedCaps, opts);
 
 			// ---------- force_approval: move all resolved caps to pending ----------
-		if (forceApproval && resolvedCapNames.length > 0) {
-			pendingCapNames = [...resolvedCapNames, ...pendingCapNames];
-			resolvedCapNames = [];
-		}
+			if (forceApproval && resolvedCapNames.length > 0) {
+				pendingCapNames = [...resolvedCapNames, ...pendingCapNames];
+				resolvedCapNames = [];
+			}
 
-		const agentUserId = forceApproval ? null : userId;
+			const agentUserId = forceApproval ? null : userId;
 
 			// ---------- Idempotency check (§6.3) ----------
 			const agentPubKeyStr = publicKey ? JSON.stringify(publicKey) : "";
@@ -659,14 +597,17 @@ export function register(
 								model: TABLE.grant,
 								where: [{ field: "agentId", value: existing.id }],
 							});
-					const response: Record<string, unknown> = {
-						agent_id: existing.id,
-						host_id: hostId,
-						name: existing.name,
-						mode: existing.mode,
-						status: "pending",
-						agent_capability_grants: formatGrantsResponse(existingGrants, opts.capabilities),
-					};
+						const response: Record<string, unknown> = {
+							agent_id: existing.id,
+							host_id: hostId,
+							name: existing.name,
+							mode: existing.mode,
+							status: "pending",
+							agent_capability_grants: formatGrantsResponse(
+								existingGrants,
+								opts.capabilities
+							),
+						};
 						const origin = new URL(ctx.context.baseURL).origin;
 						response.approval = await buildApprovalInfo(
 							opts,
@@ -682,7 +623,7 @@ export function register(
 								preferredMethod,
 								loginHint,
 								bindingMessage,
-							},
+							}
 						);
 						return ctx.json(response);
 					}
@@ -695,7 +636,8 @@ export function register(
 			const kid = publicKey
 				? ((publicKey.kid as string | undefined) ?? null)
 				: null;
-			const needsApproval = forceApproval || isHostPending || pendingCapNames.length > 0;
+			const needsApproval =
+				forceApproval || isHostPending || pendingCapNames.length > 0;
 			const agentStatus = needsApproval ? "pending" : "active";
 			const expiresAt =
 				!needsApproval && opts.agentSessionTTL > 0
@@ -725,33 +667,38 @@ export function register(
 				},
 			});
 
-		await createGrantRows(
-			ctx.context.adapter,
-			agent.id,
-			resolvedCapNames,
-			agentUserId,
-			{
-				reason: reason ?? null,
-				...(isHostPending ? { status: "pending" } : {}),
-				constraintsMap,
-			},
-			isHostPending ? undefined : { pluginOpts: opts, hostId, userId: agentUserId },
-		);
-
-		if (pendingCapNames.length > 0) {
 			await createGrantRows(
 				ctx.context.adapter,
 				agent.id,
-				pendingCapNames,
+				resolvedCapNames,
 				agentUserId,
 				{
-					status: "pending",
-					reason:
-						reason ?? (forceApproval ? "Approval requested by agent" : "Capability not pre-authorized by host"),
+					reason: reason ?? null,
+					...(isHostPending ? { status: "pending" } : {}),
 					constraintsMap,
 				},
+				isHostPending
+					? undefined
+					: { pluginOpts: opts, hostId, userId: agentUserId }
 			);
-		}
+
+			if (pendingCapNames.length > 0) {
+				await createGrantRows(
+					ctx.context.adapter,
+					agent.id,
+					pendingCapNames,
+					agentUserId,
+					{
+						status: "pending",
+						reason:
+							reason ??
+							(forceApproval
+								? "Approval requested by agent"
+								: "Capability not pre-authorized by host"),
+						constraintsMap,
+					}
+				);
+			}
 
 			const allGrants =
 				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
@@ -765,44 +712,51 @@ export function register(
 				name: agent.name,
 				mode: agent.mode,
 				status: agentStatus,
-				agent_capability_grants: formatGrantsResponse(allGrants, opts.capabilities),
+				agent_capability_grants: formatGrantsResponse(
+					allGrants,
+					opts.capabilities
+				),
 			};
 
-		if (needsApproval) {
-			const origin = new URL(ctx.context.baseURL).origin;
-			response.approval = await buildApprovalInfo(
-				opts,
-				ctx.context.adapter,
-				ctx.context.internalAdapter,
-				{
-					origin,
-					agentId: agent.id,
-					userId: agentUserId,
-					agentName: name,
-					hostId,
-					capabilities: [...resolvedCapNames, ...pendingCapNames],
-					preferredMethod,
-					loginHint,
-					bindingMessage,
-				},
-			);
-		}
+			if (needsApproval) {
+				const origin = new URL(ctx.context.baseURL).origin;
+				response.approval = await buildApprovalInfo(
+					opts,
+					ctx.context.adapter,
+					ctx.context.internalAdapter,
+					{
+						origin,
+						agentId: agent.id,
+						userId: agentUserId,
+						agentName: name,
+						hostId,
+						capabilities: [...resolvedCapNames, ...pendingCapNames],
+						preferredMethod,
+						loginHint,
+						bindingMessage,
+					}
+				);
+			}
 
-		emit(opts, {
-			type: "agent.created",
-			actorId: agentUserId ?? undefined,
-			agentId: agent.id,
-			hostId: hostId ?? undefined,
-			metadata: {
-				name,
-				mode,
-				capabilities: resolvedCapNames,
-				pendingCapabilities: pendingCapNames,
-				...(forceApproval ? { forceApproval: true } : {}),
-			},
-		}, ctx);
+			emit(
+				opts,
+				{
+					type: "agent.created",
+					actorId: agentUserId ?? undefined,
+					agentId: agent.id,
+					hostId: hostId ?? undefined,
+					metadata: {
+						name,
+						mode,
+						capabilities: resolvedCapNames,
+						pendingCapabilities: pendingCapNames,
+						...(forceApproval ? { forceApproval: true } : {}),
+					},
+				},
+				ctx
+			);
 
 			return ctx.json(response);
-		},
+		}
 	);
 }

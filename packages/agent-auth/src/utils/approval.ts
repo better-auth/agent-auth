@@ -1,7 +1,9 @@
 /** Normalize user code: strip non-alphanumeric, uppercase, re-insert dash. */
 export function normalizeUserCode(code: string): string {
 	const stripped = code.replaceAll(/[^A-Z0-9]/gi, "").toUpperCase();
-	if (stripped.length !== 8) return code.toUpperCase();
+	if (stripped.length !== 8) {
+		return code.toUpperCase();
+	}
 	return `${stripped.slice(0, 4)}-${stripped.slice(4)}`;
 }
 
@@ -15,9 +17,13 @@ export function generateUserCode(): string {
 		const bytes = new Uint8Array(16);
 		globalThis.crypto.getRandomValues(bytes);
 		for (const byte of bytes) {
-			if (byte >= limit) continue;
+			if (byte >= limit) {
+				continue;
+			}
 			code += chars[byte % len];
-			if (code.length === 8) break;
+			if (code.length === 8) {
+				break;
+			}
 		}
 	}
 	return `${code.slice(0, 4)}-${code.slice(4)}`;
@@ -25,17 +31,22 @@ export function generateUserCode(): string {
 
 /** Base64url-encode a Uint8Array without padding. */
 function base64url(bytes: Uint8Array): string {
-	const lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+	const lookup =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 	let result = "";
 	const len = bytes.length;
 	for (let i = 0; i < len; i += 3) {
-		const b0 = bytes[i];
-		const b1 = i + 1 < len ? bytes[i + 1] : 0;
-		const b2 = i + 2 < len ? bytes[i + 2] : 0;
+		const b0 = bytes[i]!;
+		const b1 = i + 1 < len ? bytes[i + 1]! : 0;
+		const b2 = i + 2 < len ? bytes[i + 2]! : 0;
 		result += lookup[b0 >> 2];
 		result += lookup[((b0 & 0x03) << 4) | (b1 >> 4)];
-		if (i + 1 < len) result += lookup[((b1 & 0x0f) << 2) | (b2 >> 6)];
-		if (i + 2 < len) result += lookup[b2 & 0x3f];
+		if (i + 1 < len) {
+			result += lookup[((b1 & 0x0f) << 2) | (b2 >> 6)];
+		}
+		if (i + 2 < len) {
+			result += lookup[b2 & 0x3f];
+		}
 	}
 	return result;
 }
@@ -57,7 +68,7 @@ export async function generateEnrollmentToken(): Promise<{
 export async function hashToken(token: string): Promise<string> {
 	const digest = await globalThis.crypto.subtle.digest(
 		"SHA-256",
-		new TextEncoder().encode(token),
+		new TextEncoder().encode(token)
 	);
 	return base64url(new Uint8Array(digest));
 }

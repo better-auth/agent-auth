@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
+import { db } from "@/lib/db/index";
 import { provider } from "@/lib/db/schema";
 import { discoverProvider } from "@/lib/discover";
 
 export async function POST(
 	_request: Request,
-	{ params }: { params: Promise<{ name: string }> },
+	{ params }: { params: Promise<{ name: string }> }
 ) {
 	const { name: encodedName } = await params;
 	const name = decodeURIComponent(encodedName);

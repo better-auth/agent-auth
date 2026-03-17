@@ -24,17 +24,22 @@ db.exec(`
 `);
 
 export function getSetting(key: string): string | undefined {
-	const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
+	const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+		| { value: string }
+		| undefined;
 	return row?.value;
 }
 
 export function setSetting(key: string, value: string): void {
-	db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+	db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(
+		key,
+		value
+	);
 }
 
 export const insertLog = db.prepare(
 	`INSERT INTO event_log (type, actorId, actorType, agentId, hostId, orgId, data, createdAt)
-	 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+	 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
 );
 
 db.exec(`
@@ -53,6 +58,6 @@ export function getRegistration(key: string): string | undefined {
 
 export function setRegistration(key: string, value: string): void {
 	db.prepare(
-		"INSERT OR REPLACE INTO registration (key, value) VALUES (?, ?)",
+		"INSERT OR REPLACE INTO registration (key, value) VALUES (?, ?)"
 	).run(key, value);
 }

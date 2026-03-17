@@ -1,0 +1,45 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "exclude": ["duplicates", "exports", "types"],
+  "ignoreDependencies": [
+    "@biomejs/biome",
+    "class-variance-authority",
+    "clsx",
+    "geist",
+    "lucide-react",
+    "motion",
+    "tailwind-merge",
+    "tailwindcss",
+    "tw-animate-css"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    "packages/agent-auth": {
+      "entry": ["src/index.ts", "src/client.ts", "src/openapi.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/sdk": {
+      "entry": ["src/index.ts", "src/tools-entry.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "packages/cli": {
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "apps/*": {
+      "entry": [
+        "app/**/page.{ts,tsx}",
+        "app/**/layout.{ts,tsx}",
+        "app/**/route.{ts,tsx}",
+        "next.config.{ts,mjs}",
+        "postcss.config.mjs"
+      ],
+      "project": [
+        "app/**/*.{ts,tsx}",
+        "lib/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}"
+      ],
+      "ignoreDependencies": ["postcss", "postcss-load-config"]
+    }
+  }
+}

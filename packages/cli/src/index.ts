@@ -1,6 +1,6 @@
-import { buildCli } from "./cli.js";
-import { startMcpServer } from "./mcp.js";
-import { getClientConfig } from "./client.js";
+import { buildCli } from "./cli";
+import { getClientConfig } from "./client";
+import { startMcpServer } from "./mcp";
 
 const args = process.argv.slice(2);
 
@@ -18,15 +18,16 @@ function parseGlobalFlags(): Record<string, string | string[] | undefined> {
 	};
 	const urls: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
-		if (argv[i] === "--url" && i + 1 < argv.length) {
-			while (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
-				urls.push(argv[++i]);
+		const arg = argv[i]!;
+		if (arg === "--url" && i + 1 < argv.length) {
+			while (i + 1 < argv.length && !argv[i + 1]?.startsWith("--")) {
+				urls.push(argv[++i]!);
 			}
 			continue;
 		}
-		const key = flagMap[argv[i]];
+		const key = flagMap[arg];
 		if (key && i + 1 < argv.length) {
-			flags[key] = argv[++i];
+			flags[key] = argv[++i]!;
 		}
 	}
 	if (argv.includes("--no-browser")) {

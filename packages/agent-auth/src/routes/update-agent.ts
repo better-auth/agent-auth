@@ -1,10 +1,10 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
+import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import type { Agent, ResolvedAgentAuthOptions } from "../types";
-import { sessionMiddleware } from "better-auth/api";
 
 /**
  * POST /agent/update
@@ -22,12 +22,7 @@ export function updateAgent(opts: ResolvedAgentAuthOptions) {
 				metadata: z
 					.record(
 						z.string(),
-						z.union([
-							z.string(),
-							z.number(),
-							z.boolean(),
-							z.null(),
-						]),
+						z.union([z.string(), z.number(), z.boolean(), z.null()])
 					)
 					.optional(),
 			}),
@@ -74,12 +69,16 @@ export function updateAgent(opts: ResolvedAgentAuthOptions) {
 
 			const updatedAt = new Date();
 
-			emit(opts, {
-				type: "agent.updated",
-				actorId: session.user.id,
-				agentId,
-				metadata: { name, metadata },
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "agent.updated",
+					actorId: session.user.id,
+					agentId,
+					metadata: { name, metadata },
+				},
+				ctx
+			);
 
 			const resolvedMetadata = metadata ?? agent.metadata;
 			const resolvedName = name ?? agent.name;
@@ -90,6 +89,6 @@ export function updateAgent(opts: ResolvedAgentAuthOptions) {
 				metadata: resolvedMetadata,
 				updated_at: updatedAt,
 			});
-		},
+		}
 	);
 }

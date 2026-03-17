@@ -1,12 +1,16 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import * as z from "zod";
 import { TABLE } from "../../constants";
-import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
+import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../../types";
 import { hashToken } from "../../utils/approval";
 import { parseCapabilityIds } from "../../utils/capabilities";
-import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../../types";
-import { claimAutonomousAgents, findHostByKey, validateKeyAlgorithm } from "../_helpers";
+import {
+	claimAutonomousAgents,
+	findHostByKey,
+	validateKeyAlgorithm,
+} from "../_helpers";
 
 export function enrollHost(opts: ResolvedAgentAuthOptions) {
 	return createAuthEndpoint(
@@ -15,13 +19,12 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 			method: "POST",
 			body: z.object({
 				token: z.string().meta({
-					description:
-						"One-time enrollment token received from the dashboard.",
+					description: "One-time enrollment token received from the dashboard.",
 				}),
 				public_key: z
 					.record(
 						z.string(),
-						z.union([z.string(), z.boolean(), z.array(z.string())]).optional(),
+						z.union([z.string(), z.boolean(), z.array(z.string())]).optional()
 					)
 					.meta({
 						description:
@@ -41,7 +44,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const { token, public_key: publicKey, name } = ctx.body;
 
-			if (!publicKey.kty || !publicKey.x) {
+			if (!(publicKey.kty && publicKey.x)) {
 				throw agentError("BAD_REQUEST", ERR.INVALID_PUBLIC_KEY);
 			}
 
@@ -86,12 +89,10 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 					throw agentError("CONFLICT", ERR.HOST_ALREADY_LINKED);
 				}
 				if (!existing.userId && host.userId) {
-					await claimAutonomousAgents(
-						ctx.context.adapter,
-						opts,
-						ctx,
-						{ hostId: existing.id, userId: host.userId },
-					);
+					await claimAutonomousAgents(ctx.context.adapter, opts, ctx, {
+						hostId: existing.id,
+						userId: host.userId,
+					});
 					await opts.onHostClaimed?.({
 						ctx,
 						hostId: existing.id,
@@ -123,7 +124,9 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 						where: [{ field: "hostId", value: existing.id }],
 					});
 					for (const agent of hostAgents) {
-						if (agent.status === "claimed") continue;
+						if (agent.status === "claimed") {
+							continue;
+						}
 						await ctx.context.adapter.update({
 							model: TABLE.agent,
 							where: [{ field: "id", value: agent.id }],
@@ -147,7 +150,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 					hostId: existing.id,
 					name: name ?? host.name ?? existing.name,
 					default_capabilities: parseCapabilityIds(
-						existing.defaultCapabilities,
+						existing.defaultCapabilities
 					),
 					status: "active",
 				});
@@ -174,12 +177,16 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 				update,
 			});
 
-			emit(opts, {
-				type: "host.enrolled",
-				hostId: host.id,
-				actorType: "system",
-				metadata: { name: name ?? host.name },
-			}, ctx);
+			emit(
+				opts,
+				{
+					type: "host.enrolled",
+					hostId: host.id,
+					actorType: "system",
+					metadata: { name: name ?? host.name },
+				},
+				ctx
+			);
 
 			return ctx.json({
 				hostId: host.id,
@@ -187,6 +194,6 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
 				default_capabilities: parseCapabilityIds(host.defaultCapabilities),
 				status: "active",
 			});
-		},
+		}
 	);
 }

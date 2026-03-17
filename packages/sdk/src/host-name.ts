@@ -18,12 +18,12 @@
  */
 
 export interface ToolDetection {
-	name: string;
 	identifier?: string;
+	name: string;
 }
 
 export function detectTool(): ToolDetection | null {
-	const env = typeof process !== "undefined" ? process.env : {};
+	const env = typeof process === "undefined" ? {} : process.env;
 
 	if (env.CURSOR_SESSION_ID || env.CURSOR_TRACE_ID) {
 		return { name: "Cursor", identifier: env.CURSOR_SESSION_ID };
@@ -79,8 +79,10 @@ export function detectTool(): ToolDetection | null {
  */
 function getDeviceName(): string | null {
 	try {
-		const { execSync } = require("node:child_process") as typeof import("node:child_process");
-		const { hostname, platform } = require("node:os") as typeof import("node:os");
+		const { execSync } =
+			require("node:child_process") as typeof import("node:child_process");
+		const { hostname, platform } =
+			require("node:os") as typeof import("node:os");
 		const p = platform();
 
 		if (p === "darwin") {
@@ -90,10 +92,12 @@ function getDeviceName(): string | null {
 						execSync("scutil --get ComputerName", {
 							timeout: 1000,
 							stdio: ["ignore", "pipe", "ignore"],
-						}),
+						})
 					)
 					.trim();
-				if (name) return name;
+				if (name) {
+					return name;
+				}
 			} catch {
 				// scutil failed, fall through
 			}
@@ -101,7 +105,9 @@ function getDeviceName(): string | null {
 
 		if (p === "win32") {
 			const computerName = process.env.COMPUTERNAME;
-			if (computerName) return computerName;
+			if (computerName) {
+				return computerName;
+			}
 		}
 
 		const h = hostname();

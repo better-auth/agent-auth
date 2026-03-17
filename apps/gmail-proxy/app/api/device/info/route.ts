@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 export async function GET(req: Request) {
 	const session = await auth.api.getSession({
@@ -14,15 +14,12 @@ export async function GET(req: Request) {
 	const url = new URL(req.url);
 	const agentId = url.searchParams.get("agent_id");
 	if (!agentId) {
-		return NextResponse.json(
-			{ error: "agent_id required" },
-			{ status: 400 },
-		);
+		return NextResponse.json({ error: "agent_id required" }, { status: 400 });
 	}
 
-	const agent = db
-		.prepare("SELECT * FROM agent WHERE id = ?")
-		.get(agentId) as Record<string, unknown> | undefined;
+	const agent = db.prepare("SELECT * FROM agent WHERE id = ?").get(agentId) as
+		| Record<string, unknown>
+		| undefined;
 
 	if (!agent) {
 		return NextResponse.json({ error: "Agent not found" }, { status: 404 });
@@ -43,8 +40,7 @@ export async function GET(req: Request) {
 		: null;
 
 	const needsActivation =
-		agent.status === "pending" ||
-		(host && host.status === "pending");
+		agent.status === "pending" || (host && host.status === "pending");
 
 	return NextResponse.json({
 		agent: {
@@ -55,9 +51,7 @@ export async function GET(req: Request) {
 			hostId: agent.hostId,
 			createdAt: agent.createdAt,
 		},
-		host: host
-			? { id: host.id, name: host.name, status: host.status }
-			: null,
+		host: host ? { id: host.id, name: host.name, status: host.status } : null,
 		grants: grants.map((g) => ({
 			id: g.id,
 			capability: g.capability,

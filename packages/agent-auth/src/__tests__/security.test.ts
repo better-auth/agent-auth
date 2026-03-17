@@ -7,24 +7,25 @@
  * cascade, P-256 rejection, capability validation warnings,
  * verifyAudience location model, and startup URL validation.
  */
-import { describe, expect, it, beforeAll, vi } from "vitest";
+
 import { getTestInstance } from "better-auth/test";
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from "jose";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { agentAuth as _agentAuth } from "../index";
-import { verifyAudience, getCapabilityLocation } from "../routes/_helpers";
+import { getCapabilityLocation, verifyAudience } from "../routes/_helpers";
+import type { AgentAuthEvent, AgentJWK } from "../types";
 import {
+	API,
 	agentAuth,
 	agentAuthClientPlugin,
-	generateTestKeypair,
-	signTestJWT,
-	createHostJWT,
-	createAgentJWT,
-	json,
-	createTestClient,
 	BASE,
-	API,
+	createAgentJWT,
+	createHostJWT,
+	createTestClient,
+	generateTestKeypair,
+	json,
+	signTestJWT,
 } from "./helpers";
-import type { AgentJWK, AgentAuthEvent } from "../types";
 
 const TEST_CAPABILITIES = [
 	{ name: "check_balance", description: "Check account balance" },
@@ -59,7 +60,7 @@ beforeAll(async () => {
 				}),
 			],
 		},
-		{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 	);
 	auth = t.auth;
 	client = createTestClient((req) => auth.handler(req));
@@ -68,11 +69,15 @@ beforeAll(async () => {
 	sessionCookie = headers.get("cookie") ?? "";
 
 	sharedHostKeypair = await generateTestKeypair();
-	const createRes = await client.authedPost("/host/create", {
-		name: "Security Test Host",
-		public_key: sharedHostKeypair.publicKey,
-		default_capabilities: ["check_balance", "transfer"],
-	}, sessionCookie);
+	const createRes = await client.authedPost(
+		"/host/create",
+		{
+			name: "Security Test Host",
+			public_key: sharedHostKeypair.publicKey,
+			default_capabilities: ["check_balance", "transfer"],
+		},
+		sessionCookie
+	);
 	const { hostId } = await json<{ hostId: string }>(createRes);
 	sharedHostId = hostId;
 
@@ -92,7 +97,10 @@ beforeAll(async () => {
 
 describe("JWT Replay Protection", () => {
 	it("detects JWT replay (same jti rejected)", async () => {
-		const jwt = await createAgentJWT(sharedAgentKeypair.privateKey, sharedAgentId);
+		const jwt = await createAgentJWT(
+			sharedAgentKeypair.privateKey,
+			sharedAgentId
+		);
 
 		const first = await client.api("/agent/status", {
 			method: "GET",
@@ -159,9 +167,13 @@ describe("JWT Replay Protection", () => {
 
 describe("JWT Expiry & Revocation", () => {
 	it("rejects expired JWT", async () => {
-		const jwt = await createAgentJWT(sharedAgentKeypair.privateKey, sharedAgentId, {
-			expiresInSeconds: -1,
-		});
+		const jwt = await createAgentJWT(
+			sharedAgentKeypair.privateKey,
+			sharedAgentId,
+			{
+				expiresInSeconds: -1,
+			}
+		);
 
 		const res = await client.api("/agent/status", {
 			method: "GET",
@@ -233,7 +245,7 @@ describe("Algorithm Security", () => {
 			btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }))
 				.replace(/\+/g, "-")
 				.replace(/\//g, "_")
-				.replace(/=+$/, ""),
+				.replace(/=+$/, "")
 		);
 
 		const badRes = await client.api("/agent/status", {
@@ -252,18 +264,22 @@ describe("Algorithm Security", () => {
 		});
 		const pubJWK = (await exportJWK(publicKey)) as AgentJWK;
 
-		const res = await client.authedPost("/host/create", {
-			name: "P256 Host",
-			public_key: pubJWK,
-			default_capabilities: ["check_balance"],
-		}, sessionCookie);
+		const res = await client.authedPost(
+			"/host/create",
+			{
+				name: "P256 Host",
+				public_key: pubJWK,
+				default_capabilities: ["check_balance"],
+			},
+			sessionCookie
+		);
 
 		// Should reject because P-256 is not in allowedKeyAlgorithms
 		expect(res.ok).toBe(false);
 	});
 
 	it("verifyAgentJWT propagates non-JOSE errors instead of returning null", async () => {
-		const { verifyAgentJWT } = await import("../utils/crypto");
+		const { verifyAgentJWT } = await import("../utils/crypto.ts");
 		const badKey = { kty: "OKP", crv: "Ed25519", x: "INVALID" } as AgentJWK;
 
 		await expect(
@@ -271,7 +287,7 @@ describe("Algorithm Security", () => {
 				jwt: "not.a.jwt",
 				publicKey: badKey,
 				maxAge: 60,
-			}),
+			})
 		).rejects.toThrow();
 	});
 
@@ -304,7 +320,7 @@ describe("Fresh Session Window", () => {
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 
 		const { headers: authHeaders } = await t.signInWithTestUser();
@@ -320,7 +336,7 @@ describe("Fresh Session Window", () => {
 					public_key: hostKeypair.publicKey,
 					default_capabilities: ["check_balance"],
 				}),
-			}),
+			})
 		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -329,7 +345,7 @@ describe("Fresh Session Window", () => {
 			hostKeypair.privateKey,
 			hostKeypair.publicKey,
 			agentKeypair.publicKey,
-			hostId,
+			hostId
 		);
 		const regRes = await t.auth.handler(
 			new Request(`${API}/agent/register`, {
@@ -343,9 +359,12 @@ describe("Fresh Session Window", () => {
 					capabilities: ["check_balance", "transfer"],
 					mode: "delegated",
 				}),
-			}),
+			})
 		);
-		const regBody = await json<{ agent_id: string; approval: { user_code: string } }>(regRes);
+		const regBody = await json<{
+			agent_id: string;
+			approval: { user_code: string };
+		}>(regRes);
 		const agentId = regBody.agent_id;
 		const userCode = regBody.approval.user_code;
 
@@ -360,7 +379,7 @@ describe("Fresh Session Window", () => {
 					action: "approve",
 					user_code: userCode,
 				}),
-			}),
+			})
 		);
 		const body = await json<{ error: string }>(approveRes);
 		expect(body.error).toBe("fresh_session_required");
@@ -383,7 +402,7 @@ describe("Transparent Reactivation", () => {
 				plugins: [
 					agentAuth({
 						agentSessionTTL: 1,
-						agentMaxLifetime: 86400,
+						agentMaxLifetime: 86_400,
 						capabilities: TEST_CAPABILITIES,
 						modes: ["delegated"],
 						onEvent: (event) => {
@@ -392,7 +411,7 @@ describe("Transparent Reactivation", () => {
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 
 		const { headers: authHeaders } = await t.signInWithTestUser();
@@ -408,7 +427,7 @@ describe("Transparent Reactivation", () => {
 					public_key: hostKeypair.publicKey,
 					default_capabilities: ["check_balance"],
 				}),
-			}),
+			})
 		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -417,7 +436,7 @@ describe("Transparent Reactivation", () => {
 			hostKeypair.privateKey,
 			hostKeypair.publicKey,
 			agentKeypair.publicKey,
-			hostId,
+			hostId
 		);
 		const regRes = await t.auth.handler(
 			new Request(`${API}/agent/register`, {
@@ -431,7 +450,7 @@ describe("Transparent Reactivation", () => {
 					capabilities: ["check_balance"],
 					mode: "delegated",
 				}),
-			}),
+			})
 		);
 		const { agent_id: agentId } = await json<{ agent_id: string }>(regRes);
 
@@ -445,7 +464,7 @@ describe("Transparent Reactivation", () => {
 			new Request(`${API}/agent/status`, {
 				method: "GET",
 				headers: { authorization: `Bearer ${jwt}` },
-			}),
+			})
 		);
 
 		expect(statusRes.ok).toBe(true);
@@ -454,11 +473,11 @@ describe("Transparent Reactivation", () => {
 			(e) =>
 				e.type === "agent.reactivated" &&
 				"actorType" in e &&
-				e.actorType === "system",
+				e.actorType === "system"
 		);
 		expect(reactivationEvent).toBeDefined();
-		expect(reactivationEvent!.metadata?.transparent).toBe(true);
-		expect(reactivationEvent!.agentId).toBe(agentId);
+		expect(reactivationEvent?.metadata?.transparent).toBe(true);
+		expect(reactivationEvent?.agentId).toBe(agentId);
 	});
 });
 
@@ -473,14 +492,14 @@ describe("Absolute Lifetime", () => {
 				plugins: [
 					agentAuth({
 						absoluteLifetime: 1,
-						agentSessionTTL: 86400,
-						agentMaxLifetime: 86400,
+						agentSessionTTL: 86_400,
+						agentMaxLifetime: 86_400,
 						capabilities: TEST_CAPABILITIES,
 						modes: ["delegated"],
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 
 		const { headers: authHeaders } = await t.signInWithTestUser();
@@ -496,7 +515,7 @@ describe("Absolute Lifetime", () => {
 					public_key: hostKeypair.publicKey,
 					default_capabilities: ["check_balance"],
 				}),
-			}),
+			})
 		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -505,7 +524,7 @@ describe("Absolute Lifetime", () => {
 			hostKeypair.privateKey,
 			hostKeypair.publicKey,
 			agentKeypair.publicKey,
-			hostId,
+			hostId
 		);
 		const regRes = await t.auth.handler(
 			new Request(`${API}/agent/register`, {
@@ -518,7 +537,7 @@ describe("Absolute Lifetime", () => {
 					name: "Lifetime Agent",
 					capabilities: ["check_balance"],
 				}),
-			}),
+			})
 		);
 		const { agent_id: agentId } = await json<{ agent_id: string }>(regRes);
 
@@ -529,7 +548,7 @@ describe("Absolute Lifetime", () => {
 			new Request(`${API}/agent/status`, {
 				method: "GET",
 				headers: { authorization: `Bearer ${jwt}` },
-			}),
+			})
 		);
 
 		expect(res.status).toBe(403);
@@ -545,11 +564,15 @@ describe("Absolute Lifetime", () => {
 describe("Host Revocation Cascade", () => {
 	it("agent auth fails when host is revoked", async () => {
 		const hostKeypair = await generateTestKeypair();
-		const createRes = await client.authedPost("/host/create", {
-			name: "Revocable Host",
-			public_key: hostKeypair.publicKey,
-			default_capabilities: ["check_balance"],
-		}, sessionCookie);
+		const createRes = await client.authedPost(
+			"/host/create",
+			{
+				name: "Revocable Host",
+				public_key: hostKeypair.publicKey,
+				default_capabilities: ["check_balance"],
+			},
+			sessionCookie
+		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
 		const agentKeypair = await generateTestKeypair();
@@ -598,7 +621,7 @@ describe("Capability Validation Warning", () => {
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 
 		const { headers: authHeaders } = await t.signInWithTestUser();
@@ -614,7 +637,7 @@ describe("Capability Validation Warning", () => {
 					public_key: hostKeypair.publicKey,
 					default_capabilities: ["totally_made_up"],
 				}),
-			}),
+			})
 		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
@@ -623,7 +646,7 @@ describe("Capability Validation Warning", () => {
 			hostKeypair.privateKey,
 			hostKeypair.publicKey,
 			agentKeypair.publicKey,
-			hostId,
+			hostId
 		);
 
 		const regRes = await t.auth.handler(
@@ -638,7 +661,7 @@ describe("Capability Validation Warning", () => {
 					capabilities: ["totally_made_up"],
 					mode: "delegated",
 				}),
-			}),
+			})
 		);
 		// Registration should succeed (capabilities are unchecked)
 		expect(regRes.ok).toBe(true);
@@ -648,8 +671,8 @@ describe("Capability Validation Warning", () => {
 				(arg: unknown) =>
 					typeof arg === "string" &&
 					arg.includes("[agent-auth]") &&
-					arg.includes("no capabilities list"),
-			),
+					arg.includes("no capabilities list")
+			)
 		);
 		expect(warningCall).toBeDefined();
 
@@ -672,38 +695,36 @@ describe("verifyAudience — location model", () => {
 		expect(
 			verifyAudience(
 				"http://localhost:3000/api/auth/capability/execute",
-				baseURL,
-			),
+				baseURL
+			)
 		).toBe(true);
 	});
 
 	it("rejects an unrelated URL without expectedLocation", () => {
 		expect(
-			verifyAudience("https://external.example.com/execute", baseURL),
+			verifyAudience("https://external.example.com/execute", baseURL)
 		).toBe(false);
 	});
 
 	it("accepts expectedLocation when it matches aud", () => {
 		const location = "https://external.example.com/execute";
-		expect(verifyAudience(location, baseURL, null, false, location)).toBe(
-			true,
-		);
+		expect(verifyAudience(location, baseURL, null, false, location)).toBe(true);
 	});
 
 	it("rejects aud that doesn't match expectedLocation", () => {
 		const location = "https://external.example.com/execute";
 		const wrongAud = "https://other.example.com/execute";
 		expect(verifyAudience(wrongAud, baseURL, null, false, location)).toBe(
-			false,
+			false
 		);
 	});
 
 	it("does NOT accept capability B's location when expectedLocation is capability A's", () => {
 		const locationA = "https://service-a.example.com/execute";
 		const locationB = "https://service-b.example.com/execute";
-		expect(
-			verifyAudience(locationB, baseURL, null, false, locationA),
-		).toBe(false);
+		expect(verifyAudience(locationB, baseURL, null, false, locationA)).toBe(
+			false
+		);
 	});
 
 	it("handles array aud — accepts if any value matches", () => {
@@ -714,8 +735,8 @@ describe("verifyAudience — location model", () => {
 				baseURL,
 				null,
 				false,
-				location,
-			),
+				location
+			)
 		).toBe(true);
 	});
 
@@ -729,8 +750,8 @@ describe("verifyAudience — location model", () => {
 				"https://proxy.example.com/api/auth/capability/execute",
 				baseURL,
 				headers,
-				true,
-			),
+				true
+			)
 		).toBe(true);
 	});
 
@@ -738,13 +759,15 @@ describe("verifyAudience — location model", () => {
 		expect(
 			verifyAudience(
 				"http://localhost:3000/capability/execute",
-				"http://localhost:3000",
-			),
+				"http://localhost:3000"
+			)
 		).toBe(true);
 	});
 
 	it("accepts the full baseURL as audience", () => {
-		expect(verifyAudience("http://localhost:3000/api/auth", baseURL)).toBe(true);
+		expect(verifyAudience("http://localhost:3000/api/auth", baseURL)).toBe(
+			true
+		);
 	});
 
 	it("accepts proxy full base URL as audience", () => {
@@ -753,7 +776,12 @@ describe("verifyAudience — location model", () => {
 			"x-forwarded-proto": "https",
 		});
 		expect(
-			verifyAudience("https://proxy.example.com/api/auth", baseURL, headers, true),
+			verifyAudience(
+				"https://proxy.example.com/api/auth",
+				baseURL,
+				headers,
+				true
+			)
 		).toBe(true);
 	});
 });
@@ -767,7 +795,7 @@ describe("getCapabilityLocation", () => {
 
 	it("returns location for a capability that has one", () => {
 		expect(getCapabilityLocation(capabilities, "read")).toBe(
-			"https://read.example.com/execute",
+			"https://read.example.com/execute"
 		);
 	});
 
@@ -776,9 +804,7 @@ describe("getCapabilityLocation", () => {
 	});
 
 	it("returns undefined for a non-existent capability", () => {
-		expect(
-			getCapabilityLocation(capabilities, "nonexistent"),
-		).toBeUndefined();
+		expect(getCapabilityLocation(capabilities, "nonexistent")).toBeUndefined();
 	});
 
 	it("returns undefined when capabilities is undefined", () => {
@@ -797,7 +823,7 @@ describe("Startup URL validation for capability locations", () => {
 				capabilities: [
 					{ name: "bad", description: "bad cap", location: "not-a-url" },
 				],
-			}),
+			})
 		).toThrow(/invalid location URL/);
 	});
 
@@ -807,7 +833,7 @@ describe("Startup URL validation for capability locations", () => {
 				capabilities: [
 					{ name: "my_cap", description: "test", location: "foo" },
 				],
-			}),
+			})
 		).toThrow(/my_cap/);
 	});
 
@@ -821,17 +847,15 @@ describe("Startup URL validation for capability locations", () => {
 						location: "https://api.example.com/execute",
 					},
 				],
-			}),
+			})
 		).not.toThrow();
 	});
 
 	it("accepts capabilities without location", () => {
 		expect(() =>
 			_agentAuth({
-				capabilities: [
-					{ name: "simple", description: "no location" },
-				],
-			}),
+				capabilities: [{ name: "simple", description: "no location" }],
+			})
 		).not.toThrow();
 	});
 });
@@ -877,7 +901,7 @@ describe("Location model — middleware audience integration", () => {
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 		locAuth = t.auth;
 
@@ -894,7 +918,7 @@ describe("Location model — middleware audience integration", () => {
 					public_key: locHostKeypair.publicKey,
 					default_capabilities: ["read", "write", "admin"],
 				}),
-			}),
+			})
 		);
 		const body = await json<{ hostId: string }>(createRes);
 		locHostId = body.hostId;
@@ -908,19 +932,20 @@ describe("Location model — middleware audience integration", () => {
 					"content-type": "application/json",
 					...(init?.headers as Record<string, string> | undefined),
 				},
-			}),
+			})
 		);
 	}
 
-	async function registerLocAgent(
-		capabilities: string[],
-	): Promise<{ agentId: string; keypair: { publicKey: AgentJWK; privateKey: AgentJWK } }> {
+	async function registerLocAgent(capabilities: string[]): Promise<{
+		agentId: string;
+		keypair: { publicKey: AgentJWK; privateKey: AgentJWK };
+	}> {
 		const keypair = await generateTestKeypair();
 		const hostJWT = await createHostJWT(
 			locHostKeypair.privateKey,
 			locHostKeypair.publicKey,
 			keypair.publicKey,
-			locHostId,
+			locHostId
 		);
 		const res = await locApi("/agent/register", {
 			method: "POST",
@@ -1122,7 +1147,7 @@ describe("Location model — introspect audience integration", () => {
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 		introAuth = t.auth;
 
@@ -1139,7 +1164,7 @@ describe("Location model — introspect audience integration", () => {
 					public_key: introHostKeypair.publicKey,
 					default_capabilities: ["read", "write"],
 				}),
-			}),
+			})
 		);
 		const body = await json<{ hostId: string }>(createRes);
 		introHostId = body.hostId;
@@ -1153,7 +1178,7 @@ describe("Location model — introspect audience integration", () => {
 					"content-type": "application/json",
 					...(init?.headers as Record<string, string> | undefined),
 				},
-			}),
+			})
 		);
 	}
 
@@ -1163,7 +1188,7 @@ describe("Location model — introspect audience integration", () => {
 			introHostKeypair.privateKey,
 			introHostKeypair.publicKey,
 			keypair.publicKey,
-			introHostId,
+			introHostId
 		);
 		const regRes = await introApi("/agent/register", {
 			method: "POST",
@@ -1200,7 +1225,7 @@ describe("Location model — introspect audience integration", () => {
 			introHostKeypair.privateKey,
 			introHostKeypair.publicKey,
 			keypair.publicKey,
-			introHostId,
+			introHostId
 		);
 		const regRes = await introApi("/agent/register", {
 			method: "POST",
@@ -1252,11 +1277,19 @@ describe("Grant Revocation Consistency", () => {
 			headers: { authorization: `Bearer ${jwt1}` },
 		});
 		expect(statusRes.ok).toBe(true);
-		const statusBody = await json<{ agent_capability_grants: Array<{ status: string }> }>(statusRes);
-		expect(statusBody.agent_capability_grants.some((g) => g.status === "active")).toBe(true);
+		const statusBody = await json<{
+			agent_capability_grants: Array<{ status: string }>;
+		}>(statusRes);
+		expect(
+			statusBody.agent_capability_grants.some((g) => g.status === "active")
+		).toBe(true);
 
 		// Revoke via user session
-		const revokeRes = await client.authedPost("/agent/revoke", { agent_id: agentId }, sessionCookie);
+		const revokeRes = await client.authedPost(
+			"/agent/revoke",
+			{ agent_id: agentId },
+			sessionCookie
+		);
 		expect(revokeRes.ok).toBe(true);
 
 		// Verify grants are revoked via introspect (agent JWT won't work since agent is revoked)
@@ -1273,11 +1306,15 @@ describe("Grant Revocation Consistency", () => {
 
 	it("host revoke cascade → all agent grants become revoked (not denied)", async () => {
 		const hostKeypair = await generateTestKeypair();
-		const createRes = await client.authedPost("/host/create", {
-			name: "Cascade Grant Host",
-			public_key: hostKeypair.publicKey,
-			default_capabilities: ["check_balance", "transfer"],
-		}, sessionCookie);
+		const createRes = await client.authedPost(
+			"/host/create",
+			{
+				name: "Cascade Grant Host",
+				public_key: hostKeypair.publicKey,
+				default_capabilities: ["check_balance", "transfer"],
+			},
+			sessionCookie
+		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
 		const agentKeypair = await generateTestKeypair();
@@ -1297,7 +1334,11 @@ describe("Grant Revocation Consistency", () => {
 		expect(okRes.ok).toBe(true);
 
 		// Revoke the host
-		const revokeRes = await client.authedPost("/host/revoke", { host_id: hostId }, sessionCookie);
+		const revokeRes = await client.authedPost(
+			"/host/revoke",
+			{ host_id: hostId },
+			sessionCookie
+		);
 		expect(revokeRes.ok).toBe(true);
 		const revokeBody = await json<{ agents_revoked: number }>(revokeRes);
 		expect(revokeBody.agents_revoked).toBeGreaterThanOrEqual(1);
@@ -1317,14 +1358,14 @@ describe("Grant Revocation Consistency", () => {
 				plugins: [
 					agentAuth({
 						absoluteLifetime: 1,
-						agentSessionTTL: 86400,
-						agentMaxLifetime: 86400,
+						agentSessionTTL: 86_400,
+						agentMaxLifetime: 86_400,
 						capabilities: TEST_CAPABILITIES,
 						modes: ["delegated"],
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 
 		const { headers: authHeaders } = await t.signInWithTestUser();
@@ -1332,11 +1373,15 @@ describe("Grant Revocation Consistency", () => {
 		const localClient = createTestClient((req) => t.auth.handler(req));
 
 		const hostKeypair = await generateTestKeypair();
-		const createRes = await localClient.authedPost("/host/create", {
-			name: "Abs Lifetime Grant Host",
-			public_key: hostKeypair.publicKey,
-			default_capabilities: ["check_balance"],
-		}, cookie);
+		const createRes = await localClient.authedPost(
+			"/host/create",
+			{
+				name: "Abs Lifetime Grant Host",
+				public_key: hostKeypair.publicKey,
+				default_capabilities: ["check_balance"],
+			},
+			cookie
+		);
 		const { hostId } = await json<{ hostId: string }>(createRes);
 
 		const agentKeypair = await generateTestKeypair();
@@ -1376,7 +1421,7 @@ describe("Grant Revocation Consistency", () => {
 				plugins: [
 					agentAuth({
 						agentSessionTTL: 1,
-						agentMaxLifetime: 86400,
+						agentMaxLifetime: 86_400,
 						capabilities: TEST_CAPABILITIES,
 						modes: ["delegated"],
 						resolveAutonomousUser: async ({ hostId }) => ({
@@ -1387,7 +1432,7 @@ describe("Grant Revocation Consistency", () => {
 					}),
 				],
 			},
-			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } }
 		);
 
 		// Create an unlinked host (no user session — use host JWT for registration)
@@ -1414,7 +1459,7 @@ describe("Grant Revocation Consistency", () => {
 					name: "Unlinked Host",
 					default_capabilities: ["check_balance"],
 				}),
-			}),
+			})
 		);
 
 		if (!enrollRes.ok) {
@@ -1431,7 +1476,7 @@ describe("Grant Revocation Consistency", () => {
 			hostKeypair.privateKey,
 			hostKeypair.publicKey,
 			agentKeypair.publicKey,
-			hostId,
+			hostId
 		);
 
 		const regRes = await t.auth.handler(
@@ -1446,10 +1491,12 @@ describe("Grant Revocation Consistency", () => {
 					capabilities: ["check_balance"],
 					mode: "delegated",
 				}),
-			}),
+			})
 		);
 
-		if (!regRes.ok) return;
+		if (!regRes.ok) {
+			return;
+		}
 		const regBody = await json<{ agent_id: string }>(regRes);
 		const agentId = regBody.agent_id;
 
@@ -1473,10 +1520,12 @@ describe("Grant Revocation Consistency", () => {
 					authorization: `Bearer ${reactivateJWT}`,
 				},
 				body: JSON.stringify({ agent_id: agentId }),
-			}),
+			})
 		);
 
-		if (!reactivateRes.ok) return;
+		if (!reactivateRes.ok) {
+			return;
+		}
 
 		const reactivateBody = await json<{
 			status: string;
@@ -1485,7 +1534,9 @@ describe("Grant Revocation Consistency", () => {
 
 		if (reactivateBody.status === "pending") {
 			// All grants should be pending (created directly as pending, not active→pending)
-			const grantStatuses = reactivateBody.agent_capability_grants.map((g) => g.status);
+			const grantStatuses = reactivateBody.agent_capability_grants.map(
+				(g) => g.status
+			);
 			expect(grantStatuses.every((s) => s === "pending")).toBe(true);
 		}
 	});

@@ -1,20 +1,20 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import { signIn, useSession } from "@/lib/auth-client";
-import { useEffect, useState, useCallback } from "react";
 
 function GitHubLogo({ className }: { className?: string }) {
 	return (
 		<svg
 			className={className}
-			viewBox="0 0 98 96"
 			fill="currentColor"
+			viewBox="0 0 98 96"
 			xmlns="http://www.w3.org/2000/svg"
 		>
 			<path
-				fillRule="evenodd"
 				clipRule="evenodd"
 				d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"
+				fillRule="evenodd"
 			/>
 		</svg>
 	);
@@ -23,9 +23,9 @@ function GitHubLogo({ className }: { className?: string }) {
 function Spinner({ className }: { className?: string }) {
 	return (
 		<svg
-			className={`animate-spin h-4 w-4 ${className ?? ""}`}
-			viewBox="0 0 24 24"
+			className={`h-4 w-4 animate-spin ${className ?? ""}`}
 			fill="none"
+			viewBox="0 0 24 24"
 		>
 			<circle
 				className="opacity-25"
@@ -37,8 +37,8 @@ function Spinner({ className }: { className?: string }) {
 			/>
 			<path
 				className="opacity-75"
-				fill="currentColor"
 				d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+				fill="currentColor"
 			/>
 		</svg>
 	);
@@ -53,13 +53,13 @@ interface AgentInfo {
 		hostId: string;
 		createdAt: string;
 	};
-	host: { id: string; name: string | null; status: string } | null;
 	grants: Array<{
 		id: string;
 		capability: string;
 		status: string;
 		reason: string | null;
 	}>;
+	host: { id: string; name: string | null; status: string } | null;
 	needsActivation?: boolean;
 }
 
@@ -84,7 +84,9 @@ export default function DeviceCapabilities({
 	} | null>(null);
 
 	const fetchAgentInfo = useCallback(async () => {
-		if (!agentId) return;
+		if (!agentId) {
+			return;
+		}
 		try {
 			const res = await fetch(`/api/device/info?agent_id=${agentId}`);
 			if (!res.ok) {
@@ -103,7 +105,7 @@ export default function DeviceCapabilities({
 	useEffect(() => {
 		if (session && agentId) {
 			fetchAgentInfo();
-		} else if (!sessionPending && !session) {
+		} else if (!(sessionPending || session)) {
 			setLoading(false);
 		}
 	}, [session, sessionPending, agentId, fetchAgentInfo]);
@@ -134,31 +136,31 @@ export default function DeviceCapabilities({
 		}
 	};
 
-	if (!sessionPending && !session) {
+	if (!(sessionPending || session)) {
 		return (
 			<div className="relative flex min-h-screen flex-col items-center justify-center">
 				<div className="pointer-events-none absolute inset-0">
-					<div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full bg-white/3 blur-[120px]" />
+					<div className="absolute top-0 left-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/3 blur-[120px]" />
 				</div>
 
 				<main className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8 px-6">
 					<div className="flex flex-col items-center gap-5 text-center">
 						<GitHubLogo className="h-10 w-10 text-white" />
 						<div>
-							<h1 className="text-xl font-semibold text-white">
+							<h1 className="font-semibold text-white text-xl">
 								Device Authorization
 							</h1>
-							<p className="mt-2 max-w-xs text-sm leading-relaxed text-muted">
-								An agent is requesting access to your GitHub resources.
-								Sign in to review and approve.
+							<p className="mt-2 max-w-xs text-muted text-sm leading-relaxed">
+								An agent is requesting access to your GitHub resources. Sign in
+								to review and approve.
 							</p>
 						</div>
 						{code && (
 							<div className="rounded-md border border-border bg-surface px-8 py-4">
-								<p className="text-[10px] uppercase tracking-widest text-muted mb-2">
+								<p className="mb-2 text-[10px] text-muted uppercase tracking-widest">
 									Verification Code
 								</p>
-								<p className="font-mono text-3xl font-bold tracking-[0.3em] text-white">
+								<p className="font-bold font-mono text-3xl text-white tracking-[0.3em]">
 									{code}
 								</p>
 							</div>
@@ -167,20 +169,24 @@ export default function DeviceCapabilities({
 
 					<div className="w-full rounded-xl border border-border bg-surface p-6">
 						<button
+							className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-gh-green font-medium text-sm text-white transition-colors hover:bg-gh-green-hover active:scale-[0.98]"
 							onClick={() => {
 								const params = new URLSearchParams();
-								if (agentId) params.set("agent_id", agentId);
-								if (code) params.set("code", code);
+								if (agentId) {
+									params.set("agent_id", agentId);
+								}
+								if (code) {
+									params.set("code", code);
+								}
 								signIn.social({
 									provider: "github",
 									callbackURL: `/device/capabilities?${params.toString()}`,
 								});
 							}}
-							className="flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-gh-green text-sm font-medium text-white transition-colors hover:bg-gh-green-hover active:scale-[0.98]"
 						>
 							Sign in with GitHub
 						</button>
-						<p className="mt-3 text-center text-xs text-muted">
+						<p className="mt-3 text-center text-muted text-xs">
 							Confirm the code above matches what your agent displayed
 						</p>
 					</div>
@@ -205,23 +211,23 @@ export default function DeviceCapabilities({
 						<svg
 							className="h-6 w-6 text-zinc-400"
 							fill="none"
-							viewBox="0 0 24 24"
 							stroke="currentColor"
+							viewBox="0 0 24 24"
 						>
 							<path
+								d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
 								strokeLinecap="round"
 								strokeLinejoin="round"
 								strokeWidth={1.5}
-								d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"
 							/>
 						</svg>
 					</div>
-					<h1 className="text-lg font-semibold text-white">
+					<h1 className="font-semibold text-lg text-white">
 						Missing Parameters
 					</h1>
-					<p className="text-sm text-muted">
-						This page requires an agent_id parameter. Use the
-						verification link provided by the agent.
+					<p className="text-muted text-sm">
+						This page requires an agent_id parameter. Use the verification link
+						provided by the agent.
 					</p>
 				</div>
 			</div>
@@ -236,19 +242,19 @@ export default function DeviceCapabilities({
 						<svg
 							className="h-6 w-6 text-red-400"
 							fill="none"
-							viewBox="0 0 24 24"
 							stroke="currentColor"
+							viewBox="0 0 24 24"
 						>
 							<path
+								d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
 								strokeLinecap="round"
 								strokeLinejoin="round"
 								strokeWidth={2}
-								d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
 							/>
 						</svg>
 					</div>
-					<h1 className="text-lg font-semibold text-white">Error</h1>
-					<p className="text-sm text-muted">{error}</p>
+					<h1 className="font-semibold text-lg text-white">Error</h1>
+					<p className="text-muted text-sm">{error}</p>
 				</div>
 			</div>
 		);
@@ -266,57 +272,64 @@ export default function DeviceCapabilities({
 							<svg
 								className="h-7 w-7 text-gh-green-emphasis"
 								fill="none"
-								viewBox="0 0 24 24"
 								stroke="currentColor"
+								viewBox="0 0 24 24"
 							>
 								<path
+									d="M5 13l4 4L19 7"
 									strokeLinecap="round"
 									strokeLinejoin="round"
 									strokeWidth={2}
-									d="M5 13l4 4L19 7"
 								/>
 							</svg>
 						) : (
 							<svg
 								className="h-7 w-7 text-gh-danger"
 								fill="none"
-								viewBox="0 0 24 24"
 								stroke="currentColor"
+								viewBox="0 0 24 24"
 							>
 								<path
+									d="M6 18L18 6M6 6l12 12"
 									strokeLinecap="round"
 									strokeLinejoin="round"
 									strokeWidth={2}
-									d="M6 18L18 6M6 6l12 12"
 								/>
 							</svg>
 						)}
 					</div>
 					<div>
-						<h1 className="text-xl font-semibold text-white">
+						<h1 className="font-semibold text-white text-xl">
 							{approved ? "Access Approved" : "Access Denied"}
 						</h1>
-						<p className="mt-2 text-sm text-muted">
+						<p className="mt-2 text-muted text-sm">
 							{approved
 								? `"${agentInfo?.agent.name}" has been granted access. You can close this tab.`
 								: `"${agentInfo?.agent.name}" was denied access. You can close this tab.`}
 						</p>
-						{approved &&
-							result.added &&
-							result.added.length > 0 && (
-								<p className="mt-3 text-xs text-muted/60">
-									{result.added.length} capability
-									{result.added.length !== 1 ? "ies" : ""}{" "}
-									granted
-								</p>
-							)}
+						{approved && result.added && result.added.length > 0 && (
+							<p className="mt-3 text-muted/60 text-xs">
+								{result.added.length} capability
+								{result.added.length === 1 ? "" : "ies"} granted
+							</p>
+						)}
 						<a
+							className="mt-5 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-4 py-2 font-medium text-foreground text-sm transition-colors hover:bg-surface-hover"
 							href="/dashboard/agents"
-							className="mt-5 inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
 						>
 							Go to Agents
-							<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+							<svg
+								className="h-3.5 w-3.5"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									d="M9 5l7 7-7 7"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+								/>
 							</svg>
 						</a>
 					</div>
@@ -337,23 +350,21 @@ export default function DeviceCapabilities({
 						<svg
 							className="h-6 w-6 text-zinc-400"
 							fill="none"
-							viewBox="0 0 24 24"
 							stroke="currentColor"
+							viewBox="0 0 24 24"
 						>
 							<path
+								d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
 								strokeLinecap="round"
 								strokeLinejoin="round"
 								strokeWidth={1.5}
-								d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
 							/>
 						</svg>
 					</div>
-					<h1 className="text-lg font-semibold text-white">
-						Already Resolved
-					</h1>
-					<p className="text-sm text-muted">
-						This agent has no pending capability requests. It may
-						have already been approved or denied.
+					<h1 className="font-semibold text-lg text-white">Already Resolved</h1>
+					<p className="text-muted text-sm">
+						This agent has no pending capability requests. It may have already
+						been approved or denied.
 					</p>
 				</div>
 			</div>
@@ -367,36 +378,35 @@ export default function DeviceCapabilities({
 					<div className="flex items-center gap-3">
 						<GitHubLogo className="h-6 w-6 text-white" />
 						<div className="h-4 w-px bg-border" />
-						<span className="text-xs font-medium uppercase tracking-wider text-muted">
+						<span className="font-medium text-muted text-xs uppercase tracking-wider">
 							Device Authorization
 						</span>
 					</div>
 
 					{code && (
 						<div className="rounded-lg border border-border bg-surface px-8 py-4 text-center">
-							<p className="text-[10px] uppercase tracking-widest text-muted mb-2">
+							<p className="mb-2 text-[10px] text-muted uppercase tracking-widest">
 								Verify this code matches your device
 							</p>
-							<p className="font-mono text-3xl font-bold tracking-[0.3em] text-white">
+							<p className="font-bold font-mono text-3xl text-white tracking-[0.3em]">
 								{code}
 							</p>
 						</div>
 					)}
 
-					<div className="w-full rounded-xl border border-border bg-surface overflow-hidden">
-						<div className="border-b border-border px-5 py-4">
+					<div className="w-full overflow-hidden rounded-xl border border-border bg-surface">
+						<div className="border-border border-b px-5 py-4">
 							<div className="flex items-center justify-between">
 								<div>
-									<h2 className="text-sm font-medium text-white">
+									<h2 className="font-medium text-sm text-white">
 										{agentInfo?.agent.name}
 									</h2>
-								<p className="mt-0.5 text-xs text-muted">
-									Agent
-									{agentInfo?.host?.name &&
-										` via ${agentInfo.host.name}`}
-								</p>
+									<p className="mt-0.5 text-muted text-xs">
+										Agent
+										{agentInfo?.host?.name && ` via ${agentInfo.host.name}`}
+									</p>
 								</div>
-								<span className="inline-flex items-center rounded-full border border-gh-attention/40 bg-gh-attention/15 px-2.5 py-0.5 text-xs font-medium text-gh-attention">
+								<span className="inline-flex items-center rounded-full border border-gh-attention/40 bg-gh-attention/15 px-2.5 py-0.5 font-medium text-gh-attention text-xs">
 									Pending
 								</span>
 							</div>
@@ -405,36 +415,36 @@ export default function DeviceCapabilities({
 						<div className="px-5 py-4">
 							{pendingGrants.length > 0 ? (
 								<>
-									<p className="mb-3 text-[10px] font-medium uppercase tracking-widest text-muted">
+									<p className="mb-3 font-medium text-[10px] text-muted uppercase tracking-widest">
 										Requested Capabilities ({pendingGrants.length})
 									</p>
-									<div className="space-y-1.5 max-h-64 overflow-y-auto">
+									<div className="max-h-64 space-y-1.5 overflow-y-auto">
 										{pendingGrants.map((g) => (
 											<div
-												key={g.id}
 												className="flex items-center gap-3 rounded-lg border border-border/50 bg-background px-3 py-2.5"
+												key={g.id}
 											>
 												<div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-blue-500/10">
 													<svg
 														className="h-3.5 w-3.5 text-blue-400"
 														fill="none"
-														viewBox="0 0 24 24"
 														stroke="currentColor"
+														viewBox="0 0 24 24"
 													>
 														<path
+															d="M13 10V3L4 14h7v7l9-11h-7z"
 															strokeLinecap="round"
 															strokeLinejoin="round"
 															strokeWidth={2}
-															d="M13 10V3L4 14h7v7l9-11h-7z"
 														/>
 													</svg>
 												</div>
 												<div className="min-w-0 flex-1">
-													<p className="truncate font-mono text-xs text-foreground">
+													<p className="truncate font-mono text-foreground text-xs">
 														{g.capability}
 													</p>
 													{g.reason && (
-														<p className="text-[11px] text-muted truncate">
+														<p className="truncate text-[11px] text-muted">
 															{g.reason}
 														</p>
 													)}
@@ -444,66 +454,65 @@ export default function DeviceCapabilities({
 									</div>
 								</>
 							) : (
-								<p className="text-sm text-muted">
-									This agent is requesting access to your account.
-									No specific capabilities have been requested yet —
-									they can be granted later.
+								<p className="text-muted text-sm">
+									This agent is requesting access to your account. No specific
+									capabilities have been requested yet — they can be granted
+									later.
 								</p>
 							)}
 						</div>
 
-						<div className="border-t border-border px-5 py-4">
+						<div className="border-border border-t px-5 py-4">
 							{actionState === "confirming_deny" ? (
 								<div className="flex flex-col gap-3">
 									<input
-										type="text"
-										placeholder="Reason for denying (optional)"
-										value={denyReason}
-										onChange={(e) => setDenyReason(e.target.value)}
-										className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
 										autoFocus
+										className="w-full rounded-md border border-border bg-surface px-3 py-2 text-foreground text-sm outline-none placeholder:text-muted focus:border-accent focus:ring-1 focus:ring-accent/30"
+										onChange={(e) => setDenyReason(e.target.value)}
+										placeholder="Reason for denying (optional)"
+										type="text"
+										value={denyReason}
 									/>
 									<div className="flex gap-3">
 										<button
-											onClick={() => { setActionState("idle"); setDenyReason(""); }}
-											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-sm font-medium text-foreground transition-colors hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-50"
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-border bg-surface font-medium text-foreground text-sm transition-colors hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-50"
+											onClick={() => {
+												setActionState("idle");
+												setDenyReason("");
+											}}
 										>
 											Cancel
 										</button>
 										<button
+											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-gh-danger/30 bg-gh-danger/10 font-medium text-gh-danger text-sm transition-colors hover:bg-gh-danger/20 disabled:pointer-events-none disabled:opacity-50"
 											onClick={() => handleAction("deny")}
-											className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-gh-danger/30 bg-gh-danger/10 text-sm font-medium text-gh-danger transition-colors hover:bg-gh-danger/20 disabled:pointer-events-none disabled:opacity-50"
 										>
 											Deny Access
 										</button>
 									</div>
 								</div>
 							) : (
-							<div className="flex gap-3">
-								<button
-									onClick={() => setActionState("confirming_deny")}
-									disabled={actionState !== "idle"}
-									className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-sm font-medium text-foreground transition-colors hover:border-gh-danger/50 hover:text-gh-danger disabled:pointer-events-none disabled:opacity-50"
-								>
-									Deny
-								</button>
-								<button
-									onClick={() => handleAction("approve")}
-									disabled={actionState !== "idle"}
-									className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md bg-gh-green text-sm font-medium text-white transition-colors hover:bg-gh-green-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
-								>
-									{actionState === "approving" ? (
-										<Spinner />
-									) : (
-										"Approve"
-									)}
-								</button>
-							</div>
+								<div className="flex gap-3">
+									<button
+										className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md border border-border bg-surface font-medium text-foreground text-sm transition-colors hover:border-gh-danger/50 hover:text-gh-danger disabled:pointer-events-none disabled:opacity-50"
+										disabled={actionState !== "idle"}
+										onClick={() => setActionState("confirming_deny")}
+									>
+										Deny
+									</button>
+									<button
+										className="flex h-10 flex-1 cursor-pointer items-center justify-center rounded-md bg-gh-green font-medium text-sm text-white transition-colors hover:bg-gh-green-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+										disabled={actionState !== "idle"}
+										onClick={() => handleAction("approve")}
+									>
+										{actionState === "approving" ? <Spinner /> : "Approve"}
+									</button>
+								</div>
 							)}
 						</div>
 					</div>
 
-					<p className="text-center text-xs text-muted/50">
+					<p className="text-center text-muted/50 text-xs">
 						Signed in as {session?.user.email}
 					</p>
 				</div>

@@ -1,7 +1,6 @@
-import { getTestInstance } from "better-auth/test";
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from "jose";
-import { agentAuth as _agentAuth } from "../index";
 import { agentAuthClient } from "../client";
+import { agentAuth as _agentAuth } from "../index";
 import type { AgentAuthOptions, AgentJWK } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,7 +58,7 @@ export async function createHostJWT(
 	hostPrivateKey: AgentJWK,
 	hostPublicKey: AgentJWK,
 	agentPublicKey: AgentJWK,
-	hostId?: string,
+	hostId?: string
 ): Promise<string> {
 	const id = hostId ?? "new-host";
 	return signTestJWT({
@@ -82,7 +81,7 @@ export async function createAgentJWT(
 		capabilities?: string[];
 		expiresInSeconds?: number;
 		additionalClaims?: Record<string, unknown>;
-	},
+	}
 ): Promise<string> {
 	return signTestJWT({
 		privateKey: agentPrivateKey,
@@ -96,7 +95,9 @@ export async function json<T = unknown>(res: Response): Promise<T> {
 	return res.json() as Promise<T>;
 }
 
-export function createTestClient(authHandler: (req: Request) => Promise<Response>) {
+export function createTestClient(
+	authHandler: (req: Request) => Promise<Response>
+) {
 	function api(path: string, init?: RequestInit): Promise<Response> {
 		return authHandler(
 			new Request(`${API}${path}`, {
@@ -105,7 +106,7 @@ export function createTestClient(authHandler: (req: Request) => Promise<Response
 					"content-type": "application/json",
 					...(init?.headers as Record<string, string> | undefined),
 				},
-			}),
+			})
 		);
 	}
 
@@ -113,7 +114,7 @@ export function createTestClient(authHandler: (req: Request) => Promise<Response
 		path: string,
 		body: unknown,
 		cookie: string,
-		extraHeaders?: Record<string, string>,
+		extraHeaders?: Record<string, string>
 	): Promise<Response> {
 		return api(path, {
 			method: "POST",
@@ -125,7 +126,7 @@ export function createTestClient(authHandler: (req: Request) => Promise<Response
 	function authedGet(
 		path: string,
 		cookie: string,
-		extraHeaders?: Record<string, string>,
+		extraHeaders?: Record<string, string>
 	): Promise<Response> {
 		return api(path, {
 			method: "GET",
@@ -145,7 +146,7 @@ export function createTestClient(authHandler: (req: Request) => Promise<Response
 			opts.hostKeypair.privateKey,
 			opts.hostKeypair.publicKey,
 			opts.agentKeypair.publicKey,
-			opts.hostId,
+			opts.hostId
 		);
 		const res = await api("/agent/register", {
 			method: "POST",

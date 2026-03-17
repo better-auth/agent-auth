@@ -24,26 +24,6 @@ import type { agentSchema } from "./schema";
 export type ApprovalStrength = "none" | "session" | "webauthn";
 
 export interface Capability {
-	name: string;
-	description: string;
-	/**
-	 * The URL where this capability is executed (§2.15).
-	 *
-	 * The client sends the execute request to this URL and sets the
-	 * JWT `aud` claim to match it. If absent, the client uses the
-	 * server's `default_location` from discovery.
-	 */
-	location?: string;
-	/**
-	 * JSON Schema describing the `arguments` accepted by
-	 * `POST /capability/execute` (§5.11).
-	 */
-	input?: Record<string, unknown>;
-	/**
-	 * JSON Schema describing the shape of the data returned when
-	 * this capability executes successfully (§2.12).
-	 */
-	output?: Record<string, unknown>;
 	/**
 	 * Required approval strength for this capability (§8.11).
 	 *
@@ -55,7 +35,27 @@ export interface Capability {
 	 * @default "session"
 	 */
 	approvalStrength?: ApprovalStrength;
+	description: string;
 	grant_status?: "granted" | "not_granted";
+	/**
+	 * JSON Schema describing the `arguments` accepted by
+	 * `POST /capability/execute` (§5.11).
+	 */
+	input?: Record<string, unknown>;
+	/**
+	 * The URL where this capability is executed (§2.15).
+	 *
+	 * The client sends the execute request to this URL and sets the
+	 * JWT `aud` claim to match it. If absent, the client uses the
+	 * server's `default_location` from discovery.
+	 */
+	location?: string;
+	name: string;
+	/**
+	 * JSON Schema describing the shape of the data returned when
+	 * this capability executes successfully (§2.12).
+	 */
+	output?: Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -65,8 +65,8 @@ export interface Capability {
  */
 export interface AsyncExecuteResult {
 	readonly __type: "async";
-	statusUrl: string;
 	retryAfter?: number;
+	statusUrl: string;
 }
 
 /**
@@ -102,40 +102,40 @@ export type GrantStatus = "active" | "pending" | "denied" | "revoked";
 
 /** Host — §8.1. */
 export interface AgentHost {
-	id: string;
-	name: string | null;
-	userId: string | null;
-	defaultCapabilities: string[];
-	publicKey: string | null;
-	kid: string | null;
-	jwksUrl: string | null;
-	enrollmentTokenHash: string | null;
-	enrollmentTokenExpiresAt: Date | null;
-	status: HostStatus;
 	activatedAt: Date | null;
-	expiresAt: Date | null;
-	lastUsedAt: Date | null;
 	createdAt: Date;
+	defaultCapabilities: string[];
+	enrollmentTokenExpiresAt: Date | null;
+	enrollmentTokenHash: string | null;
+	expiresAt: Date | null;
+	id: string;
+	jwksUrl: string | null;
+	kid: string | null;
+	lastUsedAt: Date | null;
+	name: string | null;
+	publicKey: string | null;
+	status: HostStatus;
 	updatedAt: Date;
+	userId: string | null;
 }
 
 /** Agent — §8.2. */
 export interface Agent {
-	id: string;
-	name: string;
-	hostId: string;
-	userId: string | null;
-	publicKey: string;
-	kid: string | null;
-	jwksUrl: string | null;
-	status: AgentStatus;
-	mode: AgentMode;
-	lastUsedAt: Date | null;
 	activatedAt: Date | null;
-	expiresAt: Date | null;
-	metadata: AgentMetadata | null;
 	createdAt: Date;
+	expiresAt: Date | null;
+	hostId: string;
+	id: string;
+	jwksUrl: string | null;
+	kid: string | null;
+	lastUsedAt: Date | null;
+	metadata: AgentMetadata | null;
+	mode: AgentMode;
+	name: string;
+	publicKey: string;
+	status: AgentStatus;
 	updatedAt: Date;
+	userId: string | null;
 }
 
 /**
@@ -163,9 +163,9 @@ export type ConstraintPrimitive = string | number | boolean;
  */
 export interface ConstraintOperators {
 	eq?: ConstraintPrimitive;
-	min?: number;
-	max?: number;
 	in?: ConstraintPrimitive[];
+	max?: number;
+	min?: number;
 	not_in?: ConstraintPrimitive[];
 }
 
@@ -197,48 +197,48 @@ export interface NormalizedCapability {
 
 /** Agent capability grant — §8.3. */
 export interface AgentCapabilityGrant {
-	id: string;
 	agentId: string;
 	capability: string;
 	constraints: CapabilityConstraints | null;
-	grantedBy: string | null;
-	deniedBy: string | null;
-	reason: string | null;
-	expiresAt: Date | null;
-	status: GrantStatus;
 	createdAt: Date;
+	deniedBy: string | null;
+	expiresAt: Date | null;
+	grantedBy: string | null;
+	id: string;
+	reason: string | null;
+	status: GrantStatus;
 	updatedAt: Date;
 }
 
 /** Unified approval request for device authorization and CIBA flows. */
 export interface ApprovalRequest {
-	id: string;
-	method: "device_authorization" | "ciba";
 	agentId: string | null;
-	hostId: string | null;
-	userId: string | null;
-	capabilities: string | null;
-	status: "pending" | "approved" | "denied" | "expired";
-	/** SHA-256 hash of the user_code (device authorization only). */
-	userCodeHash: string | null;
-	/** CIBA login hint (email). */
-	loginHint: string | null;
 	bindingMessage: string | null;
-	clientNotificationToken: string | null;
+	capabilities: string | null;
 	clientNotificationEndpoint: string | null;
+	clientNotificationToken: string | null;
+	createdAt: Date;
 	deliveryMode: string | null;
+	expiresAt: Date;
+	hostId: string | null;
+	id: string;
 	interval: number;
 	lastPolledAt: Date | null;
-	expiresAt: Date;
-	createdAt: Date;
+	/** CIBA login hint (email). */
+	loginHint: string | null;
+	method: "device_authorization" | "ciba";
+	status: "pending" | "approved" | "denied" | "expired";
 	updatedAt: Date;
+	/** SHA-256 hash of the user_code (device authorization only). */
+	userCodeHash: string | null;
+	userId: string | null;
 }
 
 /** User shape returned in `AgentSession.user`. */
 export interface AgentSessionUser {
+	email: string;
 	id: string;
 	name: string;
-	email: string;
 	[key: string]: unknown;
 }
 
@@ -247,7 +247,6 @@ export interface AgentSessionUser {
  * Available via `ctx.context.agentSession`.
  */
 export interface AgentSession {
-	type: AgentMode;
 	agent: {
 		id: string;
 		name: string;
@@ -268,6 +267,7 @@ export interface AgentSession {
 		userId: string | null;
 		status: string;
 	} | null;
+	type: AgentMode;
 	user: AgentSessionUser;
 }
 
@@ -315,28 +315,92 @@ export type AgentAuthPath =
 
 export interface DefaultHostCapabilitiesContext {
 	ctx: GenericEndpointContext;
-	mode: AgentMode;
-	userId: string | null;
 	hostId: string | null;
 	hostName: string | null;
+	mode: AgentMode;
+	userId: string | null;
 }
-
 
 export interface AgentAuthOptions {
 	/**
-	 * Provider name for discovery (§6.1).
-	 * Returned in the well-known configuration.
+	 * Absolute lifetime in seconds, measured from `createdAt` (§2.4).
+	 * Never resets. When elapsed the agent is **revoked**.
+	 * Set to `0` to disable.
+	 * @default 0 (disabled)
 	 */
-	providerName?: string;
+	absoluteLifetime?: number;
 	/**
-	 * Human-readable description of the service (§6.1).
+	 * Maximum lifetime for active agent sessions in seconds (§2.4).
+	 * Measured from `activatedAt`, resets on reactivation.
+	 * Set to `0` to disable.
+	 * @default 86400 (24 hours)
 	 */
-	providerDescription?: string;
+	agentMaxLifetime?: number;
 	/**
-	 * Supported registration modes (§6.1).
-	 * @default ["delegated", "autonomous"]
+	 * Sliding TTL for agent sessions in seconds (§2.4).
+	 * Each authenticated request extends the deadline.
+	 * Set to `0` to disable.
+	 * @default 3600 (1 hour)
 	 */
-	modes?: AgentMode[];
+	agentSessionTTL?: number;
+	/**
+	 * Whether to allow unknown hosts to register dynamically (§3.2).
+	 *
+	 * When `true`, any bearer presenting a valid JWT with an inline
+	 * public key can register itself as a host — this is a
+	 * **significant trust decision**. Only enable when you have
+	 * additional controls (e.g. network-level ACLs, custom
+	 * callback validation).
+	 *
+	 * @default false
+	 */
+	allowDynamicHostRegistration?:
+		| boolean
+		| ((ctx: GenericEndpointContext) => boolean | Promise<boolean>);
+	/**
+	 * Allowed key algorithms for agent/host keypairs (§5.1).
+	 * Use JWK curve names (`"Ed25519"`, `"P-256"`), **not** JWA identifiers.
+	 * @default ["Ed25519"]
+	 */
+	allowedKeyAlgorithms?: string[];
+	/**
+	 * Supported approval methods (§9).
+	 * @default ["ciba", "device_authorization"]
+	 */
+	approvalMethods?: string[];
+	/**
+	 * Capabilities that are always blocked from being granted (§10.6).
+	 * @default []
+	 */
+	blockedCapabilities?: string[];
+	/**
+	 * Capability definitions returned by the capabilities endpoint (§4).
+	 */
+	capabilities?: Capability[];
+	/**
+	 * Skip JTI (JWT ID) replay protection checks.
+	 *
+	 * By default the plugin requires every host/agent JWT to carry a
+	 * unique `jti` claim and rejects replayed tokens. Set this to
+	 * `true` only in development or testing — **never in production**.
+	 *
+	 * @default false
+	 */
+	dangerouslySkipJtiCheck?: boolean;
+	/**
+	 * Default capabilities applied to newly created hosts (§3.2).
+	 *
+	 * Used as the fallback when a host is created without explicit
+	 * `default_capabilities`, whether via dynamic registration or
+	 * the `POST /host/create` endpoint.
+	 *
+	 * @default []
+	 */
+	defaultHostCapabilities?:
+		| string[]
+		| ((
+				context: DefaultHostCapabilitiesContext
+		  ) => string[] | Promise<string[]>);
 	/**
 	 * Path or full URL for the device authorization approval page.
 	 *
@@ -353,103 +417,6 @@ export interface AgentAuthOptions {
 	 */
 	deviceAuthorizationPage?: string;
 	/**
-	 * Supported approval methods (§9).
-	 * @default ["ciba", "device_authorization"]
-	 */
-	approvalMethods?: string[];
-	/**
-	 * Resolve the approval method for a given context (§9.5).
-	 *
-	 * The `supportedMethods` array reflects the server's configured
-	 * `approvalMethods`. The returned method **must** be one of them;
-	 * if it isn't, `buildApprovalInfo` falls back to `device_authorization`.
-	 *
-	 * @default Prefers `device_authorization`; uses `ciba` only when
-	 *          the agent explicitly passes `preferredMethod: "ciba"`
-	 *          and the server supports it.
-	 */
-	resolveApprovalMethod?: (context: {
-		userId: string | null;
-		agentName: string;
-		hostId: string | null;
-		capabilities: string[];
-		preferredMethod?: string;
-		supportedMethods: string[];
-	}) => string | Promise<string>;
-	/**
-	 * Server JWKS URI for clients to verify server-signed responses (§6.1).
-	 */
-	jwksUri?: string;
-	/**
-	 * Capability definitions returned by the capabilities endpoint (§4).
-	 */
-	capabilities?: Capability[];
-	/**
-	 * Require a valid agent JWT or host JWT to list or describe
-	 * capabilities.
-	 *
-	 * When `true`, unauthenticated requests to `GET /capability/list`
-	 * and `GET /capability/describe` receive a `401` with
-	 * `error: "authentication_required"` and a `WWW-Authenticate`
-	 * challenge header pointing to the discovery document. This
-	 * guides AI agents to call `connect_agent` first.
-	 *
-	 * @default false
-	 */
-	requireAuthForCapabilities?: boolean;
-	/**
-	 * Allowed key algorithms for agent/host keypairs (§5.1).
-	 * Use JWK curve names (`"Ed25519"`, `"P-256"`), **not** JWA identifiers.
-	 * @default ["Ed25519"]
-	 */
-	allowedKeyAlgorithms?: string[];
-	/**
-	 * JWT claim format for keypair auth.
-	 * - `"simple"` — flat claims: `sub`, `capabilities`, etc.
-	 * - `"aap"` — structured AAP-compatible claims
-	 * @default "simple"
-	 */
-	jwtFormat?: "simple" | "aap";
-	/**
-	 * Maximum age for agent/host JWTs in seconds (§5.3).
-	 * @default 60
-	 */
-	jwtMaxAge?: number;
-	/**
-	 * Sliding TTL for agent sessions in seconds (§2.4).
-	 * Each authenticated request extends the deadline.
-	 * Set to `0` to disable.
-	 * @default 3600 (1 hour)
-	 */
-	agentSessionTTL?: number;
-	/**
-	 * Validate that requested capabilities exist (§10.6).
-	 * When omitted, any string is accepted.
-	 */
-	validateCapabilities?: (
-		capabilities: string[],
-	) => boolean | Promise<boolean>;
-	/**
-	 * Maximum number of active agents a single user can have (§10.13).
-	 * Set to `0` to disable.
-	 * @default 25
-	 */
-	maxAgentsPerUser?: number;
-	/**
-	 * Maximum lifetime for active agent sessions in seconds (§2.4).
-	 * Measured from `activatedAt`, resets on reactivation.
-	 * Set to `0` to disable.
-	 * @default 86400 (24 hours)
-	 */
-	agentMaxLifetime?: number;
-	/**
-	 * Absolute lifetime in seconds, measured from `createdAt` (§2.4).
-	 * Never resets. When elapsed the agent is **revoked**.
-	 * Set to `0` to disable.
-	 * @default 0 (disabled)
-	 */
-	absoluteLifetime?: number;
-	/**
 	 * Fresh session window in seconds for device-auth approval (§10.11).
 	 * Set to `0` to disable.
 	 *
@@ -464,69 +431,6 @@ export interface AgentAuthOptions {
 				ctx: GenericEndpointContext;
 				capabilities: string[];
 		  }) => number | Promise<number>);
-	/**
-	 * Whether to allow unknown hosts to register dynamically (§3.2).
-	 *
-	 * When `true`, any bearer presenting a valid JWT with an inline
-	 * public key can register itself as a host — this is a
-	 * **significant trust decision**. Only enable when you have
-	 * additional controls (e.g. network-level ACLs, custom
-	 * callback validation).
-	 *
-	 * @default false
-	 */
-	allowDynamicHostRegistration?:
-		| boolean
-		| ((ctx: GenericEndpointContext) => boolean | Promise<boolean>);
-	/**
-	 * Default capabilities applied to newly created hosts (§3.2).
-	 *
-	 * Used as the fallback when a host is created without explicit
-	 * `default_capabilities`, whether via dynamic registration or
-	 * the `POST /host/create` endpoint.
-	 *
-	 * @default []
-	 */
-	defaultHostCapabilities?:
-		| string[]
-		| ((
-				context: DefaultHostCapabilitiesContext,
-		  ) => string[] | Promise<string[]>);
-	/**
-	 * Resolve a virtual user for an autonomous agent session.
-	 * Called at session time when the agent has no userId and
-	 * the host has no userId.
-	 */
-	resolveAutonomousUser?: (context: {
-		ctx: GenericEndpointContext;
-		hostId: string;
-		hostName: string | null;
-		agentId: string;
-		agentMode: AgentMode;
-	}) => AgentSessionUser | null | Promise<AgentSessionUser | null>;
-	/**
-	 * Called when an unclaimed host is linked to a real user (§3.4).
-	 */
-	onHostClaimed?: (context: {
-		ctx: GenericEndpointContext;
-		hostId: string;
-		userId: string;
-		previousUserId: string | null;
-	}) => void | Promise<void>;
-	/**
-	 * Resolve a TTL (in seconds) for a newly granted capability (§8.3).
-	 */
-	resolveGrantTTL?: (context: {
-		capability: string;
-		agentId: string;
-		hostId: string | null;
-		userId: string | null;
-	}) => number | null | undefined | Promise<number | null | undefined>;
-	/**
-	 * Capabilities that are always blocked from being granted (§10.6).
-	 * @default []
-	 */
-	blockedCapabilities?: string[];
 	/**
 	 * Where to store seen JWT `jti` values for replay protection (§5.6).
 	 *
@@ -554,37 +458,81 @@ export interface AgentAuthOptions {
 	 */
 	jwksCacheStorage?: "memory" | "secondary-storage";
 	/**
-	 * Skip JTI (JWT ID) replay protection checks.
-	 *
-	 * By default the plugin requires every host/agent JWT to carry a
-	 * unique `jti` claim and rejects replayed tokens. Set this to
-	 * `true` only in development or testing — **never in production**.
-	 *
-	 * @default false
+	 * Server JWKS URI for clients to verify server-signed responses (§6.1).
 	 */
-	dangerouslySkipJtiCheck?: boolean;
+	jwksUri?: string;
 	/**
-	 * Per-path rate limit overrides for agent endpoints.
-	 *
-	 * Sensible defaults are applied to every path automatically.
-	 * Use this to tighten or relax limits on specific routes.
-	 *
-	 * To disable rate limiting entirely, use the top-level Better Auth
-	 * `rateLimit` config — the plugin always contributes its rules.
+	 * JWT claim format for keypair auth.
+	 * - `"simple"` — flat claims: `sub`, `capabilities`, etc.
+	 * - `"aap"` — structured AAP-compatible claims
+	 * @default "simple"
 	 */
-	rateLimit?: Partial<
-		Record<AgentAuthPath, { window?: number; max?: number }>
-	>;
+	jwtFormat?: "simple" | "aap";
 	/**
-	 * Whether to trust the `X-Forwarded-Proto` header for audience
-	 * validation (§5.4).
-	 *
-	 * Enable when running behind a reverse proxy that sets this header.
-	 * When `false`, the protocol from `baseURL` is used instead.
-	 *
-	 * @default false
+	 * Maximum age for agent/host JWTs in seconds (§5.3).
+	 * @default 60
 	 */
-	trustProxy?: boolean;
+	jwtMaxAge?: number;
+	/**
+	 * Maximum number of active agents a single user can have (§10.13).
+	 * Set to `0` to disable.
+	 * @default 25
+	 */
+	maxAgentsPerUser?: number;
+	/**
+	 * Supported registration modes (§6.1).
+	 * @default ["delegated", "autonomous"]
+	 */
+	modes?: AgentMode[];
+	/**
+	 * Called when an autonomous agent is claimed (§3.4).
+	 *
+	 * Triggered when a previously unlinked host acquires a user_id,
+	 * causing all active autonomous agents under it to be claimed.
+	 * Use this to transfer resources, notify systems, or perform
+	 * any application-specific cleanup.
+	 */
+	onAutonomousAgentClaimed?: (context: {
+		ctx: GenericEndpointContext;
+		agentId: string;
+		hostId: string;
+		userId: string;
+		agentName: string;
+		capabilities: string[];
+	}) => void | Promise<void>;
+	/**
+	 * Callback invoked after significant mutations (§12).
+	 */
+	onEvent?: (event: AgentAuthEvent) => void | Promise<void>;
+	/**
+	 * Execute a capability on behalf of the agent (§6.11).
+	 *
+	 * Called by `POST /capability/execute`. The server validates the
+	 * agent JWT and checks grants before invoking this handler.
+	 *
+	 * Return types determine the interaction mode:
+	 * - **Plain value** → sync response (`{ data: result }`)
+	 * - **`asyncResult(...)`** → `202 Accepted` with `status_url` for polling
+	 * - **`streamResult(...)`** → SSE stream (`text/event-stream`)
+	 *
+	 * If not provided, the endpoint returns `501 Not Implemented`.
+	 */
+	onExecute?: (context: {
+		ctx: GenericEndpointContext;
+		capability: string;
+		capabilityDef: Capability;
+		arguments?: Record<string, unknown>;
+		agentSession: AgentSession;
+	}) => unknown | ExecuteResult | Promise<unknown | ExecuteResult>;
+	/**
+	 * Called when an unclaimed host is linked to a real user (§3.4).
+	 */
+	onHostClaimed?: (context: {
+		ctx: GenericEndpointContext;
+		hostId: string;
+		userId: string;
+		previousUserId: string | null;
+	}) => void | Promise<void>;
 	/**
 	 * Proof-of-presence (WebAuthn) configuration for the approval
 	 * endpoint (§8.11).
@@ -617,13 +565,68 @@ export interface AgentAuthOptions {
 		origin?: string | string[];
 	};
 	/**
-	 * Custom schema overrides for the agent tables.
+	 * Human-readable description of the service (§6.1).
 	 */
-	schema?: InferOptionSchema<ReturnType<typeof agentSchema>>;
+	providerDescription?: string;
 	/**
-	 * Callback invoked after significant mutations (§12).
+	 * Provider name for discovery (§6.1).
+	 * Returned in the well-known configuration.
 	 */
-	onEvent?: (event: AgentAuthEvent) => void | Promise<void>;
+	providerName?: string;
+	/**
+	 * Per-path rate limit overrides for agent endpoints.
+	 *
+	 * Sensible defaults are applied to every path automatically.
+	 * Use this to tighten or relax limits on specific routes.
+	 *
+	 * To disable rate limiting entirely, use the top-level Better Auth
+	 * `rateLimit` config — the plugin always contributes its rules.
+	 */
+	rateLimit?: Partial<Record<AgentAuthPath, { window?: number; max?: number }>>;
+	/**
+	 * Require a valid agent JWT or host JWT to list or describe
+	 * capabilities.
+	 *
+	 * When `true`, unauthenticated requests to `GET /capability/list`
+	 * and `GET /capability/describe` receive a `401` with
+	 * `error: "authentication_required"` and a `WWW-Authenticate`
+	 * challenge header pointing to the discovery document. This
+	 * guides AI agents to call `connect_agent` first.
+	 *
+	 * @default false
+	 */
+	requireAuthForCapabilities?: boolean;
+	/**
+	 * Resolve the approval method for a given context (§9.5).
+	 *
+	 * The `supportedMethods` array reflects the server's configured
+	 * `approvalMethods`. The returned method **must** be one of them;
+	 * if it isn't, `buildApprovalInfo` falls back to `device_authorization`.
+	 *
+	 * @default Prefers `device_authorization`; uses `ciba` only when
+	 *          the agent explicitly passes `preferredMethod: "ciba"`
+	 *          and the server supports it.
+	 */
+	resolveApprovalMethod?: (context: {
+		userId: string | null;
+		agentName: string;
+		hostId: string | null;
+		capabilities: string[];
+		preferredMethod?: string;
+		supportedMethods: string[];
+	}) => string | Promise<string>;
+	/**
+	 * Resolve a virtual user for an autonomous agent session.
+	 * Called at session time when the agent has no userId and
+	 * the host has no userId.
+	 */
+	resolveAutonomousUser?: (context: {
+		ctx: GenericEndpointContext;
+		hostId: string;
+		hostName: string | null;
+		agentId: string;
+		agentMode: AgentMode;
+	}) => AgentSessionUser | null | Promise<AgentSessionUser | null>;
 	/**
 	 * Filter or augment capabilities based on the requesting user's context.
 	 *
@@ -645,6 +648,15 @@ export interface AgentAuthOptions {
 		hostSession: HostSession | null;
 	}) => Capability[] | Promise<Capability[]>;
 	/**
+	 * Resolve a TTL (in seconds) for a newly granted capability (§8.3).
+	 */
+	resolveGrantTTL?: (context: {
+		capability: string;
+		agentId: string;
+		hostId: string | null;
+		userId: string | null;
+	}) => number | null | undefined | Promise<number | null | undefined>;
+	/**
 	 * Custom query resolver for capability search (§6.2).
 	 *
 	 * When provided, completely replaces the built-in BM25-based
@@ -659,48 +671,31 @@ export interface AgentAuthOptions {
 		capabilities: Capability[];
 	}) => Capability[] | Promise<Capability[]>;
 	/**
-	 * Execute a capability on behalf of the agent (§6.11).
-	 *
-	 * Called by `POST /capability/execute`. The server validates the
-	 * agent JWT and checks grants before invoking this handler.
-	 *
-	 * Return types determine the interaction mode:
-	 * - **Plain value** → sync response (`{ data: result }`)
-	 * - **`asyncResult(...)`** → `202 Accepted` with `status_url` for polling
-	 * - **`streamResult(...)`** → SSE stream (`text/event-stream`)
-	 *
-	 * If not provided, the endpoint returns `501 Not Implemented`.
+	 * Custom schema overrides for the agent tables.
 	 */
-	onExecute?: (context: {
-		ctx: GenericEndpointContext;
-		capability: string;
-		capabilityDef: Capability;
-		arguments?: Record<string, unknown>;
-		agentSession: AgentSession;
-	}) => unknown | ExecuteResult | Promise<unknown | ExecuteResult>;
+	schema?: InferOptionSchema<ReturnType<typeof agentSchema>>;
 	/**
-	 * Called when an autonomous agent is claimed (§3.4).
+	 * Whether to trust the `X-Forwarded-Proto` header for audience
+	 * validation (§5.4).
 	 *
-	 * Triggered when a previously unlinked host acquires a user_id,
-	 * causing all active autonomous agents under it to be claimed.
-	 * Use this to transfer resources, notify systems, or perform
-	 * any application-specific cleanup.
+	 * Enable when running behind a reverse proxy that sets this header.
+	 * When `false`, the protocol from `baseURL` is used instead.
+	 *
+	 * @default false
 	 */
-	onAutonomousAgentClaimed?: (context: {
-		ctx: GenericEndpointContext;
-		agentId: string;
-		hostId: string;
-		userId: string;
-		agentName: string;
-		capabilities: string[];
-	}) => void | Promise<void>;
+	trustProxy?: boolean;
+	/**
+	 * Validate that requested capabilities exist (§10.6).
+	 * When omitted, any string is accepted.
+	 */
+	validateCapabilities?: (capabilities: string[]) => boolean | Promise<boolean>;
 }
 
 /** Resolved proof-of-presence configuration. */
 export interface ResolvedProofOfPresence {
 	enabled: boolean;
-	rpId: string;
 	origin: string[];
+	rpId: string;
 }
 
 export type ResolvedAgentAuthOptions = Required<
@@ -731,14 +726,14 @@ export type ResolvedAgentAuthOptions = Required<
 } & AgentAuthOptions;
 
 interface AgentAuthEventBase {
-	orgId?: string;
 	actorId?: string;
 	actorType?: "user" | "agent" | "system";
 	agentId?: string;
 	hostId?: string;
+	metadata?: Record<string, unknown>;
+	orgId?: string;
 	targetId?: string;
 	targetType?: string;
-	metadata?: Record<string, unknown>;
 }
 
 export type AgentAuthAuditEventType =
@@ -769,46 +764,52 @@ export interface AgentAuthAuditEvent extends AgentAuthEventBase {
 }
 
 export interface AgentAuthCapabilityExecutionEvent extends AgentAuthEventBase {
-	type: "capability.executed";
-	capability: string;
-	provider?: string;
 	agentName?: string;
-	userId?: string;
 	arguments?: Record<string, unknown>;
-	output?: unknown;
-	status: "success" | "error";
+	capability: string;
 	durationMs?: number;
 	error?: string;
+	output?: unknown;
+	provider?: string;
+	status: "success" | "error";
+	type: "capability.executed";
+	userId?: string;
 }
 
-export type AgentAuthEvent = AgentAuthAuditEvent | AgentAuthCapabilityExecutionEvent;
+export type AgentAuthEvent =
+	| AgentAuthAuditEvent
+	| AgentAuthCapabilityExecutionEvent;
 
 /**
  * A capability request element — §5.3.
  * Either a plain capability name (string) or an object with
  * a name and optional constraints for scoped grants.
  */
-export type CapabilityRequest = string | { name: string; constraints?: Constraints };
+export type CapabilityRequest =
+	| string
+	| { name: string; constraints?: Constraints };
 
 /**
  * Parse a mixed capabilities array into normalized entries.
  */
 export function normalizeCapabilityRequests(
-	capabilities: CapabilityRequest[],
+	capabilities: CapabilityRequest[]
 ): Array<{ name: string; constraints: Constraints | null }> {
 	return capabilities.map((c) => {
-		if (typeof c === "string") return { name: c, constraints: null };
+		if (typeof c === "string") {
+			return { name: c, constraints: null };
+		}
 		return { name: c.name, constraints: c.constraints ?? null };
 	});
 }
 
 /** Ed25519 JWK (or other supported key types). */
 export interface AgentJWK {
-	kty: string;
 	crv?: string;
-	x?: string;
 	d?: string;
 	kid?: string;
+	kty: string;
+	x?: string;
 	[key: string]: unknown;
 }
 

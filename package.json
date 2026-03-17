@@ -4,10 +4,30 @@
   "scripts": {
     "build": "turbo build",
     "typecheck": "turbo typecheck",
-    "test": "turbo test"
+    "test": "turbo test",
+    "check": "ultracite check",
+    "fix": "ultracite fix",
+    "lint:knip": "knip",
+    "lint:sherif": "sherif",
+    "lint:cpd": "jscpd",
+    "lint": "pnpm check && pnpm lint:sherif && pnpm lint:knip && pnpm lint:cpd",
+    "validate": "pnpm lint && pnpm typecheck",
+    "prepare": "lefthook install"
+  },
+  "sherif": {
+    "ignoreDependency": [
+      "next",
+      "zod"
+    ]
   },
   "devDependencies": {
-    "turbo": "^2.5.0"
+    "@biomejs/biome": "^2.4.7",
+    "jscpd": "^4.0.8",
+    "knip": "^5.87.0",
+    "lefthook": "^2.1.4",
+    "sherif": "^1.10.0",
+    "turbo": "^2.5.0",
+    "ultracite": "^7.3.2"
   },
   "packageManager": "pnpm@10.6.2"
 }
