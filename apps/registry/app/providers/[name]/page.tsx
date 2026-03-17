@@ -16,6 +16,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { db } from "@/lib/db";
 import { provider } from "@/lib/db/schema";
 
+export const dynamic = "force-dynamic";
+
 export default async function ProviderDetailPage({
 	params,
 }: {
