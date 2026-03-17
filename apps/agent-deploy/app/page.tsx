@@ -1,4 +1,9 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useSession } from "@/lib/auth-client";
 import { AgentAuthLogo } from "@/components/icons/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -52,6 +57,25 @@ const result = await client.executeCapability({
 })`;
 
 export default function LandingPage() {
+  const router = useRouter();
+  const { data: session, isPending } = useSession();
+
+  useEffect(() => {
+    if (!isPending && session) {
+      router.replace("/dashboard");
+    }
+  }, [session, isPending, router]);
+
+  if (isPending || session) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center">
+        <div className="text-[11px] font-mono text-foreground/30 animate-pulse">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh">
       {/* Nav */}

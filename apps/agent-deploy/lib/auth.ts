@@ -49,7 +49,8 @@ const capabilities: Capability[] = [
   },
   {
     name: "sites.get",
-    description: "Get details of a specific deployed site including its HTML content",
+    description:
+      "Get details of a specific deployed site including its HTML content",
     input: {
       type: "object",
       properties: {
@@ -73,7 +74,8 @@ const capabilities: Capability[] = [
   },
   {
     name: "sites.create",
-    description: "Deploy a new HTML site. Provide a name and HTML content to create a live site with a unique URL.",
+    description:
+      "Deploy a new HTML site. Provide a name and HTML content to create a live site with a unique URL.",
     input: {
       type: "object",
       properties: {
@@ -233,7 +235,9 @@ export const auth = betterAuth({
             const site = createSite({
               name: String(args.name),
               html: String(args.html),
-              description: args.description ? String(args.description) : undefined,
+              description: args.description
+                ? String(args.description)
+                : undefined,
               userId,
             });
             return {
@@ -252,9 +256,12 @@ export const auth = betterAuth({
               userId,
               name: args.name ? String(args.name) : undefined,
               html: args.html ? String(args.html) : undefined,
-              description: args.description ? String(args.description) : undefined,
+              description: args.description
+                ? String(args.description)
+                : undefined,
             });
-            if (!updated) throw new Error("Site not found or not owned by user");
+            if (!updated)
+              throw new Error("Site not found or not owned by user");
             return {
               id: updated.id,
               name: updated.name,
@@ -267,7 +274,8 @@ export const auth = betterAuth({
           case "sites.delete": {
             if (!args?.id) throw new Error("Missing required argument: id");
             const success = deleteSite(String(args.id), userId);
-            if (!success) throw new Error("Site not found or not owned by user");
+            if (!success)
+              throw new Error("Site not found or not owned by user");
             return { success: true, deletedId: String(args.id) };
           }
 
