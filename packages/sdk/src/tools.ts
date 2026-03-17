@@ -261,11 +261,6 @@ export function getAgentAuthTools(
 						description:
 							"Arguments for the capability, conforming to its input schema",
 					},
-					location: {
-						type: "string",
-						description:
-							"Override the execution URL for this capability (§2.15). If omitted, the client resolves the location from the capability's listing or the server's default_location.",
-					},
 				},
 				required: ["agent_id", "capability"],
 			},
@@ -276,7 +271,6 @@ export function getAgentAuthTools(
 					arguments: args.arguments as
 						| Record<string, unknown>
 						| undefined,
-					location: args.location as string | undefined,
 				});
 			},
 		},

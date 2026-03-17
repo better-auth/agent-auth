@@ -730,15 +730,17 @@ export class AgentAuthClient {
 		agentId: string;
 		capability: string;
 		arguments?: Record<string, unknown>;
-		/** Per-capability location override (§2.15). */
-		location?: string;
 	}): Promise<ExecuteCapabilityResponse> {
 		const conn = await this.requireConnection(opts.agentId);
 		const config = await this.requireConfig(conn.issuer);
 
+		const capLocation = await this.resolveCapabilityLocation(
+			conn.issuer,
+			opts.capability,
+		);
 		const executeLocation = this.resolveExecuteLocation(
 			config,
-			opts.location,
+			capLocation,
 		);
 
 		const token = await this.signJwt({
@@ -1036,6 +1038,23 @@ export class AgentAuthClient {
 		if (capabilityLocation) return capabilityLocation;
 		if (config.default_location) return config.default_location;
 		return this.resolveEndpoint(config, "execute", "/capability/execute");
+	}
+
+	/**
+	 * Look up a capability's `location` from the cached provider config
+	 * or capability listing. Returns `undefined` if no per-capability
+	 * location is set — the caller falls back to `default_location`.
+	 */
+	private async resolveCapabilityLocation(
+		issuer: string,
+		capabilityName: string,
+	): Promise<string | undefined> {
+		const config = await this.storage.getProviderConfig(issuer);
+		if (config?.capabilities) {
+			const cap = config.capabilities.find((c) => c.name === capabilityName);
+			if (cap?.location) return cap.location;
+		}
+		return undefined;
 	}
 
 	private async waitForApproval(

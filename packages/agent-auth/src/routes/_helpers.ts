@@ -466,17 +466,20 @@ export async function validateCapabilitiesExist(
 /**
  * Verify JWT `aud` claim (§4.3).
  *
- * Accepts the server's origin (for non-execution JWTs), the full
+ * Accepts the server's origin (for non-execution JWTs) and the full
  * execute endpoint URL (for execution JWTs where `aud` is the
- * resolved location per §2.15), and any per-capability `location`
- * URLs configured on the server.
+ * resolved location per §2.15).
+ *
+ * When `expectedLocation` is provided (a single capability's
+ * `location` URL), it is added to the accepted set. This keeps
+ * validation scoped to the specific capability being accessed.
  */
 export function verifyAudience(
 	audValues: unknown,
 	baseURL: string,
 	headers?: Headers | null,
 	trustProxy?: boolean,
-	capabilityLocations?: string[],
+	expectedLocation?: string,
 ): boolean {
 	const parsedBase = new URL(baseURL);
 	const configuredOrigin = parsedBase.origin;
@@ -494,15 +497,26 @@ export function verifyAudience(
 		accepted.add(reqOrigin);
 		accepted.add(new URL(`${basePath}/capability/execute`, reqOrigin).toString());
 	}
-	if (capabilityLocations) {
-		for (const loc of capabilityLocations) {
-			accepted.add(loc);
-		}
+	if (expectedLocation) {
+		accepted.add(expectedLocation);
 	}
 	const values = Array.isArray(audValues)
 		? audValues
 		: [audValues];
 	return values.some((a) => accepted.has(String(a)));
+}
+
+/**
+ * Look up the `location` URL for a specific capability (§2.15).
+ * Returns `undefined` if the capability has no custom location.
+ */
+export function getCapabilityLocation(
+	capabilities: Array<{ name: string; location?: string }> | undefined,
+	capabilityName: string,
+): string | undefined {
+	if (!capabilities) return undefined;
+	const cap = capabilities.find((c) => c.name === capabilityName);
+	return cap?.location;
 }
 
 /**

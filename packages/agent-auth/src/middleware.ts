@@ -6,7 +6,7 @@ import { getAgentAuthAdapter } from "./adapter";
 import { TABLE } from "./constants";
 import { emit } from "./emit";
 import { agentError, agentAuthChallenge, AGENT_AUTH_ERROR_CODES } from "./errors";
-import { verifyAudience } from "./routes/_helpers";
+import { verifyAudience, getCapabilityLocation } from "./routes/_helpers";
 import { parseCapabilityIds } from "./utils/capabilities";
 import { verifyJWT, hashRequestBody } from "./utils/crypto";
 import type { JtiCacheStore } from "./utils/jti-cache";
@@ -117,16 +117,19 @@ export function createAgentAuthBeforeHook(
 					AGENT_AUTH_ERROR_CODES.INVALID_JWT,
 				);
 			}
-			const capabilityLocations = (opts.capabilities ?? [])
-				.filter((c) => c.location)
-				.map((c) => c.location!);
+			const jwtCapabilities = Array.isArray(decoded.capabilities)
+				? decoded.capabilities as string[]
+				: [];
+			const expectedLocation = jwtCapabilities.length === 1
+				? getCapabilityLocation(opts.capabilities, jwtCapabilities[0])
+				: undefined;
 			if (
 				!verifyAudience(
 					decoded.aud,
 					ctx.context.baseURL,
 					ctx.headers,
 					opts.trustProxy,
-					capabilityLocations,
+					expectedLocation,
 				)
 			) {
 				throw agentError(

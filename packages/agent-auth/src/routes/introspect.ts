@@ -11,7 +11,7 @@ import type {
 import { verifyJWT } from "../utils/crypto";
 import type { JtiCacheStore } from "../utils/jti-cache";
 import type { JwksCacheStore } from "../utils/jwks-cache";
-import { activeGrants, verifyAudience } from "./_helpers";
+import { activeGrants, verifyAudience, getCapabilityLocation } from "./_helpers";
 
 /**
  * POST /agent/introspect
@@ -99,12 +99,15 @@ export function introspect(
 
 			if (!payload) return ctx.json(inactive);
 
-			const capabilityLocations = (opts.capabilities ?? [])
-				.filter((c) => c.location)
-				.map((c) => c.location!);
+			const jwtCaps = Array.isArray(payload.capabilities)
+				? payload.capabilities as string[]
+				: [];
+			const expectedLocation = jwtCaps.length === 1
+				? getCapabilityLocation(opts.capabilities, jwtCaps[0])
+				: undefined;
 			if (
 				payload.aud &&
-				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers, opts.trustProxy, capabilityLocations)
+				!verifyAudience(payload.aud, ctx.context.baseURL, ctx.headers, opts.trustProxy, expectedLocation)
 			) {
 				return ctx.json(inactive);
 			}
