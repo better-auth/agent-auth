@@ -199,8 +199,8 @@ export class AgentAuthClient {
 		limit?: number;
 	}): Promise<CapabilitiesResponse> {
 		const config = await this.resolveConfig(opts.provider);
-		const capPath = config.endpoints.capabilities ?? "/capability/list";
-		const url = new URL(capPath, config.issuer);
+		const capEndpoint = config.endpoints.capabilities;
+		const url = new URL(capEndpoint ?? `${config.issuer}/capability/list`);
 		if (opts.query) url.searchParams.set("query", opts.query);
 		if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
 		if (opts.limit != null) url.searchParams.set("limit", String(opts.limit));
@@ -245,8 +245,8 @@ export class AgentAuthClient {
 		agentId?: string;
 	}): Promise<Capability> {
 		const config = await this.resolveConfig(opts.provider);
-		const describePath = config.endpoints.describe_capability ?? "/capability/describe";
-		const url = new URL(describePath, config.issuer);
+		const describeEndpoint = config.endpoints.describe_capability;
+		const url = new URL(describeEndpoint ?? `${config.issuer}/capability/describe`);
 		url.searchParams.set("name", opts.name);
 
 		const headers: Record<string, string> = { accept: "application/json" };
@@ -691,8 +691,8 @@ export class AgentAuthClient {
 			audience: config.issuer,
 		});
 
-		const statusPath = config.endpoints.status ?? "/agent/status";
-		const url = new URL(statusPath, config.issuer);
+		const statusEndpoint = config.endpoints.status;
+		const url = new URL(statusEndpoint ?? `${config.issuer}/agent/status`);
 		url.searchParams.set("agent_id", agentId);
 
 		const res = await this.fetchFn(url.toString(), {
@@ -874,9 +874,9 @@ export class AgentAuthClient {
 		const config = await this.resolveConfig(opts.provider);
 		const host = await this.resolveHost();
 
-		const url = new URL("/host/enroll", config.issuer);
+		const url = `${config.issuer}/host/enroll`;
 
-		const res = await this.fetchFn(url.toString(), {
+		const res = await this.fetchFn(url, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({
@@ -1021,8 +1021,9 @@ export class AgentAuthClient {
 		key: string,
 		fallback: string,
 	): string {
-		const path = config.endpoints[key] ?? fallback;
-		return new URL(path, config.issuer).toString();
+		const endpoint = config.endpoints[key];
+		if (endpoint) return new URL(endpoint, config.issuer).toString();
+		return `${config.issuer}${fallback}`;
 	}
 
 	/**
@@ -1184,8 +1185,8 @@ export class AgentAuthClient {
 					audience: config.issuer,
 				});
 
-				const statusPath = config.endpoints.status ?? "/agent/status";
-				const url = new URL(statusPath, config.issuer);
+				const statusEndpoint = config.endpoints.status;
+				const url = new URL(statusEndpoint ?? `${config.issuer}/agent/status`);
 				url.searchParams.set("agent_id", agentId);
 
 				const res = await this.fetchFn(url.toString(), {
