@@ -1,3 +1,10 @@
+/** Normalize user code: strip non-alphanumeric, uppercase, re-insert dash. */
+export function normalizeUserCode(code: string): string {
+	const stripped = code.replaceAll(/[^A-Z0-9]/gi, "").toUpperCase();
+	if (stripped.length !== 8) return code.toUpperCase();
+	return `${stripped.slice(0, 4)}-${stripped.slice(4)}`;
+}
+
 /** Generate an 8-character user code for device authorization (§9.1). */
 export function generateUserCode(): string {
 	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

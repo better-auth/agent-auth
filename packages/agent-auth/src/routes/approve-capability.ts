@@ -3,8 +3,9 @@ import { APIError } from "@better-auth/core/error";
 import { sessionMiddleware } from "better-auth/api";
 import * as z from "zod";
 import { TABLE } from "../constants";
-import { AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
+import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
+import { hashToken, normalizeUserCode } from "../utils/approval";
 import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 import { findBlockedCapabilities } from "../utils/capabilities";
 import {
@@ -49,6 +50,7 @@ export function approveCapability(
 			body: z.object({
 				agent_id: z.string().optional(),
 				approval_id: z.string().optional(),
+				user_code: z.string().optional(),
 				action: z.enum(["approve", "deny"]),
 				capabilities: z.array(z.string()).optional(),
 				ttl: z.number().positive().optional(),
@@ -71,6 +73,7 @@ export function approveCapability(
 			const {
 				agent_id: directAgentId,
 				approval_id: approvalId,
+				user_code: userCode,
 				action,
 				capabilities: userCapIds,
 				ttl: explicitTTL,
@@ -122,6 +125,49 @@ export function approveCapability(
 				);
 			}
 
+			// Resolve device_authorization approval requests for user_code verification
+			let deviceApprovalRequests: ApprovalRequest[] = [];
+			if (approvalRequest) {
+				deviceApprovalRequests = approvalRequest.method === "device_authorization"
+					? [approvalRequest]
+					: [];
+			} else {
+				deviceApprovalRequests = await ctx.context.adapter.findMany<ApprovalRequest>({
+					model: TABLE.approval,
+					where: [
+						{ field: "agentId", value: agentId },
+						{ field: "status", value: "pending" },
+						{ field: "method", value: "device_authorization" },
+					],
+				});
+			}
+
+			// Check expiry on any resolved approval request
+			const now = new Date();
+			for (const req of deviceApprovalRequests) {
+				if (req.expiresAt && new Date(req.expiresAt) < now) {
+					throw agentError("FORBIDDEN", ERR.APPROVAL_EXPIRED);
+				}
+			}
+
+			// Verify user_code for device_authorization approvals (approve only — deny is safe)
+			const hasDeviceApproval = deviceApprovalRequests.some(
+				(r) => r.userCodeHash,
+			);
+			if (action === "approve" && hasDeviceApproval) {
+				if (!userCode) {
+					throw agentError("BAD_REQUEST", ERR.INVALID_USER_CODE);
+				}
+				const normalized = normalizeUserCode(userCode);
+				const submittedHash = await hashToken(normalized);
+				const matched = deviceApprovalRequests.some(
+					(r) => r.userCodeHash === submittedHash,
+				);
+				if (!matched) {
+					throw agentError("FORBIDDEN", ERR.INVALID_USER_CODE);
+				}
+			}
+
 			const allGrants =
 				await ctx.context.adapter.findMany<AgentCapabilityGrant>({
 					model: TABLE.grant,
@@ -140,8 +186,6 @@ export function approveCapability(
 					ERR.CAPABILITY_REQUEST_ALREADY_RESOLVED,
 				);
 			}
-
-			const now = new Date();
 
 			if (action === "deny") {
 				for (const grant of pendingGrants) {

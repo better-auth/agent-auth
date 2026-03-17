@@ -241,4 +241,12 @@ export const AGENT_AUTH_ERROR_CODES = {
 		code: "unknown_constraint_operator",
 		message: "Constraint contains an unrecognized operator",
 	},
+	INVALID_USER_CODE: {
+		code: "invalid_user_code",
+		message: "The user code is missing or does not match",
+	},
+	APPROVAL_EXPIRED: {
+		code: "approval_expired",
+		message: "The approval request has expired",
+	},
 } as const satisfies Record<string, ErrorDef>;

@@ -1,7 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
-import { TABLE } from "../../constants";
+import { TABLE, DEFAULTS } from "../../constants";
 import { AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { generateUserCode, hashToken } from "../../utils/approval";
 import { resolveDeviceAuthPage } from "../_helpers";
@@ -80,8 +80,8 @@ export function deviceCode(opts: ResolvedAgentAuthOptions) {
 				throw APIError.from("BAD_REQUEST", ERR.INVALID_REQUEST);
 			}
 
-			const expiresIn = 300;
-			const interval = 5;
+			const expiresIn = DEFAULTS.cibaExpiresIn;
+			const interval = DEFAULTS.cibaInterval;
 			const userCode = generateUserCode();
 			const codeHash = await hashToken(userCode);
 			const now = new Date();

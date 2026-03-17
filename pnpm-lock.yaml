@@ -113,55 +113,6 @@ importers:
         specifier: ^5
         version: 5.9.3
 
-  apps/gmail-proxy:
-    dependencies:
-      '@better-auth/agent-auth':
-        specifier: workspace:*
-        version: link:../../packages/agent-auth
-      better-auth:
-        specifier: ^1.5.4
-        version: 1.5.4(18aa86b56579f4d42dbd626d3fe9419e)
-      better-sqlite3:
-        specifier: ^12.6.2
-        version: 12.6.2
-      next:
-        specifier: 16.1.6
-        version: 16.1.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      react:
-        specifier: 19.2.3
-        version: 19.2.3
-      react-dom:
-        specifier: 19.2.3
-        version: 19.2.3(react@19.2.3)
-    devDependencies:
-      '@tailwindcss/postcss':
-        specifier: ^4
-        version: 4.2.1
-      '@types/better-sqlite3':
-        specifier: ^7.6.13
-        version: 7.6.13
-      '@types/node':
-        specifier: ^20
-        version: 20.19.37
-      '@types/react':
-        specifier: ^19
-        version: 19.2.14
-      '@types/react-dom':
-        specifier: ^19
-        version: 19.2.3(@types/react@19.2.14)
-      eslint:
-        specifier: ^9
-        version: 9.39.4(jiti@2.6.1)
-      eslint-config-next:
-        specifier: 16.1.6
-        version: 16.1.6(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
-      tailwindcss:
-        specifier: ^4
-        version: 4.2.1
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-
   apps/registry:
     dependencies:
       '@huggingface/transformers':
