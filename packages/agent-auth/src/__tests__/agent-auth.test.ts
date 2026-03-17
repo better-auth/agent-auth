@@ -1107,6 +1107,7 @@ describe("Discovery", () => {
 			modes: string[];
 			algorithms: string[];
 			endpoints: Record<string, string>;
+			default_location: string;
 		}>(res);
 		expect(body.version).toBe("1.0-draft");
 		expect(body.provider_name).toBe("test-service");
@@ -1117,6 +1118,10 @@ describe("Discovery", () => {
 		expect(body.endpoints.capabilities).toContain("/capability/list");
 		expect(body.endpoints.status).toContain("/agent/status");
 		expect(body.endpoints.introspect).toContain("/agent/introspect");
+		// §2.15: default_location is the absolute URL of the execute endpoint
+		expect(body.default_location).toBeDefined();
+		expect(body.default_location).toContain("/capability/execute");
+		expect(() => new URL(body.default_location)).not.toThrow();
 	});
 });
 
@@ -1182,6 +1187,47 @@ describe("Capabilities Endpoint", () => {
 		const names = body.capabilities.map((c) => c.name);
 		expect(names).toContain("check_balance");
 		expect(names).not.toContain("admin_panel");
+	});
+});
+
+describe("Capabilities Endpoint — location field (§2.15)", () => {
+	const CAPS_WITH_LOCATION = [
+		{ name: "read", description: "Read data" },
+		{
+			name: "write",
+			description: "Write data",
+			location: "https://write-service.example.com/execute",
+		},
+	];
+
+	it("includes location in listing when capability has one", async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						capabilities: CAPS_WITH_LOCATION,
+						modes: ["delegated"],
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+
+		const res = await t.auth.handler(
+			new Request(`${API}/capability/list`, { method: "GET" }),
+		);
+		expect(res.ok).toBe(true);
+		const body = await json<{
+			capabilities: Array<{ name: string; description: string; location?: string }>;
+		}>(res);
+
+		const write = body.capabilities.find((c) => c.name === "write");
+		expect(write).toBeDefined();
+		expect(write!.location).toBe("https://write-service.example.com/execute");
+
+		const read = body.capabilities.find((c) => c.name === "read");
+		expect(read).toBeDefined();
+		expect(read!.location).toBeUndefined();
 	});
 });
 

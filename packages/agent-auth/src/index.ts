@@ -73,6 +73,21 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 		);
 	}
 
+	if (opts.capabilities) {
+		for (const cap of opts.capabilities) {
+			if (cap.location != null) {
+				try {
+					new URL(cap.location);
+				} catch {
+					throw new Error(
+						`[agent-auth] Capability "${cap.name}" has an invalid location URL: "${cap.location}". ` +
+						`The location must be an absolute URL (e.g. "https://api.example.com/execute").`,
+					);
+				}
+			}
+		}
+	}
+
 	const jtiCache = new JtiCacheProxy();
 	const jwksCache = new JwksCacheProxy();
 	const schema = mergeSchema(agentSchema(), opts.schema);

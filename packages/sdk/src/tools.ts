@@ -297,7 +297,7 @@ export function getAgentAuthTools(
 		{
 			name: "sign_jwt",
 			description:
-				"Sign an agent JWT for manual authentication. Requires an agent_id from connect_agent. Usually not needed — execute_capability handles signing automatically.",
+				"Sign an agent JWT for manual authentication. Requires an agent_id from connect_agent. Usually not needed — execute_capability handles signing automatically. Set 'audience' to the target location URL for execution requests.",
 			parameters: {
 				type: "object",
 				properties: {
@@ -310,6 +310,11 @@ export function getAgentAuthTools(
 						items: { type: "string" },
 						description: "Scope to specific capabilities",
 					},
+					audience: {
+						type: "string",
+						description:
+							"JWT audience — the target location URL. Defaults to the server's issuer URL for non-execution requests.",
+					},
 				},
 				required: ["agent_id"],
 			},
@@ -317,6 +322,7 @@ export function getAgentAuthTools(
 				return client.signJwt({
 					agentId: args.agent_id as string,
 					capabilities: args.capabilities as string[] | undefined,
+					audience: args.audience as string | undefined,
 				});
 			},
 		},

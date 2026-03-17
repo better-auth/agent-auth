@@ -4,13 +4,15 @@
  * Covers: JWT replay, expired JWT, revoked agent, algorithm confusion,
  * non-JOSE error propagation, fresh session window, JTI partitioning,
  * transparent reactivation events, absolute lifetime, host revocation
- * cascade, P-256 rejection, and capability validation warnings.
+ * cascade, P-256 rejection, capability validation warnings,
+ * verifyAudience location model, and startup URL validation.
  */
 import { describe, expect, it, beforeAll, vi } from "vitest";
 import { getTestInstance } from "better-auth/test";
 import { exportJWK, generateKeyPair, importJWK, SignJWT } from "jose";
 import { agentAuth as _agentAuth } from "../index";
 import { agentAuthClient } from "../client";
+import { verifyAudience, getCapabilityLocation } from "../routes/_helpers";
 import type { AgentAuthOptions, AgentJWK, AgentAuthEvent } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -395,15 +397,25 @@ describe("Algorithm Security", () => {
 		const { verifyAgentJWT } = await import("../utils/crypto");
 		const badKey = { kty: "OKP", crv: "Ed25519", x: "INVALID" } as AgentJWK;
 
-		try {
-			await verifyAgentJWT({
+		await expect(
+			verifyAgentJWT({
 				jwt: "not.a.jwt",
 				publicKey: badKey,
 				maxAge: 60,
-			});
-		} catch (e) {
-			expect(e).toBeDefined();
-		}
+			}),
+		).rejects.toThrow();
+	});
+
+	it("rejects JWT signed with a different agent's valid keypair", async () => {
+		const wrongKeypair = await generateTestKeypair();
+		const jwt = await createAgentJWT(wrongKeypair.privateKey, sharedAgentId);
+
+		const res = await api("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.ok).toBe(false);
+		expect(res.status).toBe(401);
 	});
 });
 
@@ -773,5 +785,565 @@ describe("Capability Validation Warning", () => {
 		expect(warningCall).toBeDefined();
 
 		warnSpy.mockRestore();
+	});
+});
+
+// ================================================================
+// Capability Location Model (§2.15)
+// ================================================================
+
+describe("verifyAudience — location model", () => {
+	const baseURL = "http://localhost:3000/api/auth";
+
+	it("accepts the server origin", () => {
+		expect(verifyAudience("http://localhost:3000", baseURL)).toBe(true);
+	});
+
+	it("accepts the default execute endpoint", () => {
+		expect(
+			verifyAudience(
+				"http://localhost:3000/api/auth/capability/execute",
+				baseURL,
+			),
+		).toBe(true);
+	});
+
+	it("rejects an unrelated URL without expectedLocation", () => {
+		expect(
+			verifyAudience("https://external.example.com/execute", baseURL),
+		).toBe(false);
+	});
+
+	it("accepts expectedLocation when it matches aud", () => {
+		const location = "https://external.example.com/execute";
+		expect(verifyAudience(location, baseURL, null, false, location)).toBe(
+			true,
+		);
+	});
+
+	it("rejects aud that doesn't match expectedLocation", () => {
+		const location = "https://external.example.com/execute";
+		const wrongAud = "https://other.example.com/execute";
+		expect(verifyAudience(wrongAud, baseURL, null, false, location)).toBe(
+			false,
+		);
+	});
+
+	it("does NOT accept capability B's location when expectedLocation is capability A's", () => {
+		const locationA = "https://service-a.example.com/execute";
+		const locationB = "https://service-b.example.com/execute";
+		expect(
+			verifyAudience(locationB, baseURL, null, false, locationA),
+		).toBe(false);
+	});
+
+	it("handles array aud — accepts if any value matches", () => {
+		const location = "https://external.example.com/execute";
+		expect(
+			verifyAudience(
+				["https://wrong.example.com", location],
+				baseURL,
+				null,
+				false,
+				location,
+			),
+		).toBe(true);
+	});
+
+	it("respects host header and trustProxy for execute endpoint", () => {
+		const headers = new Headers({
+			host: "proxy.example.com",
+			"x-forwarded-proto": "https",
+		});
+		expect(
+			verifyAudience(
+				"https://proxy.example.com/api/auth/capability/execute",
+				baseURL,
+				headers,
+				true,
+			),
+		).toBe(true);
+	});
+
+	it("root baseURL produces correct execute endpoint", () => {
+		expect(
+			verifyAudience(
+				"http://localhost:3000/capability/execute",
+				"http://localhost:3000",
+			),
+		).toBe(true);
+	});
+});
+
+describe("getCapabilityLocation", () => {
+	const capabilities = [
+		{ name: "read", location: "https://read.example.com/execute" },
+		{ name: "write" },
+		{ name: "admin", location: "https://admin.example.com/execute" },
+	];
+
+	it("returns location for a capability that has one", () => {
+		expect(getCapabilityLocation(capabilities, "read")).toBe(
+			"https://read.example.com/execute",
+		);
+	});
+
+	it("returns undefined for a capability without location", () => {
+		expect(getCapabilityLocation(capabilities, "write")).toBeUndefined();
+	});
+
+	it("returns undefined for a non-existent capability", () => {
+		expect(
+			getCapabilityLocation(capabilities, "nonexistent"),
+		).toBeUndefined();
+	});
+
+	it("returns undefined when capabilities is undefined", () => {
+		expect(getCapabilityLocation(undefined, "read")).toBeUndefined();
+	});
+});
+
+// ================================================================
+// Startup Validation — capability location URLs
+// ================================================================
+
+describe("Startup URL validation for capability locations", () => {
+	it("throws on invalid location URL", () => {
+		expect(() =>
+			_agentAuth({
+				capabilities: [
+					{ name: "bad", description: "bad cap", location: "not-a-url" },
+				],
+			}),
+		).toThrow(/invalid location URL/);
+	});
+
+	it("throws with capability name in error message", () => {
+		expect(() =>
+			_agentAuth({
+				capabilities: [
+					{ name: "my_cap", description: "test", location: "foo" },
+				],
+			}),
+		).toThrow(/my_cap/);
+	});
+
+	it("accepts valid absolute location URLs", () => {
+		expect(() =>
+			_agentAuth({
+				capabilities: [
+					{
+						name: "ok",
+						description: "ok cap",
+						location: "https://api.example.com/execute",
+					},
+				],
+			}),
+		).not.toThrow();
+	});
+
+	it("accepts capabilities without location", () => {
+		expect(() =>
+			_agentAuth({
+				capabilities: [
+					{ name: "simple", description: "no location" },
+				],
+			}),
+		).not.toThrow();
+	});
+});
+
+// ================================================================
+// Capability Location Model — Integration Tests (§2.15)
+// ================================================================
+
+describe("Location model — middleware audience integration", () => {
+	const LOCATION_CAPABILITIES = [
+		{ name: "read", description: "Read data" },
+		{
+			name: "write",
+			description: "Write data",
+			location: "https://write-service.example.com/execute",
+		},
+		{
+			name: "admin",
+			description: "Admin ops",
+			location: "https://admin-service.example.com/execute",
+		},
+	];
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let locAuth: any;
+	let locCookie: string;
+	let locHostKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
+	let locHostId: string;
+
+	beforeAll(async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						providerName: "location-test",
+						capabilities: LOCATION_CAPABILITIES,
+						modes: ["delegated"],
+						defaultHostCapabilities: ["read", "write", "admin"],
+						onExecute: ({ capability }) => ({
+							capability,
+							result: "executed",
+						}),
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+		locAuth = t.auth;
+
+		const { headers } = await t.signInWithTestUser();
+		locCookie = headers.get("cookie") ?? "";
+
+		locHostKeypair = await generateTestKeypair();
+		const createRes = await locAuth.handler(
+			new Request(`${API}/host/create`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie: locCookie },
+				body: JSON.stringify({
+					name: "Location Host",
+					public_key: locHostKeypair.publicKey,
+					default_capabilities: ["read", "write", "admin"],
+				}),
+			}),
+		);
+		const body = await json<{ hostId: string }>(createRes);
+		locHostId = body.hostId;
+	});
+
+	function locApi(path: string, init?: RequestInit): Promise<Response> {
+		return locAuth.handler(
+			new Request(`${API}${path}`, {
+				...init,
+				headers: {
+					"content-type": "application/json",
+					...(init?.headers as Record<string, string> | undefined),
+				},
+			}),
+		);
+	}
+
+	async function registerLocAgent(
+		capabilities: string[],
+	): Promise<{ agentId: string; keypair: { publicKey: AgentJWK; privateKey: AgentJWK } }> {
+		const keypair = await generateTestKeypair();
+		const hostJWT = await createHostJWT(
+			locHostKeypair.privateKey,
+			locHostKeypair.publicKey,
+			keypair.publicKey,
+			locHostId,
+		);
+		const res = await locApi("/agent/register", {
+			method: "POST",
+			headers: { authorization: `Bearer ${hostJWT}` },
+			body: JSON.stringify({
+				name: "Location Agent",
+				capabilities,
+				mode: "delegated",
+			}),
+		});
+		expect(res.ok).toBe(true);
+		const body = await json<{ agent_id: string }>(res);
+		return { agentId: body.agent_id, keypair };
+	}
+
+	it("accepts JWT with aud matching capability location for single-capability JWT", async () => {
+		const { agentId, keypair } = await registerLocAgent(["write"]);
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: "https://write-service.example.com/execute",
+			capabilities: ["write"],
+		});
+
+		const res = await locApi("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.ok).toBe(true);
+	});
+
+	it("rejects JWT with aud set to wrong capability's location", async () => {
+		const { agentId, keypair } = await registerLocAgent(["write"]);
+		// aud points to admin's location, but JWT capability is "write"
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: "https://admin-service.example.com/execute",
+			capabilities: ["write"],
+		});
+
+		const res = await locApi("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.ok).toBe(false);
+		expect(res.status).toBe(401);
+	});
+
+	it("rejects JWT with aud set to arbitrary external URL", async () => {
+		const { agentId, keypair } = await registerLocAgent(["write"]);
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: "https://evil.example.com",
+			capabilities: ["write"],
+		});
+
+		const res = await locApi("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.ok).toBe(false);
+		expect(res.status).toBe(401);
+	});
+
+	it("accepts JWT with aud as server origin for capability without location", async () => {
+		const { agentId, keypair } = await registerLocAgent(["read"]);
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: BASE,
+			capabilities: ["read"],
+		});
+
+		const res = await locApi("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.ok).toBe(true);
+	});
+
+	it("accepts JWT with aud as default execute endpoint for capability without location", async () => {
+		const { agentId, keypair } = await registerLocAgent(["read"]);
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: `${API}/capability/execute`,
+			capabilities: ["read"],
+		});
+
+		const res = await locApi("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.ok).toBe(true);
+	});
+
+	it("multi-capability JWT falls back to origin-only audience validation", async () => {
+		const { agentId, keypair } = await registerLocAgent(["read", "write"]);
+		// aud = server origin, multi-cap JWT — should pass since origin is always accepted
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: BASE,
+			capabilities: ["read", "write"],
+		});
+
+		const res = await locApi("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		expect(res.ok).toBe(true);
+	});
+
+	it("multi-capability JWT rejects aud set to a single capability's location", async () => {
+		const { agentId, keypair } = await registerLocAgent(["read", "write"]);
+		// aud = write's location, but JWT claims multiple capabilities
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: "https://write-service.example.com/execute",
+			capabilities: ["read", "write"],
+		});
+
+		const res = await locApi("/agent/status", {
+			method: "GET",
+			headers: { authorization: `Bearer ${jwt}` },
+		});
+		// multi-cap JWT does NOT add per-capability locations to accepted set
+		expect(res.ok).toBe(false);
+		expect(res.status).toBe(401);
+	});
+
+	it("execute succeeds with aud matching capability location", async () => {
+		const { agentId, keypair } = await registerLocAgent(["write"]);
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: "https://write-service.example.com/execute",
+			capabilities: ["write"],
+		});
+
+		const res = await locApi("/capability/execute", {
+			method: "POST",
+			headers: { authorization: `Bearer ${jwt}` },
+			body: JSON.stringify({ capability: "write", arguments: {} }),
+		});
+		expect(res.ok).toBe(true);
+		const body = await json<{ data: { result: string } }>(res);
+		expect(body.data.result).toBe("executed");
+	});
+
+	it("execute succeeds with default execute endpoint aud when capability has no location", async () => {
+		const { agentId, keypair } = await registerLocAgent(["read"]);
+		// "read" has no custom location — aud should be the default execute endpoint
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: `${API}/capability/execute`,
+			capabilities: ["read"],
+		});
+
+		const res = await locApi("/capability/execute", {
+			method: "POST",
+			headers: { authorization: `Bearer ${jwt}` },
+			body: JSON.stringify({ capability: "read", arguments: {} }),
+		});
+		expect(res.ok).toBe(true);
+		const body = await json<{ data: { result: string } }>(res);
+		expect(body.data.result).toBe("executed");
+	});
+});
+
+describe("Location model — introspect audience integration", () => {
+	const LOCATION_CAPABILITIES = [
+		{ name: "read", description: "Read data" },
+		{
+			name: "write",
+			description: "Write data",
+			location: "https://write-service.example.com/execute",
+		},
+	];
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let introAuth: any;
+	let introCookie: string;
+	let introHostKeypair: { publicKey: AgentJWK; privateKey: AgentJWK };
+	let introHostId: string;
+
+	beforeAll(async () => {
+		const t = await getTestInstance(
+			{
+				plugins: [
+					agentAuth({
+						capabilities: LOCATION_CAPABILITIES,
+						modes: ["delegated"],
+						defaultHostCapabilities: ["read", "write"],
+					}),
+				],
+			},
+			{ clientOptions: { plugins: [agentAuthClientPlugin()] } },
+		);
+		introAuth = t.auth;
+
+		const { headers } = await t.signInWithTestUser();
+		introCookie = headers.get("cookie") ?? "";
+
+		introHostKeypair = await generateTestKeypair();
+		const createRes = await introAuth.handler(
+			new Request(`${API}/host/create`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie: introCookie },
+				body: JSON.stringify({
+					name: "Introspect Location Host",
+					public_key: introHostKeypair.publicKey,
+					default_capabilities: ["read", "write"],
+				}),
+			}),
+		);
+		const body = await json<{ hostId: string }>(createRes);
+		introHostId = body.hostId;
+	});
+
+	function introApi(path: string, init?: RequestInit): Promise<Response> {
+		return introAuth.handler(
+			new Request(`${API}${path}`, {
+				...init,
+				headers: {
+					"content-type": "application/json",
+					...(init?.headers as Record<string, string> | undefined),
+				},
+			}),
+		);
+	}
+
+	it("introspect returns active for JWT with aud matching capability location", async () => {
+		const keypair = await generateTestKeypair();
+		const hostJWT = await createHostJWT(
+			introHostKeypair.privateKey,
+			introHostKeypair.publicKey,
+			keypair.publicKey,
+			introHostId,
+		);
+		const regRes = await introApi("/agent/register", {
+			method: "POST",
+			headers: { authorization: `Bearer ${hostJWT}` },
+			body: JSON.stringify({
+				name: "Introspect Agent",
+				capabilities: ["write"],
+				mode: "delegated",
+			}),
+		});
+		expect(regRes.ok).toBe(true);
+		const { agent_id: agentId } = await json<{ agent_id: string }>(regRes);
+
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: "https://write-service.example.com/execute",
+			capabilities: ["write"],
+		});
+
+		const res = await introApi("/agent/introspect", {
+			method: "POST",
+			body: JSON.stringify({ token: jwt }),
+		});
+		expect(res.ok).toBe(true);
+		const body = await json<{ active: boolean; agent_id: string }>(res);
+		expect(body.active).toBe(true);
+		expect(body.agent_id).toBe(agentId);
+	});
+
+	it("introspect returns inactive for JWT with aud set to wrong location", async () => {
+		const keypair = await generateTestKeypair();
+		const hostJWT = await createHostJWT(
+			introHostKeypair.privateKey,
+			introHostKeypair.publicKey,
+			keypair.publicKey,
+			introHostId,
+		);
+		const regRes = await introApi("/agent/register", {
+			method: "POST",
+			headers: { authorization: `Bearer ${hostJWT}` },
+			body: JSON.stringify({
+				name: "Introspect Wrong Aud Agent",
+				capabilities: ["write"],
+				mode: "delegated",
+			}),
+		});
+		expect(regRes.ok).toBe(true);
+		const { agent_id: agentId } = await json<{ agent_id: string }>(regRes);
+
+		const jwt = await signTestJWT({
+			privateKey: keypair.privateKey,
+			subject: agentId,
+			audience: "https://wrong-service.example.com/execute",
+			capabilities: ["write"],
+		});
+
+		const res = await introApi("/agent/introspect", {
+			method: "POST",
+			body: JSON.stringify({ token: jwt }),
+		});
+		expect(res.ok).toBe(true);
+		const body = await json<{ active: boolean }>(res);
+		expect(body.active).toBe(false);
 	});
 });

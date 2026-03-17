@@ -440,6 +440,13 @@ export class AgentAuthClient {
 	async signJwt(opts: {
 		agentId: string;
 		capabilities?: string[];
+		/**
+		 * Override the JWT `aud` claim (§4.3).
+		 *
+		 * For execution requests, set this to the resolved location URL.
+		 * For non-execution requests (status, listing), omit to use issuer.
+		 */
+		audience?: string;
 		/** HTTP method for DPoP request binding (§5.3). */
 		htm?: string;
 		/** HTTP target URI for DPoP request binding (§5.3). */
@@ -474,7 +481,7 @@ export class AgentAuthClient {
 		const token = await signAgentJWT({
 			agentKeypair: conn.agentKeypair,
 			agentId: conn.agentId,
-			audience: conn.issuer,
+			audience: opts.audience ?? conn.issuer,
 			capabilities: opts.capabilities,
 			htm: opts.htm,
 			htu: opts.htu,
@@ -727,18 +734,22 @@ export class AgentAuthClient {
 		const conn = await this.requireConnection(opts.agentId);
 		const config = await this.requireConfig(conn.issuer);
 
+		const capLocation = this.resolveCapabilityLocationFromConfig(
+			config,
+			opts.capability,
+		);
+		const executeLocation = this.resolveExecuteLocation(
+			config,
+			capLocation,
+		);
+
 		const token = await this.signJwt({
 			agentId: opts.agentId,
 			capabilities: [opts.capability],
+			audience: executeLocation,
 		});
 
-		const url = this.resolveEndpoint(
-			config,
-			"execute",
-			"/capability/execute",
-		);
-
-		const res = await this.fetchFn(url, {
+		const res = await this.fetchFn(executeLocation, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
@@ -1012,6 +1023,37 @@ export class AgentAuthClient {
 	): string {
 		const path = config.endpoints[key] ?? fallback;
 		return new URL(path, config.issuer).toString();
+	}
+
+	/**
+	 * Resolve the execution location for a capability (§2.15).
+	 *
+	 * Priority: capability `location` > provider `default_location`
+	 * > `{issuer}{endpoints.execute}`.
+	 */
+	private resolveExecuteLocation(
+		config: ProviderConfig,
+		capabilityLocation?: string,
+	): string {
+		if (capabilityLocation) return capabilityLocation;
+		if (config.default_location) return config.default_location;
+		return this.resolveEndpoint(config, "execute", "/capability/execute");
+	}
+
+	/**
+	 * Look up a capability's `location` from an already-fetched provider
+	 * config. Returns `undefined` if the capability has no custom location
+	 * — the caller falls back to `default_location`.
+	 */
+	private resolveCapabilityLocationFromConfig(
+		config: ProviderConfig,
+		capabilityName: string,
+	): string | undefined {
+		if (config.capabilities) {
+			const cap = config.capabilities.find((c) => c.name === capabilityName);
+			if (cap?.location) return cap.location;
+		}
+		return undefined;
 	}
 
 	private async waitForApproval(

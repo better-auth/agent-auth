@@ -27,6 +27,14 @@ export interface Capability {
 	name: string;
 	description: string;
 	/**
+	 * The URL where this capability is executed (§2.15).
+	 *
+	 * The client sends the execute request to this URL and sets the
+	 * JWT `aud` claim to match it. If absent, the client uses the
+	 * server's `default_location` from discovery.
+	 */
+	location?: string;
+	/**
 	 * JSON Schema describing the `arguments` accepted by
 	 * `POST /capability/execute` (§6.11).
 	 */
