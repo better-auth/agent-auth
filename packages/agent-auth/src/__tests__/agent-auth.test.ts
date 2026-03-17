@@ -946,12 +946,13 @@ describe("Agent Lifecycle", () => {
 });
 
 describe("Discovery", () => {
-	it("GET /agent-configuration returns spec-compliant config with version 1.0-draft", async () => {
+	it("GET /agent-configuration returns spec-compliant config with absolute URLs", async () => {
 		const res = await client.api("/agent-configuration", { method: "GET" });
 
 		expect(res.ok).toBe(true);
 		const body = await json<{
 			version: string;
+			issuer: string;
 			provider_name: string;
 			modes: string[];
 			algorithms: string[];
@@ -962,15 +963,29 @@ describe("Discovery", () => {
 		expect(body.provider_name).toBe("test-service");
 		expect(body.modes).toEqual(["delegated", "autonomous"]);
 		expect(body.algorithms).toEqual(["Ed25519"]);
-		expect(body.endpoints).toBeDefined();
-		expect(body.endpoints.register).toContain("/agent/register");
-		expect(body.endpoints.capabilities).toContain("/capability/list");
-		expect(body.endpoints.status).toContain("/agent/status");
-		expect(body.endpoints.introspect).toContain("/agent/introspect");
-		// §2.15: default_location is the absolute URL of the execute endpoint
-		expect(body.default_location).toBeDefined();
-		expect(body.default_location).toContain("/capability/execute");
-		expect(() => new URL(body.default_location)).not.toThrow();
+
+		// §2: issuer is the full baseURL, not just origin
+		expect(body.issuer).toBe("http://localhost:3000/api/auth");
+
+		// All endpoints are absolute URLs starting with issuer
+		for (const [, endpoint] of Object.entries(body.endpoints)) {
+			expect(() => new URL(endpoint)).not.toThrow();
+			expect(endpoint).toMatch(/^https?:\/\//);
+			expect(endpoint.startsWith(body.issuer)).toBe(true);
+		}
+
+		expect(body.endpoints.register).toBe(`${body.issuer}/agent/register`);
+		expect(body.endpoints.capabilities).toBe(`${body.issuer}/capability/list`);
+		expect(body.endpoints.status).toBe(`${body.issuer}/agent/status`);
+		expect(body.endpoints.introspect).toBe(`${body.issuer}/agent/introspect`);
+
+		// §2.15: default_location equals the execute endpoint (both absolute)
+		expect(body.default_location).toBe(body.endpoints.execute);
+
+		// SDK-style resolution is idempotent: new URL(absolute, base) === absolute
+		for (const [, endpoint] of Object.entries(body.endpoints)) {
+			expect(new URL(endpoint, body.issuer).toString()).toBe(endpoint);
+		}
 	});
 });
 

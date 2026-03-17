@@ -488,10 +488,14 @@ export function verifyAudience(
 ): boolean {
 	const parsedBase = new URL(baseURL);
 	const configuredOrigin = parsedBase.origin;
-	const accepted = new Set([configuredOrigin]);
-
+	const base = baseURL.replace(/\/$/, "");
 	const basePath = parsedBase.pathname.replace(/\/$/, "");
-	accepted.add(new URL(`${basePath}/capability/execute`, configuredOrigin).toString());
+
+	const accepted = new Set([
+		configuredOrigin,
+		base,
+		`${base}/capability/execute`,
+	]);
 
 	const reqHost = headers?.get("host");
 	if (reqHost) {
@@ -500,7 +504,8 @@ export function verifyAudience(
 			: parsedBase.protocol.replace(":", "");
 		const reqOrigin = `${proto}://${reqHost}`;
 		accepted.add(reqOrigin);
-		accepted.add(new URL(`${basePath}/capability/execute`, reqOrigin).toString());
+		accepted.add(`${reqOrigin}${basePath}`);
+		accepted.add(`${reqOrigin}${basePath}/capability/execute`);
 	}
 	if (expectedLocation) {
 		accepted.add(expectedLocation);
