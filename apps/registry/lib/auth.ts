@@ -26,6 +26,10 @@ export const auth = betterAuth({
   disabledPaths: ["/token"],
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path === "/oauth2/token" && ctx.body) {
+        console.log("[auth] token exchange resource:", ctx.body.resource);
+        console.log("[auth] token exchange body keys:", Object.keys(ctx.body));
+      }
       if (
         ctx.path === "/oauth2/register" &&
         ctx.body &&
