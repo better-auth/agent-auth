@@ -439,9 +439,7 @@ async function getAccessToken(
     ],
     update: {
       accessToken: tokens.access_token,
-      accessTokenExpiresAt: new Date(
-        Date.now() + tokens.expires_in * 1000,
-      ),
+      accessTokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
     },
   });
 
