@@ -668,16 +668,15 @@ export default function DeviceCapabilities({
 										)}
 									</button>
 								</div>
-							)}
+								)}
+							</div>
 						</div>
-					</div>
 					</div>
 
 					<p className="text-center text-xs text-muted/50">
 						Signed in as {session?.user.email}
 					</p>
+					</div>
 				</div>
-			</div>
-		</div>
-	);
-}
+		);
+	}
