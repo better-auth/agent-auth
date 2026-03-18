@@ -14,6 +14,64 @@ function tokenize(str: string): string[] {
 		.filter(Boolean);
 }
 
+/**
+ * Naive English stemmer — strips common suffixes so that
+ * "emails" ≈ "email", "messages" ≈ "message", "listing" ≈ "list", etc.
+ */
+function stem(word: string): string {
+	if (word.length <= 3) return word;
+	if (word.endsWith("ies") && word.length > 4)
+		return word.slice(0, -3) + "y";
+	if (word.endsWith("ing") && word.length > 5) return word.slice(0, -3);
+	if (word.endsWith("tion") && word.length > 5) return word.slice(0, -4);
+	if (word.endsWith("ness") && word.length > 5) return word.slice(0, -4);
+	if (word.endsWith("es") && word.length > 4) return word.slice(0, -2);
+	if (word.endsWith("s") && !word.endsWith("ss") && word.length > 3)
+		return word.slice(0, -1);
+	return word;
+}
+
+function stemmedMatch(a: string, b: string): boolean {
+	if (a === b) return true;
+	const sa = stem(a);
+	const sb = stem(b);
+	return sa === sb || sa.startsWith(sb) || sb.startsWith(sa);
+}
+
+const SYNONYMS: Record<string, string[]> = {
+	email: ["message", "mail"],
+	message: ["email", "mail"],
+	mail: ["email", "message"],
+	send: ["deliver", "dispatch", "compose"],
+	delete: ["remove", "trash", "destroy"],
+	remove: ["delete", "trash"],
+	trash: ["delete", "remove"],
+	create: ["add", "new", "make"],
+	add: ["create", "new"],
+	get: ["read", "fetch", "retrieve", "view"],
+	read: ["get", "fetch", "view"],
+	fetch: ["get", "read", "retrieve"],
+	update: ["modify", "edit", "change", "patch"],
+	modify: ["update", "edit", "change"],
+	edit: ["update", "modify", "change"],
+};
+
+function expandWithSynonyms(term: string): string[] {
+	const stemmed = stem(term);
+	const syns = SYNONYMS[term] ?? SYNONYMS[stemmed] ?? [];
+	return [term, stemmed, ...syns, ...syns.map(stem)];
+}
+
+function termMatchesToken(term: string, token: string): boolean {
+	const expanded = expandWithSynonyms(term);
+	return expanded.some((t) => stemmedMatch(t, token));
+}
+
+function termMatchesText(term: string, text: string): boolean {
+	const expanded = expandWithSynonyms(term);
+	return expanded.some((t) => text.includes(t));
+}
+
 const GLOB_CHARS = /[*?]/;
 const REGEX_PREFIX = /^\/(.+)\/([gimsuy]*)$/;
 
@@ -103,6 +161,7 @@ export function matchQuery(
 	for (const cap of capabilities) {
 		const nameTokens = tokenize(cap.name);
 		const nameLower = cap.name.toLowerCase();
+		const descTokens = tokenize(cap.description ?? "");
 		const descLower = (cap.description ?? "").toLowerCase();
 
 		let nameHits = 0;
@@ -111,11 +170,11 @@ export function matchQuery(
 
 		for (const term of terms) {
 			const inName =
-				nameLower.includes(term) ||
-				nameTokens.some(
-					(t) => t.startsWith(term) || term.startsWith(t),
-				);
-			const inDesc = descLower.includes(term);
+				termMatchesText(term, nameLower) ||
+				nameTokens.some((t) => termMatchesToken(term, t));
+			const inDesc =
+				termMatchesText(term, descLower) ||
+				descTokens.some((t) => termMatchesToken(term, t));
 
 			if (inName) {
 				nameHits++;

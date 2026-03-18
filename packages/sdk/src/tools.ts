@@ -40,12 +40,12 @@ export interface AgentAuthTool {
  */
 export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
   return [
-    // ── One-time setup: Find provider → Connect ──
+    // ── Discovery (optional — skip if you already know the provider) ──
 
     {
       name: "list_providers",
       description:
-        "Lists providers already discovered or pre-configured. Call once at the start of a session to see what's available. If the provider you need is listed, go straight to connect_agent.",
+        "OPTIONAL. Lists known providers. Skip this entirely if you already know the provider name or URL — go straight to connect_agent.",
       annotations: { readOnlyHint: true },
       parameters: { type: "object", properties: {} },
       async execute() {
@@ -56,7 +56,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "search_providers",
       description:
-        "Search the registry by name or intent. Only call if list_providers didn't return the provider you need. Found providers are cached automatically.",
+        "OPTIONAL. Search registry by name or intent. Only needed when you don't know what providers exist.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -77,7 +77,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "discover_provider",
       description:
-        "Look up a provider by URL. Only use if list_providers AND search_providers both failed to find the provider. Wait for search_providers results before calling this.",
+        "OPTIONAL. Look up a provider by URL. Only needed if the provider isn't already known.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -98,7 +98,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "list_capabilities",
       description:
-        "List capabilities offered by a provider. Use to browse what a provider offers before connecting, or to check grant status after connecting. Each capability may include 'constrainable_fields' for applying constraints.",
+        "OPTIONAL. Browse a provider's capabilities. Skip if you already know the capability names — go straight to connect_agent then execute_capability.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -142,7 +142,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "describe_capability",
       description:
-        "Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
+        "OPTIONAL. Get input schema for a capability. Skip if you already know the arguments — just call execute_capability directly. The server will validate arguments.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -176,7 +176,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "connect_agent",
       description:
-        "Connect to a provider. Call ONCE per provider — returns an agent_id. After that, use ONLY execute_capability with that agent_id. NEVER call connect_agent again for the same provider unless you got an explicit 'agent_not_found' or 'revoked' error from execute_capability. Existing connections are reused automatically. Apply constraints to limit scope when requesting capabilities.",
+        "Connect to a provider and get an agent_id. Call ONCE, then use execute_capability for everything. Typical flow: connect_agent → execute_capability. You do NOT need to call list_providers, list_capabilities, or describe_capability first — skip them if you know what you need. NEVER re-call connect_agent for the same provider unless execute_capability returns 'agent_not_found' or 'revoked'.",
       annotations: { readOnlyHint: true, title: "Connect Agent" },
       parameters: {
         type: "object",
@@ -259,7 +259,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "execute_capability",
       description:
-        "THE PRIMARY TOOL after connecting. Execute any capability using the agent_id from connect_agent. Call this as many times as needed — do NOT re-call connect_agent between executions. Each call signs a fresh JWT automatically.",
+        "THE MAIN TOOL. Execute a capability using agent_id from connect_agent. Call repeatedly for all operations — do NOT call other tools between executions. If unsure about arguments, try calling it — the server returns descriptive errors. No need to call describe_capability first.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",

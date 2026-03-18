@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { createMcpHandler } from "mcp-handler";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { getToolsForUser, jsonSchemaToZod } from "@/lib/mcp";
@@ -57,12 +58,30 @@ function unauthorizedResponse(req: Request) {
 	});
 }
 
-function createHandlerForUser(userId: string) {
-	const tools = getToolsForUser(userId);
-	return createMcpHandler(
-		(server) => {
-			for (const tool of tools) {
-				const zodShape = jsonSchemaToZod(tool.parameters, z);
+interface UserMcpInstance {
+	transport: WebStandardStreamableHTTPServerTransport;
+	server: McpServer;
+}
+
+const instanceCache = new Map<string, Promise<UserMcpInstance>>();
+
+async function getInstanceForUser(userId: string): Promise<UserMcpInstance> {
+	const existing = instanceCache.get(userId);
+	if (existing) return existing;
+
+	const promise = (async (): Promise<UserMcpInstance> => {
+		const transport = new WebStandardStreamableHTTPServerTransport({
+			sessionIdGenerator: undefined,
+		});
+
+		const server = new McpServer({
+			name: "agent-auth-mcp",
+			version: "1.0.0",
+		});
+
+		const tools = getToolsForUser(userId);
+		for (const tool of tools) {
+			const zodShape = jsonSchemaToZod(tool.parameters, z);
 			const toolOpts: Record<string, unknown> = {
 				description: tool.description,
 			};
@@ -72,31 +91,39 @@ function createHandlerForUser(userId: string) {
 			if (tool.annotations) {
 				toolOpts.annotations = tool.annotations;
 			}
-				server.registerTool(
-					tool.name,
-					toolOpts,
-					async (
-						args: Record<string, unknown>,
-						extra?: { signal?: AbortSignal },
-					) => {
-						const result = await tool.execute(args, {
-							signal: extra?.signal,
-						});
-						return {
-							content: [
-								{
-									type: "text" as const,
-									text: JSON.stringify(result, null, 2),
-								},
-							],
-						};
-					},
-				);
-			}
-		},
-		{ serverInfo: { name: "agent-auth-mcp", version: "1.0.0" } },
-		{ basePath: "/api", maxDuration: 60 },
-	);
+			server.registerTool(
+				tool.name,
+				toolOpts,
+				async (
+					args: Record<string, unknown>,
+					extra?: { signal?: AbortSignal },
+				) => {
+					const result = await tool.execute(args, {
+						signal: extra?.signal,
+					});
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: JSON.stringify(result, null, 2),
+							},
+						],
+					};
+				},
+			);
+		}
+
+		await server.connect(transport);
+		return { transport, server };
+	})();
+
+	instanceCache.set(userId, promise);
+
+	promise.catch(() => {
+		instanceCache.delete(userId);
+	});
+
+	return promise;
 }
 
 async function handler(req: Request) {
@@ -110,7 +137,8 @@ async function handler(req: Request) {
 	const verified = await verifyToken(token);
 	if (!verified) return unauthorizedResponse(req);
 
-	return createHandlerForUser(verified.userId)(req);
+	const { transport } = await getInstanceForUser(verified.userId);
+	return transport.handleRequest(req);
 }
 
 export { handler as GET, handler as POST, handler as DELETE };
