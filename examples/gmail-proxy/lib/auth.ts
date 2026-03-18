@@ -24,45 +24,8 @@ const GMAIL_SCOPES = [
 const capabilities: Capability[] = [
   {
     name: "gmail.messages.list",
-    description: "List messages in the user's mailbox",
-    input: {
-      type: "object",
-      properties: {
-        q: {
-          type: "string",
-          description:
-            "Gmail search query (e.g. 'from:user@example.com is:unread')",
-        },
-        maxResults: {
-          type: "number",
-          description:
-            "Maximum number of messages to return (default 10, max 500)",
-        },
-        pageToken: { type: "string", description: "Page token for pagination" },
-        labelIds: {
-          type: "array",
-          items: { type: "string" },
-          description: "Filter by label IDs",
-        },
-      },
-    },
-    constrainable_fields: {
-      maxResults: {
-        type: "number",
-        description: "Constrain maximum results per request",
-        operators: ["max"],
-      },
-      q: {
-        type: "string",
-        description: "Constrain search query (e.g. restrict to specific senders)",
-        operators: ["eq"],
-      },
-    },
-  },
-  {
-    name: "gmail.messages.listDetailed",
     description:
-      "List messages with full details (subject, from, to, date, snippet, labels) in one call. Supports date range filtering and pagination. Much more efficient than listing IDs then fetching each.",
+      "List messages with full details (subject, from, to, date, snippet, labels). Supports date range filtering and pagination.",
     input: {
       type: "object",
       properties: {
@@ -74,7 +37,7 @@ const capabilities: Capability[] = [
         maxResults: {
           type: "number",
           description:
-            "Maximum number of messages to return with details (default 10, max 50)",
+            "Maximum number of messages to return (default 10, max 50)",
         },
         after: {
           type: "string",
@@ -414,7 +377,6 @@ const capabilities: Capability[] = [
 
 const READ_ONLY_CAPABILITIES = [
   "gmail.messages.list",
-  "gmail.messages.listDetailed",
   "gmail.messages.get",
   "gmail.threads.list",
   "gmail.threads.get",
