@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { db } from "./db";
@@ -23,6 +24,24 @@ export const auth = betterAuth({
     },
   },
   disabledPaths: ["/token"],
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (
+        ctx.path === "/oauth2/register" &&
+        ctx.body &&
+        !ctx.body.token_endpoint_auth_method
+      ) {
+        return {
+          context: {
+            body: {
+              ...ctx.body,
+              token_endpoint_auth_method: "none",
+            },
+          },
+        };
+      }
+    }),
+  },
   plugins: [
     jwt(),
     oauthProvider({
