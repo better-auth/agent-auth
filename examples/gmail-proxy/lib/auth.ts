@@ -46,6 +46,18 @@ const capabilities: Capability[] = [
         },
       },
     },
+    constrainable_fields: {
+      maxResults: {
+        type: "number",
+        description: "Constrain maximum results per request",
+        operators: ["max"],
+      },
+      q: {
+        type: "string",
+        description: "Constrain search query (e.g. restrict to specific senders)",
+        operators: ["eq"],
+      },
+    },
   },
   {
     name: "gmail.messages.get",
@@ -60,6 +72,13 @@ const capabilities: Capability[] = [
         },
       },
       required: ["id"],
+    },
+    constrainable_fields: {
+      format: {
+        type: "string",
+        description: "Restrict which format the agent can request",
+        operators: ["eq", "in"],
+      },
     },
   },
   {
@@ -88,6 +107,13 @@ const capabilities: Capability[] = [
         },
       },
       required: ["to", "subject"],
+    },
+    constrainable_fields: {
+      to: {
+        type: "string",
+        description: "Restrict which recipients the agent can send to",
+        operators: ["eq", "in"],
+      },
     },
   },
   {
@@ -150,6 +176,13 @@ const capabilities: Capability[] = [
           items: { type: "string" },
           description: "Filter by label IDs",
         },
+      },
+    },
+    constrainable_fields: {
+      maxResults: {
+        type: "number",
+        description: "Constrain maximum results per request",
+        operators: ["max"],
       },
     },
   },
@@ -246,6 +279,13 @@ const capabilities: Capability[] = [
           description: "Maximum number of drafts to return",
         },
         pageToken: { type: "string", description: "Page token for pagination" },
+      },
+    },
+    constrainable_fields: {
+      maxResults: {
+        type: "number",
+        description: "Constrain maximum results per request",
+        operators: ["max"],
       },
     },
   },

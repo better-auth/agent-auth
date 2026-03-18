@@ -66,12 +66,26 @@ export async function GET(req: Request) {
 		host: host
 			? { id: host.id, name: host.name, status: host.status }
 			: null,
-		grants: grants.map((g) => ({
-			id: g.id,
-			capability: g.capability,
-			status: g.status,
-			reason: g.reason,
-		})),
+		grants: grants.map((g) => {
+			let constraints = null;
+			if (g.constraints) {
+				try {
+					constraints =
+						typeof g.constraints === "string"
+							? JSON.parse(g.constraints)
+							: g.constraints;
+				} catch {
+					/* ignore */
+				}
+			}
+			return {
+				id: g.id,
+				capability: g.capability,
+				status: g.status,
+				reason: g.reason,
+				constraints,
+			};
+		}),
 		needsActivation,
 	});
 }

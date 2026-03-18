@@ -18,6 +18,7 @@ interface ApprovalRequest {
 	agent_name: string | null;
 	binding_message: string | null;
 	capabilities: string[];
+	capability_constraints: Record<string, Record<string, unknown>> | null;
 	expires_in: number;
 	created_at: string;
 }
@@ -144,23 +145,42 @@ export default function ApprovalsPage() {
 										</div>
 									</div>
 
-									{req.capabilities.length > 0 && (
-										<div className="mt-4">
-											<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
-												Requested Capabilities
-											</p>
-											<div className="flex flex-wrap gap-1.5">
-												{req.capabilities.map((cap) => (
-													<code
-														key={cap}
-														className="rounded-lg bg-surface px-2.5 py-1 text-xs font-mono text-foreground"
-													>
-														{cap}
-													</code>
-												))}
-											</div>
+								{req.capabilities.length > 0 && (
+									<div className="mt-4">
+										<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
+											Requested Capabilities
+										</p>
+										<div className="flex flex-col gap-1.5">
+											{req.capabilities.map((cap) => {
+												const capConstraints = req.capability_constraints?.[cap];
+												return (
+													<div key={cap}>
+														<code className="rounded-lg bg-surface px-2.5 py-1 text-xs font-mono text-foreground">
+															{cap}
+														</code>
+														{capConstraints && Object.keys(capConstraints).length > 0 && (
+															<div className="mt-1 ml-2 flex flex-wrap gap-1">
+																{Object.entries(capConstraints).map(([field, value]) => (
+																	<span
+																		key={field}
+																		className="inline-flex items-center rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] font-mono text-gmail-blue ring-1 ring-inset ring-gmail-blue/20"
+																	>
+																		{field}:{" "}
+																		{typeof value === "object" && value !== null && !Array.isArray(value)
+																			? Object.entries(value as Record<string, unknown>)
+																					.map(([op, v]) => `${op}=${JSON.stringify(v)}`)
+																					.join(", ")
+																			: JSON.stringify(value)}
+																	</span>
+																))}
+															</div>
+														)}
+													</div>
+												);
+											})}
 										</div>
-									)}
+									</div>
+								)}
 								</div>
 							</div>
 						))}
