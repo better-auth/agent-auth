@@ -63,15 +63,15 @@ function createHandlerForUser(userId: string) {
 		(server) => {
 			for (const tool of tools) {
 				const zodShape = jsonSchemaToZod(tool.parameters, z);
-				const toolOpts: {
-					description: string;
-					inputSchema?: z.ZodRawShape;
-				} = {
-					description: tool.description,
-				};
-				if (zodShape) {
-					toolOpts.inputSchema = zodShape;
-				}
+			const toolOpts: Record<string, unknown> = {
+				description: tool.description,
+			};
+			if (zodShape) {
+				toolOpts.inputSchema = zodShape;
+			}
+			if (tool.annotations) {
+				toolOpts.annotations = tool.annotations;
+			}
 				server.registerTool(
 					tool.name,
 					toolOpts,

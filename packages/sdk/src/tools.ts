@@ -11,9 +11,18 @@ export interface ToolContext {
   signal?: AbortSignal;
 }
 
+export interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 export interface AgentAuthTool {
   name: string;
   description: string;
+  annotations?: ToolAnnotations;
   parameters: ToolParameters;
   execute: (
     args: Record<string, unknown>,
@@ -37,6 +46,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "list_providers",
       description:
         "Lists providers already discovered or pre-configured. Call once at the start of a session to see what's available. If the provider you need is listed, go straight to connect_agent.",
+      annotations: { readOnlyHint: true },
       parameters: { type: "object", properties: {} },
       async execute() {
         return client.listProviders();
@@ -47,6 +57,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "search_providers",
       description:
         "Search the registry by name or intent. Only call if list_providers didn't return the provider you need. Found providers are cached automatically.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -67,6 +78,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "discover_provider",
       description:
         "Look up a provider by URL. Only use if list_providers AND search_providers both failed to find the provider. Wait for search_providers results before calling this.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -87,6 +99,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "list_capabilities",
       description:
         "List capabilities offered by a provider. Use to browse what a provider offers before connecting, or to check grant status after connecting. Each capability may include 'constrainable_fields' for applying constraints.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -130,6 +143,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "describe_capability",
       description:
         "Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -163,6 +177,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "connect_agent",
       description:
         "Connect to a provider. Call ONCE per provider — returns an agent_id. After that, use ONLY execute_capability with that agent_id. NEVER call connect_agent again for the same provider unless you got an explicit 'agent_not_found' or 'revoked' error from execute_capability. Existing connections are reused automatically. Apply constraints to limit scope when requesting capabilities.",
+      annotations: { title: "Connect Agent", idempotentHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -244,6 +259,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "execute_capability",
       description:
         "THE PRIMARY TOOL after connecting. Execute any capability using the agent_id from connect_agent. Call this as many times as needed — do NOT re-call connect_agent between executions. Each call signs a fresh JWT automatically.",
+      annotations: { destructiveHint: false, idempotentHint: true, openWorldHint: false },
       parameters: {
         type: "object",
         properties: {
@@ -276,6 +292,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "agent_status",
       description:
         "Check agent status and grants. Only call if execute_capability returned an error suggesting the agent may be inactive.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -295,6 +312,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "sign_jwt",
       description:
         "Sign an agent JWT manually. Rarely needed — execute_capability signs JWTs automatically. Only use for custom integrations that need a raw token.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -328,6 +346,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "request_capability",
       description:
         "Request additional capabilities for an already-connected agent. Only call if execute_capability fails with 'capability_not_granted'. Do NOT use this to reconnect — use connect_agent for that.",
+      annotations: { idempotentHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -393,6 +412,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "disconnect_agent",
       description:
         "Disconnect and revoke an agent. Only call when explicitly asked to disconnect or when done with a provider permanently.",
+      annotations: { destructiveHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -413,6 +433,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "reactivate_agent",
       description:
         "Reactivate an expired agent. Only call if agent_status or execute_capability reports the agent is expired.",
+      annotations: { idempotentHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -436,6 +457,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "enroll_host",
       description:
         "Enroll a host using a one-time enrollment token. Only needed when the host was pre-registered without a public key.",
+      annotations: { idempotentHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -467,6 +489,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "rotate_agent_key",
       description:
         "Rotate an agent's keypair. Requires an agent_id from connect_agent.",
+      annotations: { destructiveHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -485,6 +508,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "rotate_host_key",
       description: "Rotate the host keypair for a provider.",
+      annotations: { destructiveHint: true },
       parameters: {
         type: "object",
         properties: {

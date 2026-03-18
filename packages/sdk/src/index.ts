@@ -45,6 +45,7 @@ export type {
 export type { ToolDetection } from "./host-name";
 export type {
 	AgentAuthTool,
+	ToolAnnotations,
 	ToolParameters,
 	ToolContext,
 	ToolErrorResult,
