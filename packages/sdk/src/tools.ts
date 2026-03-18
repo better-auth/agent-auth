@@ -40,12 +40,12 @@ export interface AgentAuthTool {
  */
 export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
   return [
-    // ── Discovery (optional — skip if you already know the provider) ──
+    // ── Search (primary entry point) ──
 
     {
-      name: "list_providers",
+      name: "search",
       description:
-        "OPTIONAL. Lists known providers. Pass a query to filter by name, description, or cached capabilities — returns only matching providers with their matching capabilities. Skip this entirely if you already know the provider name or URL — go straight to connect_agent.",
+        "Search for capabilities across all providers. Returns ranked results from local cache and the registry. Each result includes provider info so you can go straight to connect_agent. This is the recommended starting point — use it instead of listing/searching providers individually.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -53,19 +53,39 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
           query: {
             type: "string",
             description:
-              "Filter providers by name, description, or cached capabilities (e.g. 'email', 'deploy'). Omit to list all.",
+              "What you want to do (e.g. 'send email', 'deploy app', 'list repos')",
+          },
+          limit: {
+            type: "number",
+            description: "Max results to return (default 10)",
           },
         },
+        required: ["query"],
       },
       async execute(args) {
-        return client.listProviders(args.query as string | undefined);
+        return client.search(args.query as string, {
+          limit: args.limit as number | undefined,
+        });
+      },
+    },
+
+    // ── Discovery (fallback — only needed for edge cases) ──
+
+    {
+      name: "list_providers",
+      description:
+        "List all known providers. Only needed to see everything in the cache — prefer search for finding capabilities.",
+      annotations: { readOnlyHint: true },
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return client.listProviders();
       },
     },
 
     {
       name: "search_providers",
       description:
-        "OPTIONAL. Search registry by name or intent. Only needed when you don't know what providers exist.",
+        "Search the registry for providers by name or intent. Only needed when search returns no results and you want to discover new providers explicitly.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -86,7 +106,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "discover_provider",
       description:
-        "OPTIONAL. Look up a provider by URL. Only needed if the provider isn't already known.",
+        "Look up a provider by URL. Only needed if you have a specific URL that isn't in the registry.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -105,37 +125,9 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     },
 
     {
-      name: "search_capabilities",
-      description:
-        "Search cached capabilities across ALL known providers by name or intent. Returns matches with provider info so you can go straight to connect_agent. Only searches locally cached data — call list_capabilities first if the cache is empty.",
-      annotations: { readOnlyHint: true },
-      parameters: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description:
-              "Search query — text (e.g. 'send email'), glob (e.g. 'email.*'), or regex (e.g. '/^email/')",
-          },
-        },
-        required: ["query"],
-      },
-      async execute(args) {
-        const results = await client.searchCapabilities(args.query as string);
-        if (results.length === 0) {
-          return {
-            capabilities: [],
-            hint: "No cached capabilities matched. Use search_providers + list_capabilities to discover and cache them first.",
-          };
-        }
-        return { capabilities: results };
-      },
-    },
-
-    {
       name: "list_capabilities",
       description:
-        "OPTIONAL. Browse a provider's capabilities. Skip if you already know the capability names — go straight to connect_agent then execute_capability.",
+        "Browse all capabilities for a specific provider. Use when you need the full list or need to paginate. Prefer search for finding capabilities by intent.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",

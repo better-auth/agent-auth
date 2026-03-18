@@ -104,50 +104,15 @@ export class AgentAuthClient {
 
   /**
    * List providers — §7.1.1.
-   *
-   * When called without a query, returns all cached providers.
-   * When a query is provided, filters to providers whose name,
-   * description, or cached capabilities match, and includes
-   * the matching capabilities in the result.
+   * Returns all providers the client has discovered or been pre-configured with.
    */
-  async listProviders(query?: string): Promise<ProviderInfo[]> {
+  async listProviders(): Promise<ProviderInfo[]> {
     const configs = await this.storage.listProviderConfigs();
-
-    if (!query) {
-      return configs.map((c) => ({
-        name: c.provider_name,
-        description: c.description,
-        issuer: c.issuer,
-      }));
-    }
-
-    const results: ProviderInfo[] = [];
-
-    for (const config of configs) {
-      const capMatches = config.capabilities?.length
-        ? matchQuery(query, config.capabilities)
-        : [];
-
-      const providerTextMatches = matchQuery(query, [
-        { name: config.provider_name, description: config.description },
-      ]);
-
-      if (capMatches.length > 0 || providerTextMatches.length > 0) {
-        results.push({
-          name: config.provider_name,
-          description: config.description,
-          issuer: config.issuer,
-          ...(capMatches.length > 0 && {
-            matched_capabilities: capMatches.map((c) => ({
-              name: c.name,
-              description: c.description,
-            })),
-          }),
-        });
-      }
-    }
-
-    return results;
+    return configs.map((c) => ({
+      name: c.provider_name,
+      description: c.description,
+      issuer: c.issuer,
+    }));
   }
 
   /**
@@ -331,31 +296,79 @@ export class AgentAuthClient {
   }
 
   /**
-   * Search cached capabilities across all known providers.
+   * Unified capability search — searches local cache first, then the
+   * registry if configured. Returns a flat, ranked list of capabilities
+   * from any provider, each tagged with its provider identity.
    *
-   * Returns capabilities enriched with `provider` (name) and `issuer`
-   * so the caller knows which provider to connect to. Supports glob,
-   * regex, and multi-term text search (same syntax as list_capabilities query).
-   *
-   * Only searches locally cached data — no network requests. Capabilities
-   * are cached automatically when `listCapabilities` is called.
+   * Results are ranked by:
+   *  1. Previously connected providers (boosted)
+   *  2. Cached providers the client already knows about
+   *  3. New providers discovered from the registry
+   *  4. Within each tier, `matchQuery` relevance score
    */
-  async searchCapabilities(
+  async search(
     query: string,
+    opts?: { limit?: number },
   ): Promise<CapabilitySearchResult[]> {
-    const configs = await this.storage.listProviderConfigs();
-    const results: CapabilitySearchResult[] = [];
+    const limit = opts?.limit ?? 10;
+    const connectedIssuers = new Set(
+      (await this.storage.listAgentConnections()).map((c) => c.issuer),
+    );
+    const scored: Array<{ cap: CapabilitySearchResult; boost: number }> = [];
 
-    for (const config of configs) {
-      if (!config.capabilities?.length) continue;
+    const scoreConfig = (config: ProviderConfig, source: "cache" | "registry") => {
+      if (!config.capabilities?.length) return;
       const matched = matchQuery(query, config.capabilities);
-      for (const cap of matched) {
-        results.push({
-          ...cap,
-          provider: config.provider_name,
-          issuer: config.issuer,
+      for (let i = 0; i < matched.length; i++) {
+        const relevance = matched.length - i;
+        let boost = relevance;
+        if (connectedIssuers.has(config.issuer)) boost += 1000;
+        else if (source === "cache") boost += 500;
+        scored.push({
+          cap: {
+            ...matched[i],
+            provider: config.provider_name,
+            issuer: config.issuer,
+          },
+          boost,
         });
       }
+    };
+
+    const cachedConfigs = await this.storage.listProviderConfigs();
+    for (const config of cachedConfigs) {
+      scoreConfig(config, "cache");
+    }
+
+    if (scored.length < limit && this.registryUrl) {
+      try {
+        const registryConfigs = await searchRegistryFull(
+          this.registryUrl,
+          query,
+          { fetchFn: this.fetchFn },
+        );
+        const cachedIssuers = new Set(cachedConfigs.map((c) => c.issuer));
+        for (const config of registryConfigs) {
+          await this.storage.setProviderConfig(config.issuer, config);
+          if (!cachedIssuers.has(config.issuer)) {
+            scoreConfig(config, "registry");
+          }
+        }
+      } catch {
+        // Registry unavailable — return cache-only results
+      }
+    }
+
+    scored.sort((a, b) => b.boost - a.boost);
+
+    const seen = new Set<string>();
+    const results: CapabilitySearchResult[] = [];
+    for (const { cap } of scored) {
+      const key = `${cap.issuer}:${cap.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push(cap);
+      if (results.length >= limit) break;
     }
 
     return results;

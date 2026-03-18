@@ -316,8 +316,6 @@ export interface ProviderInfo {
 	name: string;
 	description: string;
 	issuer?: string;
-	/** When a query is provided, the cached capabilities that matched. */
-	matched_capabilities?: Array<{ name: string; description: string }>;
 }
 
 /** Options for creating the AgentAuthClient. */
