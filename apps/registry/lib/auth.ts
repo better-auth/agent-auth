@@ -49,7 +49,12 @@ export const auth = betterAuth({
       consentPage: "/consent",
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
-      validAudiences: [BASE_URL, `${BASE_URL}/`],
+      // RFC 8707 — resource indicator sent by MCP clients during token exchange
+      validAudiences: [
+        BASE_URL,
+        `${BASE_URL}/`,
+        `${new URL(BASE_URL).origin}/api/mcp`,
+      ],
     }),
   ],
   trustedOrigins: ["chrome-extension://"],
