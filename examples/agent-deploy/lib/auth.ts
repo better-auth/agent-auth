@@ -152,6 +152,13 @@ const capabilities: Capability[] = [
 ];
 
 const READ_ONLY_CAPABILITIES = ["sites.list", "sites.get"];
+const AUTONOMOUS_CAPABILITIES = [
+  "sites.list",
+  "sites.get",
+  "sites.create",
+  "sites.update",
+  "sites.delete",
+];
 
 function siteUrl(slug: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3100";
@@ -172,7 +179,8 @@ export const auth = betterAuth({
       providerDescription:
         "A deployment platform for HTML sites. AI agents can create, update, and manage static HTML deployments through capability-based authentication.",
       capabilities,
-      defaultHostCapabilities: READ_ONLY_CAPABILITIES,
+      defaultHostCapabilities: ({ mode }) =>
+        mode === "autonomous" ? AUTONOMOUS_CAPABILITIES : READ_ONLY_CAPABILITIES,
       modes: ["delegated", "autonomous"],
       approvalMethods: ["ciba", "device_authorization"],
       allowDynamicHostRegistration: true,

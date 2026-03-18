@@ -866,5 +866,9 @@ export const auth = betterAuth({
       },
     }),
   ],
-  trustedOrigins: ["chrome-extension://"],
+  trustedOrigins: (request) => {
+    const origin = request?.headers?.get("origin") ?? "";
+    if (origin.startsWith("chrome-extension://")) return [origin];
+    return [];
+  },
 });
