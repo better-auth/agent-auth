@@ -3,19 +3,19 @@ import { APIError } from "@better-auth/core/error";
 import * as z from "zod";
 import { TABLE } from "../constants";
 import {
-	agentError,
-	agentAuthChallenge,
-	AGENT_AUTH_ERROR_CODES as ERR,
+  agentError,
+  agentAuthChallenge,
+  AGENT_AUTH_ERROR_CODES as ERR,
 } from "../errors";
 import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
 import { validateConstraints } from "../utils/constraints";
 import type {
-	AgentCapabilityGrant,
-	AgentSession,
-	Capability,
-	ConstraintPrimitive,
-	ResolvedAgentAuthOptions,
+  AgentCapabilityGrant,
+  AgentSession,
+  Capability,
+  ConstraintPrimitive,
+  ResolvedAgentAuthOptions,
 } from "../types";
 
 const MAX_BATCH_SIZE = 50;
@@ -26,33 +26,33 @@ const DEFAULT_CONCURRENCY = 20;
  * Returns results in the same order as the input.
  */
 async function pMap<T, R>(
-	items: T[],
-	fn: (item: T, index: number) => Promise<R>,
-	concurrency: number,
+  items: T[],
+  fn: (item: T, index: number) => Promise<R>,
+  concurrency: number,
 ): Promise<R[]> {
-	const results: R[] = new Array(items.length);
-	let nextIndex = 0;
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
 
-	async function worker() {
-		while (nextIndex < items.length) {
-			const i = nextIndex++;
-			results[i] = await fn(items[i], i);
-		}
-	}
+  async function worker() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await fn(items[i], i);
+    }
+  }
 
-	const workers = Array.from(
-		{ length: Math.min(concurrency, items.length) },
-		() => worker(),
-	);
-	await Promise.all(workers);
-	return results;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 export interface BatchResponseItem {
-	id: string;
-	status: "completed" | "failed";
-	data?: unknown;
-	error?: { code?: string; message?: string };
+  id: string;
+  status: "completed" | "failed";
+  data?: unknown;
+  error?: { code?: string; message?: string };
 }
 
 /**
@@ -67,235 +67,238 @@ export interface BatchResponseItem {
  * individual requests that return them will receive an error.
  */
 export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
-	return createAuthEndpoint(
-		"/capability/batch-execute",
-		{
-			method: "POST",
-			body: z.object({
-				requests: z.array(
-					z.object({
-						id: z.string().optional(),
-						capability: z.string(),
-						arguments: z.record(z.string(), z.unknown()).optional(),
-					}),
-				).min(1).max(MAX_BATCH_SIZE),
-			}),
-			requireHeaders: true,
-			metadata: {
-				openapi: {
-					description:
-						"Execute multiple granted capabilities in a single batch request.",
-				},
-			},
-		},
-		async (ctx) => {
-			const agentSession = (ctx.context as Record<string, unknown>)
-				.agentSession as AgentSession | undefined;
+  return createAuthEndpoint(
+    "/capability/batch-execute",
+    {
+      method: "POST",
+      body: z.object({
+        requests: z
+          .array(
+            z.object({
+              id: z.string().optional(),
+              capability: z.string(),
+              arguments: z.record(z.string(), z.unknown()).optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_BATCH_SIZE),
+      }),
+      requireHeaders: true,
+      metadata: {
+        openapi: {
+          description:
+            "Execute multiple granted capabilities in a single batch request.",
+        },
+      },
+    },
+    async (ctx) => {
+      const agentSession = (ctx.context as Record<string, unknown>)
+        .agentSession as AgentSession | undefined;
 
-			if (!agentSession) {
-				throw agentError(
-					"UNAUTHORIZED",
-					ERR.UNAUTHORIZED_SESSION,
-					undefined,
-					agentAuthChallenge(ctx.context.baseURL),
-				);
-			}
+      if (!agentSession) {
+        throw agentError(
+          "UNAUTHORIZED",
+          ERR.UNAUTHORIZED_SESSION,
+          undefined,
+          agentAuthChallenge(ctx.context.baseURL),
+        );
+      }
 
-			if (!opts.onExecute) {
-				throw agentError("INTERNAL_SERVER_ERROR", ERR.EXECUTE_NOT_CONFIGURED);
-			}
+      if (!opts.onExecute) {
+        throw agentError("INTERNAL_SERVER_ERROR", ERR.EXECUTE_NOT_CONFIGURED);
+      }
 
-			const requests = ctx.body.requests.map((r, i) => ({
-				...r,
-				id: r.id ?? String(i),
-			}));
+      const requests = ctx.body.requests.map((r, i) => ({
+        ...r,
+        id: r.id ?? String(i),
+      }));
 
-			const allCapabilities = opts.capabilities ?? [];
-			const capDefMap = new Map<string, Capability>();
-			for (const cap of allCapabilities) {
-				capDefMap.set(cap.name, cap);
-			}
+      const allCapabilities = opts.capabilities ?? [];
+      const capDefMap = new Map<string, Capability>();
+      for (const cap of allCapabilities) {
+        capDefMap.set(cap.name, cap);
+      }
 
-			const sessionGrantMap = new Map(
-				agentSession.agent.capabilityGrants.map((g) => [g.capability, g]),
-			);
+      const sessionGrantMap = new Map(
+        agentSession.agent.capabilityGrants.map((g) => [g.capability, g]),
+      );
 
-			const uniqueCapNames = [...new Set(requests.map((r) => r.capability))];
-			const dbGrantMap = new Map<string, AgentCapabilityGrant>();
-			const now = new Date();
+      const uniqueCapNames = [...new Set(requests.map((r) => r.capability))];
+      const dbGrantMap = new Map<string, AgentCapabilityGrant>();
+      const now = new Date();
 
-			for (const capName of uniqueCapNames) {
-				const grants =
-					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-						model: TABLE.grant,
-						where: [
-							{ field: "agentId", value: agentSession.agent.id },
-							{ field: "capability", value: capName },
-						],
-					});
-				const active = grants.find(
-					(g) =>
-						g.status === "active" &&
-						(!g.expiresAt || new Date(g.expiresAt) > now),
-				);
-				if (active) {
-					dbGrantMap.set(capName, active);
-				}
-			}
+      for (const capName of uniqueCapNames) {
+        const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>(
+          {
+            model: TABLE.grant,
+            where: [
+              { field: "agentId", value: agentSession.agent.id },
+              { field: "capability", value: capName },
+            ],
+          },
+        );
+        const active = grants.find(
+          (g) =>
+            g.status === "active" &&
+            (!g.expiresAt || new Date(g.expiresAt) > now),
+        );
+        if (active) {
+          dbGrantMap.set(capName, active);
+        }
+      }
 
-			const onExecute = opts.onExecute;
+      const onExecute = opts.onExecute;
 
-			const responses = await pMap(
-				requests,
-				async (req): Promise<BatchResponseItem> => {
-					const capDef = capDefMap.get(req.capability);
-					if (!capDef) {
-						return {
-							id: req.id,
-							status: "failed",
-							error: {
-								code: ERR.CAPABILITY_NOT_FOUND.code,
-								message: `Capability "${req.capability}" does not exist.`,
-							},
-						};
-					}
+      const responses = await pMap(
+        requests,
+        async (req): Promise<BatchResponseItem> => {
+          const capDef = capDefMap.get(req.capability);
+          if (!capDef) {
+            return {
+              id: req.id,
+              status: "failed",
+              error: {
+                code: ERR.CAPABILITY_NOT_FOUND.code,
+                message: `Capability "${req.capability}" does not exist.`,
+              },
+            };
+          }
 
-					if (!sessionGrantMap.has(req.capability)) {
-						return {
-							id: req.id,
-							status: "failed",
-							error: {
-								code: ERR.CAPABILITY_NOT_GRANTED.code,
-								message: `Agent does not have an active grant for capability "${req.capability}".`,
-							},
-						};
-					}
+          if (!sessionGrantMap.has(req.capability)) {
+            return {
+              id: req.id,
+              status: "failed",
+              error: {
+                code: ERR.CAPABILITY_NOT_GRANTED.code,
+                message: `Agent does not have an active grant for capability "${req.capability}".`,
+              },
+            };
+          }
 
-					const activeGrant = dbGrantMap.get(req.capability);
-					if (!activeGrant) {
-						return {
-							id: req.id,
-							status: "failed",
-							error: {
-								code: ERR.CAPABILITY_NOT_GRANTED.code,
-								message: `Agent does not have an active grant for capability "${req.capability}".`,
-							},
-						};
-					}
+          const activeGrant = dbGrantMap.get(req.capability);
+          if (!activeGrant) {
+            return {
+              id: req.id,
+              status: "failed",
+              error: {
+                code: ERR.CAPABILITY_NOT_GRANTED.code,
+                message: `Agent does not have an active grant for capability "${req.capability}".`,
+              },
+            };
+          }
 
-					if (activeGrant.constraints) {
-						const constraintArgs = (req.arguments ?? {}) as Record<
-							string,
-							ConstraintPrimitive | undefined
-						>;
-						const validation = validateConstraints(
-							activeGrant.constraints,
-							constraintArgs,
-						);
-						if (validation.unknownOperators.length > 0) {
-							return {
-								id: req.id,
-								status: "failed",
-								error: {
-									code: ERR.UNKNOWN_CONSTRAINT_OPERATOR.code,
-									message: ERR.UNKNOWN_CONSTRAINT_OPERATOR.message,
-								},
-							};
-						}
-						if (validation.violations.length > 0) {
-							return {
-								id: req.id,
-								status: "failed",
-								error: {
-									code: ERR.CONSTRAINT_VIOLATED.code,
-									message: ERR.CONSTRAINT_VIOLATED.message,
-								},
-							};
-						}
-					}
+          if (activeGrant.constraints) {
+            const constraintArgs = (req.arguments ?? {}) as Record<
+              string,
+              ConstraintPrimitive | undefined
+            >;
+            const validation = validateConstraints(
+              activeGrant.constraints,
+              constraintArgs,
+            );
+            if (validation.unknownOperators.length > 0) {
+              return {
+                id: req.id,
+                status: "failed",
+                error: {
+                  code: ERR.UNKNOWN_CONSTRAINT_OPERATOR.code,
+                  message: ERR.UNKNOWN_CONSTRAINT_OPERATOR.message,
+                },
+              };
+            }
+            if (validation.violations.length > 0) {
+              return {
+                id: req.id,
+                status: "failed",
+                error: {
+                  code: ERR.CONSTRAINT_VIOLATED.code,
+                  message: ERR.CONSTRAINT_VIOLATED.message,
+                },
+              };
+            }
+          }
 
-					const startTime = Date.now();
-					let result: unknown;
+          const startTime = Date.now();
+          let result: unknown;
 
-					try {
-						result = await onExecute({
-							ctx,
-							capability: req.capability,
-							capabilityDef: capDef,
-							arguments: req.arguments,
-							agentSession,
-						});
-					} catch (err) {
-						const execError =
-							err instanceof Error ? err.message : String(err);
-						const durationMs = Date.now() - startTime;
+          try {
+            result = await onExecute({
+              ctx,
+              capability: req.capability,
+              capabilityDef: capDef,
+              arguments: req.arguments,
+              agentSession,
+            });
+          } catch (err) {
+            const execError = err instanceof Error ? err.message : String(err);
+            const durationMs = Date.now() - startTime;
 
-						emit(
-							opts,
-							{
-								type: "capability.executed",
-								capability: req.capability,
-								agentId: agentSession.agent.id,
-								hostId: agentSession.agent.hostId,
-								userId: agentSession.host?.userId ?? undefined,
-								agentName: agentSession.agent.name,
-								arguments: req.arguments,
-								status: "error",
-								error: execError,
-								durationMs,
-							},
-							ctx,
-						);
+            emit(
+              opts,
+              {
+                type: "capability.executed",
+                capability: req.capability,
+                agentId: agentSession.agent.id,
+                hostId: agentSession.agent.hostId,
+                userId: agentSession.host?.userId ?? undefined,
+                agentName: agentSession.agent.name,
+                arguments: req.arguments,
+                status: "error",
+                error: execError,
+                durationMs,
+              },
+              ctx,
+            );
 
-						const code =
-							err instanceof APIError
-								? ((err as APIError).body as Record<string, string>)?.error ??
-									"internal_error"
-								: "internal_error";
+            const code =
+              err instanceof APIError
+                ? (((err as APIError).body as Record<string, string>)?.error ??
+                  "internal_error")
+                : "internal_error";
 
-						return {
-							id: req.id,
-							status: "failed",
-							error: { code, message: execError },
-						};
-					}
+            return {
+              id: req.id,
+              status: "failed",
+              error: { code, message: execError },
+            };
+          }
 
-					const durationMs = Date.now() - startTime;
+          const durationMs = Date.now() - startTime;
 
-					emit(
-						opts,
-						{
-							type: "capability.executed",
-							capability: req.capability,
-							agentId: agentSession.agent.id,
-							hostId: agentSession.agent.hostId,
-							userId: agentSession.host?.userId ?? undefined,
-							agentName: agentSession.agent.name,
-							arguments: req.arguments,
-							status: "success",
-							durationMs,
-						},
-						ctx,
-					);
+          emit(
+            opts,
+            {
+              type: "capability.executed",
+              capability: req.capability,
+              agentId: agentSession.agent.id,
+              hostId: agentSession.agent.hostId,
+              userId: agentSession.host?.userId ?? undefined,
+              agentName: agentSession.agent.name,
+              arguments: req.arguments,
+              status: "success",
+              durationMs,
+            },
+            ctx,
+          );
 
-					if (isAsyncResult(result) || isStreamResult(result)) {
-						return {
-							id: req.id,
-							status: "failed",
-							error: {
-								code: "batch_unsupported_result_type",
-								message:
-									"Async and streaming results are not supported in batch mode. Execute this capability individually.",
-							},
-						};
-					}
+          if (isAsyncResult(result) || isStreamResult(result)) {
+            return {
+              id: req.id,
+              status: "failed",
+              error: {
+                code: "batch_unsupported_result_type",
+                message:
+                  "Async and streaming results are not supported in batch mode. Execute this capability individually.",
+              },
+            };
+          }
 
-					return { id: req.id, status: "completed", data: result };
-				},
-				DEFAULT_CONCURRENCY,
-			);
+          return { id: req.id, status: "completed", data: result };
+        },
+        DEFAULT_CONCURRENCY,
+      );
 
-			return ctx.json({ responses });
-		},
-	);
+      return ctx.json({ responses });
+    },
+  );
 }
