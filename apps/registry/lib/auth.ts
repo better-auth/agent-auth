@@ -57,7 +57,11 @@ export const auth = betterAuth({
       ],
     }),
   ],
-  trustedOrigins: ["chrome-extension://"],
+  trustedOrigins: [
+    "chrome-extension://",
+    "https://claude.ai",
+    "https://api.anthropic.com",
+  ],
 });
 
 export type Auth = typeof auth;
