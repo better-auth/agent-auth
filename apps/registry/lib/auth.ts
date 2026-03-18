@@ -55,6 +55,9 @@ export const auth = betterAuth({
         `${BASE_URL}/`,
         `${new URL(BASE_URL).origin}/api/mcp`,
       ],
+      rateLimit: {
+        register: { window: 60, max: 50 },
+      },
     }),
   ],
   trustedOrigins: [
