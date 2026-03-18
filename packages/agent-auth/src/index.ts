@@ -164,6 +164,7 @@ export const agentAuth = (options?: AgentAuthOptions) => {
 			listCapabilities: routes.listCapabilities,
 			describeCapability: routes.describeCapability,
 			executeCapability: routes.executeCapability,
+			batchExecuteCapability: routes.batchExecuteCapability,
 			agentStatus: routes.agentStatus,
 			introspect: routes.introspect,
 			grantCapability: routes.grantCapability,

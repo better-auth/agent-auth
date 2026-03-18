@@ -52,6 +52,33 @@ export interface Capability {
 	[key: string]: unknown;
 }
 
+/** A single request within a batch execute call. */
+export interface BatchExecuteRequest {
+	/** Client-assigned ID for correlating responses. Auto-generated if omitted. */
+	id?: string;
+	/** Capability to execute. */
+	capability: string;
+	/** Arguments for the capability. */
+	arguments?: Record<string, unknown>;
+}
+
+/** A single response item within a batch execute result. */
+export interface BatchExecuteResponseItem {
+	/** Correlation ID matching the request. */
+	id: string;
+	/** Whether this individual request succeeded or failed. */
+	status: "completed" | "failed";
+	/** Result data (when status is "completed"). */
+	data?: unknown;
+	/** Error details (when status is "failed"). */
+	error?: { code?: string; message?: string };
+}
+
+/** Response from POST /capability/batch-execute. */
+export interface BatchExecuteResponse {
+	responses: BatchExecuteResponseItem[];
+}
+
 /** Response from POST /capabilities/execute (§6.11). */
 export interface ExecuteCapabilityResponse {
 	/** Sync result payload. */

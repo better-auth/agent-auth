@@ -28,6 +28,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 				register: "/agent/register",
 				capabilities: "/capability/list",
 				execute: "/capability/execute",
+				batch_execute: "/capability/batch-execute",
 				request_capability: "/agent/request-capability",
 				status: "/agent/status",
 				revoke: "/agent/revoke",

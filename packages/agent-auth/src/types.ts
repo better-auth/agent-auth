@@ -310,6 +310,7 @@ export type AgentAuthPath =
 	| "/host/switch-account"
 	| "/host/update"
 	| "/host/rotate-key"
+	| "/capability/batch-execute"
 	| "/agent/ciba/authorize"
 	| "/agent/ciba/pending";
 

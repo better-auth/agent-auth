@@ -8,6 +8,9 @@ import type {
   AgentMode,
   AgentStatus,
   ApprovalInfo,
+  BatchExecuteRequest,
+  BatchExecuteResponse,
+  BatchExecuteResponseItem,
   CapabilitiesResponse,
   Capability,
   CapabilityGrant,
@@ -692,6 +695,140 @@ export class AgentAuthClient {
 		return body;
 	}
 
+	// ─── Batch Execute Capabilities ────────────────────────────
+
+	/**
+	 * Execute multiple capabilities in a single request.
+	 *
+	 * Signs one JWT scoped to all unique capabilities, groups requests
+	 * by execute location, and sends a batch to each. Falls back to
+	 * parallel individual calls if the server returns 404/405.
+	 */
+	async batchExecuteCapabilities(opts: {
+		agentId: string;
+		requests: BatchExecuteRequest[];
+	}): Promise<BatchExecuteResponse> {
+		if (opts.requests.length === 0) {
+			return { responses: [] };
+		}
+
+		const conn = await this.requireConnection(opts.agentId);
+		const config = await this.requireConfig(conn.issuer);
+
+		const normalizedRequests = opts.requests.map((r, i) => ({
+			...r,
+			id: r.id ?? String(i),
+		}));
+
+		const uniqueCaps = [
+			...new Set(normalizedRequests.map((r) => r.capability)),
+		];
+
+		const locationGroups = new Map<
+			string,
+			Array<{ id: string; capability: string; arguments?: Record<string, unknown> }>
+		>();
+
+		for (const req of normalizedRequests) {
+			const capLocation = this.resolveCapabilityLocationFromConfig(
+				config,
+				req.capability,
+			);
+			const executeLocation = this.resolveExecuteLocation(config, capLocation);
+			const group = locationGroups.get(executeLocation) ?? [];
+			group.push(req);
+			locationGroups.set(executeLocation, group);
+		}
+
+		const allResponses: BatchExecuteResponseItem[] = [];
+
+		for (const [location, groupRequests] of locationGroups) {
+			const groupCaps = [
+				...new Set(groupRequests.map((r) => r.capability)),
+			];
+
+			const token = await this.signJwt({
+				agentId: opts.agentId,
+				capabilities: groupCaps,
+				audience: location,
+			});
+
+			const batchEndpoint = this.resolveBatchEndpoint(config, location);
+
+			let useFallback = false;
+
+			try {
+				const res = await this.fetchFn(batchEndpoint, {
+					method: "POST",
+					headers: {
+						"content-type": "application/json",
+						authorization: `Bearer ${token.token}`,
+					},
+					body: JSON.stringify({ requests: groupRequests }),
+				});
+
+				if (res.status === 404 || res.status === 405) {
+					useFallback = true;
+				} else if (!res.ok) {
+					throw await this.toError(res);
+				} else {
+					const body = (await res.json()) as BatchExecuteResponse;
+					allResponses.push(...body.responses);
+				}
+			} catch (err) {
+				if (useFallback || (err instanceof AgentAuthSDKError && (err.status === 404 || err.status === 405))) {
+					useFallback = true;
+				} else {
+					throw err;
+				}
+			}
+
+			if (useFallback) {
+				const results = await Promise.allSettled(
+					groupRequests.map(async (req) => {
+						const result = await this.executeCapability({
+							agentId: opts.agentId,
+							capability: req.capability,
+							arguments: req.arguments,
+						});
+						return { id: req.id, result };
+					}),
+				);
+
+				for (const settled of results) {
+					if (settled.status === "fulfilled") {
+						const { id, result } = settled.value;
+						allResponses.push({
+							id,
+							status: "completed",
+							data: result.data,
+						});
+					} else {
+						const err = settled.reason;
+						const id =
+							groupRequests[results.indexOf(settled)]?.id ?? "unknown";
+						allResponses.push({
+							id,
+							status: "failed",
+							error: {
+								code:
+									err instanceof AgentAuthSDKError
+										? err.code
+										: "internal_error",
+								message:
+									err instanceof Error
+										? err.message
+										: "Unknown error",
+							},
+						});
+					}
+				}
+			}
+		}
+
+		return { responses: allResponses };
+	}
+
 	// ─── Agent Key Rotation (§6.8) ──────────────────────────────
 
 	/**
@@ -1122,6 +1259,23 @@ export class AgentAuthClient {
 			if (cap?.location) return cap.location;
 		}
 		return undefined;
+	}
+
+	/**
+	 * Resolve the batch execute endpoint URL.
+	 *
+	 * Uses the discovery `batch_execute` endpoint if advertised,
+	 * otherwise derives it from the execute location by replacing
+	 * the path suffix.
+	 */
+	private resolveBatchEndpoint(
+		config: ProviderConfig,
+		executeLocation: string,
+	): string {
+		if (config.endpoints.batch_execute) {
+			return this.resolveEndpoint(config, "batch_execute", "/capability/batch-execute");
+		}
+		return this.resolveEndpoint(config, "batch_execute", "/capability/batch-execute");
 	}
 
 	private async waitForApproval(

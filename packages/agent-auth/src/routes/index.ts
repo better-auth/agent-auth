@@ -6,6 +6,7 @@ import { approveCapability } from "./approve-capability";
 import { cleanupAgents } from "./cleanup";
 import { describeCapability } from "./describe-capability";
 import { agentConfiguration } from "./discover";
+import { batchExecuteCapability } from "./batch-execute-capability";
 import { executeCapability } from "./execute-capability";
 import { getAgent } from "./get-agent";
 import { getAgentSession } from "./get-session";
@@ -47,6 +48,7 @@ export function createAgentRoutes(
 		listCapabilities: listCapabilities(opts), // §6.2
 		describeCapability: describeCapability(opts), // §6.2.1
 		executeCapability: executeCapability(opts), // §6.11
+		batchExecuteCapability: batchExecuteCapability(opts),
 		register: register(opts, jtiCache, jwksCache), // §6.3
 		requestCapability: requestCapability(opts), // §6.4
 		agentStatus: agentStatus(opts), // §6.5
