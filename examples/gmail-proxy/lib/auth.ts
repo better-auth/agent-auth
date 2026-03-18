@@ -490,6 +490,7 @@ export const auth = betterAuth({
     }),
     anonymous(),
     agentAuth({
+      allowDynamicHostRegistration: true,
       freshSessionWindow: () => {
         if (getSetting("freshSessionEnabled") !== "true") return 0;
         return parseInt(getSetting("freshSessionWindow") ?? "300", 10);

@@ -103,6 +103,7 @@ export default function DeviceCapabilities({
 		setActionState(action === "approve" ? "approving" : "denying");
 		try {
 			const body: Record<string, unknown> = { agent_id: agentId, action };
+			if (code) body.user_code = code;
 			if (action === "deny" && denyReason.trim()) {
 				body.reason = denyReason.trim();
 			}
