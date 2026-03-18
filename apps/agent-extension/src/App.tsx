@@ -40,7 +40,19 @@ export function App() {
 
 	useEffect(() => {
 		(async () => {
-			const accounts = await storage.getAccounts();
+			let accounts = await storage.getAccounts();
+			if (accounts.length === 0) {
+				try {
+					const result = await chrome.runtime.sendMessage({
+						type: "discover-accounts",
+					});
+					if (result?.discovered > 0) {
+						accounts = await storage.getAccounts();
+					}
+				} catch {
+					// Discovery unavailable
+				}
+			}
 			setAccountCount(accounts.length);
 			if (accounts.length === 0) {
 				setState("setup");

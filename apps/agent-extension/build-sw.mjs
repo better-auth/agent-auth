@@ -10,6 +10,9 @@ const ctx = await esbuild.context({
 	target: "chrome120",
 	define: {
 		"process.env.NODE_ENV": '"production"',
+		__REGISTRY_URL__: JSON.stringify(
+			process.env.REGISTRY_URL || "http://localhost:4200",
+		),
 	},
 });
 

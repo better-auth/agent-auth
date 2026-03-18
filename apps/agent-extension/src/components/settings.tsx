@@ -5,6 +5,7 @@ import {
 	Globe,
 	Loader2,
 	LogOut,
+	Radar,
 	Timer,
 	Trash2,
 } from "lucide-react";
@@ -122,6 +123,8 @@ export function SettingsPanel({
 	const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_SETTINGS);
 	const [accounts, setAccounts] = useState<StoredAuthAccount[]>([]);
 	const [primaryId, setPrimaryId] = useState<string | undefined>();
+	const [discovering, setDiscovering] = useState(false);
+	const [discoveryResult, setDiscoveryResult] = useState<string | null>(null);
 
 	const loadAccounts = useCallback(async () => {
 		const all = await storage.getAccounts();
@@ -129,6 +132,26 @@ export function SettingsPanel({
 		const primary = await storage.getPrimaryAccount();
 		setPrimaryId(primary?.id);
 	}, []);
+
+	const handleDiscover = useCallback(async () => {
+		setDiscovering(true);
+		setDiscoveryResult(null);
+		try {
+			const result = await chrome.runtime.sendMessage({
+				type: "discover-accounts",
+			});
+			await loadAccounts();
+			if (result?.discovered > 0) {
+				setDiscoveryResult(`Found ${result.discovered} new site${result.discovered > 1 ? "s" : ""}`);
+			} else {
+				setDiscoveryResult("No new sites found");
+			}
+		} catch {
+			setDiscoveryResult("Discovery failed");
+		}
+		setDiscovering(false);
+		setTimeout(() => setDiscoveryResult(null), 4000);
+	}, [loadAccounts]);
 
 	useEffect(() => {
 		loadAccounts();
@@ -171,10 +194,31 @@ export function SettingsPanel({
 						<label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
 							Connected Sites
 						</label>
-						<Button size="xs" variant="outline" onClick={onAddAccount}>
-							Add Site
-						</Button>
+						<div className="flex items-center gap-1.5">
+							<Button
+								size="xs"
+								variant="outline"
+								onClick={handleDiscover}
+								disabled={discovering}
+								title="Auto-discover sites you're signed in to"
+							>
+								{discovering ? (
+									<Loader2 className="h-3 w-3 animate-spin" />
+								) : (
+									<Radar className="h-3 w-3" />
+								)}
+								Discover
+							</Button>
+							<Button size="xs" variant="outline" onClick={onAddAccount}>
+								Add Site
+							</Button>
+						</div>
 					</div>
+					{discoveryResult && (
+						<p className="text-[11px] text-muted-foreground text-center py-1">
+							{discoveryResult}
+						</p>
+					)}
 					{accounts.length === 0 ? (
 						<div className="border border-dashed border-border rounded-sm py-6 text-center">
 							<Globe className="h-4 w-4 mx-auto mb-1.5 text-muted-foreground/30" />
