@@ -31,12 +31,12 @@ export interface AgentAuthTool {
  */
 export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
   return [
-    // ── Step 1: Find a provider ──
+    // ── One-time setup: Find provider → Connect ──
 
     {
       name: "list_providers",
       description:
-        "Step 1a — ALWAYS call this first. Lists providers that have already been discovered, connected, or pre-configured. Check here before searching or discovering. If the provider you need is already listed, skip straight to Step 2.",
+        "Lists providers already discovered or pre-configured. Call once at the start of a session to see what's available. If the provider you need is listed, go straight to connect_agent.",
       parameters: { type: "object", properties: {} },
       async execute() {
         return client.listProviders();
@@ -46,7 +46,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "search_providers",
       description:
-        "Step 1b: Search the registry for providers by name or intent. Call this when list_providers doesn't have what you need. Use the provider name (e.g. 'vercel', 'github') or describe what you want to do (e.g. 'deploy web apps'). Found providers are automatically cached so you can use them immediately.",
+        "Search the registry by name or intent. Only call if list_providers didn't return the provider you need. Found providers are cached automatically.",
       parameters: {
         type: "object",
         properties: {
@@ -66,7 +66,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "discover_provider",
       description:
-        "Look up a provider by URL. IMPORTANT: Do NOT call this alongside search_providers — always wait for search_providers results first. Only use this if BOTH list_providers and search_providers have already been called and neither returned the provider you need. When a registry is configured (default), this only resolves providers through the registry — it will NOT fetch from arbitrary URLs.",
+        "Look up a provider by URL. Only use if list_providers AND search_providers both failed to find the provider. Wait for search_providers results before calling this.",
       parameters: {
         type: "object",
         properties: {
@@ -83,12 +83,10 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       },
     },
 
-    // ── Step 2: Browse capabilities ──
-
     {
       name: "list_capabilities",
       description:
-        "Step 2: List capabilities offered by a provider. Call after discovering a provider to see what it offers before connecting an agent. Some providers require authentication — if you get an 'authentication_required' error, call connect_agent first, then retry with the agent_id. Each capability may include 'constrainable_fields' — use these to apply constraints when requesting capabilities (e.g. { name: 'send:email', constraints: { recipient_count: { max: 5 } } }).",
+        "List capabilities offered by a provider. Use to browse what a provider offers before connecting, or to check grant status after connecting. Each capability may include 'constrainable_fields' for applying constraints.",
       parameters: {
         type: "object",
         properties: {
@@ -159,12 +157,12 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       },
     },
 
-    // ── Step 3: Connect an agent ──
+    // ── Connect (call ONCE per provider) ──
 
     {
       name: "connect_agent",
       description:
-        "Step 3: Connect an agent to a provider. Reuses an existing identity if one is already active for this provider (requesting any missing capabilities automatically). Only creates a new agent if none exists or all are expired/revoked. Returns the agent_id you'll need for all subsequent operations. IMPORTANT: When requesting capabilities, apply constraints to limit scope to only what you need — check 'constrainable_fields' from list_capabilities. Example: [{ name: 'send:email', constraints: { recipient_count: { max: 10 } } }].",
+        "Connect to a provider. Call ONCE per provider — returns an agent_id. After that, use ONLY execute_capability with that agent_id. NEVER call connect_agent again for the same provider unless you got an explicit 'agent_not_found' or 'revoked' error from execute_capability. Existing connections are reused automatically. Apply constraints to limit scope when requesting capabilities.",
       parameters: {
         type: "object",
         properties: {
@@ -240,12 +238,12 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       },
     },
 
-    // ── Step 4: Use the agent ──
+    // ── Execute (main tool — use repeatedly after connecting) ──
 
     {
       name: "execute_capability",
       description:
-        "Step 4: Execute a capability on behalf of an agent. Requires an agent_id from connect_agent. Signs a scoped JWT and sends the request to the provider.",
+        "THE PRIMARY TOOL after connecting. Execute any capability using the agent_id from connect_agent. Call this as many times as needed — do NOT re-call connect_agent between executions. Each call signs a fresh JWT automatically.",
       parameters: {
         type: "object",
         properties: {
@@ -277,7 +275,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "agent_status",
       description:
-        "Check the status of an agent (active, pending, expired, revoked) and its capability grants. Requires an agent_id from connect_agent.",
+        "Check agent status and grants. Only call if execute_capability returned an error suggesting the agent may be inactive.",
       parameters: {
         type: "object",
         properties: {
@@ -296,7 +294,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "sign_jwt",
       description:
-        "Sign an agent JWT for manual authentication. Requires an agent_id from connect_agent. Usually not needed — execute_capability handles signing automatically. Set 'audience' to the target location URL for execution requests.",
+        "Sign an agent JWT manually. Rarely needed — execute_capability signs JWTs automatically. Only use for custom integrations that need a raw token.",
       parameters: {
         type: "object",
         properties: {
@@ -329,7 +327,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "request_capability",
       description:
-        "Request additional capabilities for an existing agent. Requires an agent_id from connect_agent. Apply constraints to limit scope — check 'constrainable_fields' from list_capabilities. Operators: eq, min, max, in, not_in. Example: [{ name: 'deploy', constraints: { environment: { in: ['preview'] } } }].",
+        "Request additional capabilities for an already-connected agent. Only call if execute_capability fails with 'capability_not_granted'. Do NOT use this to reconnect — use connect_agent for that.",
       parameters: {
         type: "object",
         properties: {
@@ -394,7 +392,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "disconnect_agent",
       description:
-        "Disconnect and revoke an agent. Requires an agent_id from connect_agent.",
+        "Disconnect and revoke an agent. Only call when explicitly asked to disconnect or when done with a provider permanently.",
       parameters: {
         type: "object",
         properties: {
@@ -414,7 +412,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "reactivate_agent",
       description:
-        "Reactivate an expired agent. Requires an agent_id from connect_agent.",
+        "Reactivate an expired agent. Only call if agent_status or execute_capability reports the agent is expired.",
       parameters: {
         type: "object",
         properties: {
