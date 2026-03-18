@@ -166,7 +166,6 @@ export function matchQuery(
 
 		let nameHits = 0;
 		let descHits = 0;
-		let allFound = true;
 
 		for (const term of terms) {
 			const inName =
@@ -180,16 +179,13 @@ export function matchQuery(
 				nameHits++;
 			} else if (inDesc) {
 				descHits++;
-			} else {
-				allFound = false;
-				break;
 			}
 		}
 
-		if (!allFound) continue;
-
 		const score = nameHits * 2 + descHits;
-		scored.push({ cap, score });
+		if (score > 0) {
+			scored.push({ cap, score });
+		}
 	}
 
 	scored.sort((a, b) => b.score - a.score);
