@@ -50,6 +50,7 @@ interface GrantData {
 	reason?: string | null;
 	granted_by?: string | null;
 	expires_at?: string | null;
+	constraints?: Record<string, unknown> | null;
 }
 
 interface AgentData {
@@ -170,6 +171,8 @@ function AgentActivityLog({ agentId }: { agentId: string }) {
 				const isExpanded = expandedLog === log.id;
 				const category = log.type.split(".")[0];
 				const c = eventCategoryColors[category] ?? defaultEventColor;
+				const logConstraints = log.data?.constraints as Record<string, unknown> | null | undefined;
+				const hasConstraints = logConstraints && typeof logConstraints === "object" && Object.keys(logConstraints).length > 0;
 				return (
 					<button
 						key={log.id}
@@ -191,6 +194,21 @@ function AgentActivityLog({ agentId }: { agentId: string }) {
 							</div>
 							{log.data?.reason && (
 								<p className="text-[11px] text-muted italic mt-0.5 truncate">&ldquo;{String(log.data.reason)}&rdquo;</p>
+							)}
+							{hasConstraints && (
+								<div className="mt-1.5 flex flex-wrap gap-1">
+									{Object.entries(logConstraints!).map(([field, value]) => (
+										<span
+											key={field}
+											className="inline-flex items-center gap-1 rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] text-gmail-blue ring-1 ring-gmail-blue/15"
+										>
+											<svg className="h-2.5 w-2.5 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+												<path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+											</svg>
+											{formatConstraintValue(field, value)}
+										</span>
+									))}
+								</div>
 							)}
 						</div>
 						{isExpanded && log.data && (
@@ -217,22 +235,84 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
 	);
 }
 
+const FIELD_LABELS: Record<string, string> = {
+	to: "Recipients",
+	from: "Sender",
+	cc: "CC",
+	bcc: "BCC",
+	subject: "Subject",
+	body: "Body",
+	amount: "Amount",
+	url: "URL",
+	path: "Path",
+	method: "Method",
+};
+
+function formatConstraintValue(field: string, value: unknown): string {
+	const label = FIELD_LABELS[field.toLowerCase()] ?? field;
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return `${label}: ${String(value)}`;
+	}
+	const ops = value as Record<string, unknown>;
+	const parts: string[] = [];
+	if (ops.eq !== undefined) parts.push(`must be "${ops.eq}"`);
+	if (ops.in !== undefined && Array.isArray(ops.in)) {
+		const items = ops.in.map(String);
+		parts.push(items.length === 1 ? `limited to ${items[0]}` : `limited to ${items.join(", ")}`);
+	}
+	if (ops.not_in !== undefined && Array.isArray(ops.not_in)) {
+		const items = ops.not_in.map(String);
+		parts.push(items.length === 1 ? `excludes ${items[0]}` : `excludes ${items.join(", ")}`);
+	}
+	if (ops.max !== undefined && ops.min !== undefined) {
+		parts.push(`between ${ops.min} and ${ops.max}`);
+	} else {
+		if (ops.max !== undefined) parts.push(`at most ${ops.max}`);
+		if (ops.min !== undefined) parts.push(`at least ${ops.min}`);
+	}
+	return parts.length > 0 ? `${label} ${parts.join(", ")}` : `${label}: ${JSON.stringify(value)}`;
+}
+
+function ConstraintBadges({ constraints }: { constraints: Record<string, unknown> }) {
+	const entries = Object.entries(constraints);
+	if (entries.length === 0) return null;
+	return (
+		<div className="mt-1.5 ml-10 flex flex-wrap gap-1">
+			{entries.map(([field, value]) => (
+				<span
+					key={field}
+					className="inline-flex items-center gap-1 rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] text-gmail-blue ring-1 ring-gmail-blue/15"
+				>
+					<svg className="h-2.5 w-2.5 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+						<path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+					</svg>
+					{formatConstraintValue(field, value)}
+				</span>
+			))}
+		</div>
+	);
+}
+
 function CapabilityRow({ grant }: { grant: GrantData }) {
 	const c = statusColors[grant.status] ?? defaultStatusColor;
+	const hasConstraints = grant.constraints && Object.keys(grant.constraints).length > 0;
 	return (
-		<div className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-2.5 group transition-colors hover:bg-surface-hover">
-			<div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
-				<svg className={`h-3.5 w-3.5 ${c.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-					<path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-				</svg>
+		<div className="rounded-xl bg-surface px-3.5 py-2.5 group transition-colors hover:bg-surface-hover">
+			<div className="flex items-center gap-3">
+				<div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${c.bg}`}>
+					<svg className={`h-3.5 w-3.5 ${c.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+						<path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+					</svg>
+				</div>
+				<div className="flex-1 min-w-0">
+					<code className="text-[12px] font-mono text-foreground truncate block">{grant.capability}</code>
+					{grant.reason && (
+						<p className="text-[11px] text-muted italic truncate mt-0.5">&ldquo;{grant.reason}&rdquo;</p>
+					)}
+				</div>
+				<StatusBadge status={grant.status} />
 			</div>
-			<div className="flex-1 min-w-0">
-				<code className="text-[12px] font-mono text-foreground truncate block">{grant.capability}</code>
-				{grant.reason && (
-					<p className="text-[11px] text-muted italic truncate mt-0.5">&ldquo;{grant.reason}&rdquo;</p>
-				)}
-			</div>
-			<StatusBadge status={grant.status} />
+			{hasConstraints && <ConstraintBadges constraints={grant.constraints!} />}
 		</div>
 	);
 }
@@ -397,7 +477,7 @@ export default function AgentsPage() {
 												)}
 											</div>
 											<div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
-												<span>{activeGrants.length} capability{activeGrants.length !== 1 ? "ies" : "y"}</span>
+												<span>{activeGrants.length} capabilit{activeGrants.length !== 1 ? "ies" : "y"}</span>
 												{pendingGrants.length > 0 && (
 													<>
 														<span>·</span>
