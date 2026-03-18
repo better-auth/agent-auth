@@ -98,6 +98,14 @@ export function createUserStorage(sql: Sql, userId: string): Storage {
 			`;
 		},
 
+		async listAgentConnections(): Promise<AgentConnection[]> {
+			await init;
+			const rows = await sql`
+				SELECT data FROM aa_agent_connections WHERE user_id = ${userId}
+			`;
+			return rows.map((r) => r.data as AgentConnection);
+		},
+
 		async getProviderConfig(issuer: string): Promise<ProviderConfig | null> {
 			await init;
 			const rows = await sql`

@@ -218,6 +218,23 @@ export class FileStorage implements Storage {
     );
   }
 
+  async listAgentConnections(): Promise<AgentConnection[]> {
+    const files = this.listDir(path.join(this.dir, "agents"));
+    const result: AgentConnection[] = [];
+    for (const file of files) {
+      const stored = this.readJSON<AgentConnection & { agentKeypair: unknown }>(
+        path.join(this.dir, "agents", file),
+      );
+      if (stored) {
+        result.push({
+          ...stored,
+          agentKeypair: this.decryptKeypair(stored.agentKeypair),
+        } as AgentConnection);
+      }
+    }
+    return result;
+  }
+
   // ─── Provider Config ────────────────────────────────────────
 
   async getProviderConfig(issuer: string): Promise<ProviderConfig | null> {

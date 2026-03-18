@@ -42,6 +42,10 @@ export class MemoryStorage implements Storage {
 		this.agents.delete(agentId);
 	}
 
+	async listAgentConnections(): Promise<AgentConnection[]> {
+		return [...this.agents.values()];
+	}
+
 	async getProviderConfig(issuer: string): Promise<ProviderConfig | null> {
 		return this.providers.get(issuer) ?? null;
 	}

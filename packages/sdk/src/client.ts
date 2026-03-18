@@ -68,7 +68,7 @@ export class AgentAuthClient {
 	constructor(opts: AgentAuthClientOptions = {}) {
 		this.storage = opts.storage ?? new MemoryStorage();
 		this.fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
-		this.registryUrl = opts.registryUrl ?? null;
+		this.registryUrl = opts.registryUrl ?? "https://agent-auth.directory";
 		this.allowDirectDiscovery =
 			opts.allowDirectDiscovery ?? !this.registryUrl;
 		this.jwtExpirySeconds = opts.jwtExpirySeconds ?? 60;
@@ -296,6 +296,11 @@ export class AgentAuthClient {
 		capabilityGrants: CapabilityGrant[];
 	}> {
 		const config = await this.resolveConfig(opts.provider);
+
+		const existing = await this.findExistingConnection(config.issuer);
+		if (existing) {
+			return this.reuseExistingConnection(existing, config, opts);
+		}
 
 		const { regBody, host, agentKeypair } =
 			await this.registerAgent(config, opts);
@@ -818,6 +823,164 @@ export class AgentAuthClient {
 
 	// ─── Internals ──────────────────────────────────────────────
 
+	private resolveAgentName(): string {
+		const tool = detectTool();
+		if (tool) {
+			return this.hostName
+				? `${tool.name} on ${this.hostName}`
+				: tool.name;
+		}
+		if (this.hostName) return this.hostName;
+		return `agent-${Date.now()}`;
+	}
+
+	private async findExistingConnection(
+		issuer: string,
+	): Promise<AgentConnection | null> {
+		const all = await this.storage.listAgentConnections();
+		return all.find((c) => c.issuer === issuer) ?? null;
+	}
+
+	private async reuseExistingConnection(
+		conn: AgentConnection,
+		config: ProviderConfig,
+		opts: {
+			capabilities?: CapabilityRequestItem[];
+			reason?: string;
+			preferredMethod?: string;
+			loginHint?: string;
+			bindingMessage?: string;
+			signal?: AbortSignal;
+		},
+	): Promise<{
+		agentId: string;
+		hostId: string;
+		status: AgentStatus;
+		capabilityGrants: CapabilityGrant[];
+	}> {
+		let status: StatusResponse;
+		try {
+			status = await this.agentStatus(conn.agentId);
+		} catch {
+			await this.storage.deleteAgentConnection(conn.agentId);
+			return this.connectAgent({ ...opts, provider: config.issuer });
+		}
+
+		if (status.status === "revoked" || status.status === "rejected") {
+			await this.storage.deleteAgentConnection(conn.agentId);
+			return this.connectAgent({ ...opts, provider: config.issuer });
+		}
+
+		if (status.status === "expired") {
+			try {
+				const reactivated = await this.reactivateAgent(conn.agentId, {
+					signal: opts.signal,
+				});
+				return {
+					agentId: reactivated.agentId,
+					hostId: conn.hostId,
+					status: reactivated.status,
+					capabilityGrants: reactivated.capabilityGrants,
+				};
+			} catch {
+				await this.storage.deleteAgentConnection(conn.agentId);
+				return this.connectAgent({ ...opts, provider: config.issuer });
+			}
+		}
+
+		if (status.status === "pending") {
+			const host = await this.resolveHost();
+			const approval = await this.buildApprovalFromStatus(config, conn.agentId);
+			if (approval) {
+				const finalStatus = await this.waitForApproval(
+					config,
+					host,
+					conn.agentId,
+					approval,
+					{ signal: opts.signal },
+				);
+				conn.capabilityGrants = finalStatus.agent_capability_grants;
+				await this.storage.setAgentConnection(conn.agentId, conn);
+				return {
+					agentId: conn.agentId,
+					hostId: conn.hostId,
+					status: finalStatus.status,
+					capabilityGrants: finalStatus.agent_capability_grants,
+				};
+			}
+		}
+
+		if (opts.capabilities && opts.capabilities.length > 0) {
+			const grantedCaps = new Set(
+				status.agent_capability_grants
+					.filter((g) => g.status === "active")
+					.map((g) => g.capability),
+			);
+			const missingCaps = opts.capabilities.filter((c) => {
+				const name = typeof c === "string" ? c : c.name;
+				return !grantedCaps.has(name);
+			});
+
+			if (missingCaps.length > 0) {
+				try {
+					await this.requestCapability({
+						agentId: conn.agentId,
+						capabilities: missingCaps,
+						reason: opts.reason,
+						preferredMethod: opts.preferredMethod,
+						loginHint: opts.loginHint,
+						bindingMessage: opts.bindingMessage,
+						signal: opts.signal,
+					});
+				} catch {
+					// Best-effort — continue with existing grants
+				}
+			}
+		}
+
+		const updatedConn = await this.storage.getAgentConnection(conn.agentId);
+		return {
+			agentId: conn.agentId,
+			hostId: conn.hostId,
+			status: status.status,
+			capabilityGrants: updatedConn?.capabilityGrants ?? status.agent_capability_grants,
+		};
+	}
+
+	/**
+	 * Build approval info for a pending agent by requesting a new device code.
+	 */
+	private async buildApprovalFromStatus(
+		config: ProviderConfig,
+		agentId: string,
+	): Promise<ApprovalInfo | null> {
+		try {
+			const host = await this.requireHost();
+			const hostJWT = await signHostJWT({
+				hostKeypair: host.keypair,
+				audience: config.issuer,
+			});
+			const url = this.resolveEndpoint(
+				config,
+				"device_authorization",
+				"/device/code",
+			);
+			const res = await this.fetchFn(url, {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${hostJWT}`,
+				},
+				body: JSON.stringify({ agent_id: agentId }),
+			});
+			if (!res.ok) return null;
+			const body = (await res.json()) as ApprovalInfo;
+			return body;
+		} catch {
+			return null;
+		}
+	}
+
 	private async resolveConfig(providerOrUrl: string): Promise<ProviderConfig> {
 		const byIssuer = await this.storage.getProviderConfig(providerOrUrl);
 		if (byIssuer) return byIssuer;
@@ -865,7 +1028,7 @@ export class AgentAuthClient {
 
 		const buildBody = () => {
 			const body: Record<string, CapabilityRequestItem[] | string> = {
-				name: opts.name ?? `agent-${Date.now()}`,
+				name: opts.name ?? this.resolveAgentName(),
 				mode: opts.mode ?? "delegated",
 			};
 			if (opts.capabilities) body.capabilities = opts.capabilities;

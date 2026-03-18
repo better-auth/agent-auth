@@ -201,7 +201,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
           },
           name: {
             type: "string",
-            description: "Agent name",
+            description: "A descriptive agent name (e.g. 'Email Assistant', 'Code Review Bot'). Provide a clear, human-readable name — avoid generic names.",
           },
           reason: {
             type: "string",

@@ -269,6 +269,7 @@ export interface Storage {
 		conn: AgentConnection,
 	): Promise<void>;
 	deleteAgentConnection(agentId: string): Promise<void>;
+	listAgentConnections(): Promise<AgentConnection[]>;
 
 	getProviderConfig(issuer: string): Promise<ProviderConfig | null>;
 	setProviderConfig(
