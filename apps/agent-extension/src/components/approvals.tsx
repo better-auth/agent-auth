@@ -17,6 +17,26 @@ import { cn, formatRelativeTime, formatTimeLeft } from "@/lib/utils";
 
 const POLL_INTERVAL = 5000;
 
+function formatConstraintValue(value: unknown): string {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return String(value);
+	}
+	const ops = value as Record<string, unknown>;
+	const parts: string[] = [];
+	if (ops.eq !== undefined) parts.push(`${ops.eq}`);
+	if (ops.in !== undefined && Array.isArray(ops.in)) {
+		const items = ops.in.map(String);
+		parts.push(items.length === 1 ? `only ${items[0]}` : `only ${items.join(" or ")}`);
+	}
+	if (ops.not_in !== undefined && Array.isArray(ops.not_in)) {
+		const items = ops.not_in.map(String);
+		parts.push(`not ${items.join(" or ")}`);
+	}
+	if (ops.max !== undefined) parts.push(`at most ${ops.max}`);
+	if (ops.min !== undefined) parts.push(`at least ${ops.min}`);
+	return parts.join(", ") || JSON.stringify(value);
+}
+
 function RequestCard({
 	request,
 	onResponded,
@@ -165,23 +185,43 @@ function RequestCard({
 						</div>
 					)}
 
-					{request.capabilities.length > 0 && (
-						<div>
-							<p className="text-[11px] text-muted-foreground mb-1 uppercase tracking-wider font-medium">
-								Capabilities
-							</p>
-							<div className="flex flex-wrap gap-1">
-								{request.capabilities.map((s) => (
-									<span
-										key={s}
-										className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded-sm text-muted-foreground"
-									>
-										{s}
-									</span>
-								))}
-							</div>
+				{request.capabilities.length > 0 && (
+					<div>
+						<p className="text-[11px] text-muted-foreground mb-1 uppercase tracking-wider font-medium">
+							Capabilities
+						</p>
+						<div className="space-y-1.5">
+							{request.capabilities.map((cap) => {
+								const constraints = request.capability_constraints?.[cap];
+								const reason = request.capability_reasons?.[cap];
+								return (
+									<div key={cap}>
+										<span className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded-sm text-muted-foreground">
+											{cap}
+										</span>
+										{reason && (
+											<p className="mt-0.5 ml-1 text-[10px] text-muted-foreground/70 italic">
+												&ldquo;{reason}&rdquo;
+											</p>
+										)}
+										{constraints && Object.keys(constraints).length > 0 && (
+											<div className="mt-0.5 ml-1 flex flex-wrap gap-1">
+												{Object.entries(constraints).map(([field, value]) => (
+													<span
+														key={field}
+														className="inline-flex items-center text-[9px] font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-sm ring-1 ring-inset ring-blue-500/20"
+													>
+														{field}: {formatConstraintValue(value)}
+													</span>
+												))}
+											</div>
+										)}
+									</div>
+								);
+							})}
 						</div>
-					)}
+					</div>
+				)}
 
 					{request.binding_message && (
 						<div>

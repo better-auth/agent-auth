@@ -10,7 +10,7 @@ import {
 import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
 import { tryAutoGrantFromHostBudget } from "./_helpers";
-import { validateConstraints } from "../utils/constraints";
+import { validateConstraints, findMatchingGrant } from "../utils/constraints";
 import type {
   AgentCapabilityGrant,
   AgentSession,
@@ -79,6 +79,10 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
       // already narrowed capabilityGrants to that intersection. Check
       // for an existing grant first; if missing, try auto-granting from
       // the host's default budget before rejecting.
+      //
+      // An agent may hold multiple grants for the same capability with
+      // different constraint scopes, so we find the grant whose
+      // constraints actually allow the execution arguments.
       const sessionGrant = agentSession.agent.capabilityGrants.find(
         (g) => g.capability === capabilityName,
       );
@@ -95,11 +99,16 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
             ],
           });
         const now = new Date();
-        activeGrant = grants.find(
+        const activeGrants = grants.filter(
           (g) =>
             g.status === "active" &&
             (!g.expiresAt || new Date(g.expiresAt) > now),
         );
+        const constraintArgs = (args ?? {}) as Record<
+          string,
+          ConstraintPrimitive | undefined
+        >;
+        activeGrant = findMatchingGrant(activeGrants, constraintArgs);
       }
 
       if (!activeGrant) {

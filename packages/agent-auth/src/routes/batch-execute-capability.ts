@@ -10,7 +10,7 @@ import {
 import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
 import { tryAutoGrantFromHostBudget } from "./_helpers";
-import { validateConstraints } from "../utils/constraints";
+import { findMatchingGrant } from "../utils/constraints";
 import type {
   AgentCapabilityGrant,
   AgentSession,
@@ -125,7 +125,7 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
       );
 
       const uniqueCapNames = [...new Set(requests.map((r) => r.capability))];
-      const dbGrantMap = new Map<string, AgentCapabilityGrant>();
+      const dbGrantsMap = new Map<string, AgentCapabilityGrant[]>();
       const now = new Date();
 
       for (const capName of uniqueCapNames) {
@@ -138,19 +138,19 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
             ],
           },
         );
-        const active = grants.find(
+        const active = grants.filter(
           (g) =>
             g.status === "active" &&
             (!g.expiresAt || new Date(g.expiresAt) > now),
         );
-        if (active) {
-          dbGrantMap.set(capName, active);
+        if (active.length > 0) {
+          dbGrantsMap.set(capName, active);
         }
       }
 
       // Try auto-granting missing capabilities from host budget
       for (const capName of uniqueCapNames) {
-        if (dbGrantMap.has(capName)) continue;
+        if (dbGrantsMap.has(capName)) continue;
         const autoGranted = await tryAutoGrantFromHostBudget(
           ctx.context.adapter,
           opts,
@@ -163,7 +163,7 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
           },
         );
         if (autoGranted) {
-          dbGrantMap.set(capName, autoGranted);
+          dbGrantsMap.set(capName, [autoGranted]);
         }
       }
 
@@ -184,47 +184,28 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
             };
           }
 
-          const activeGrant = dbGrantMap.get(req.capability);
+          const capGrants = dbGrantsMap.get(req.capability);
+          const constraintArgs = (req.arguments ?? {}) as Record<
+            string,
+            ConstraintPrimitive | undefined
+          >;
+          const activeGrant = capGrants
+            ? findMatchingGrant(capGrants, constraintArgs)
+            : undefined;
           if (!activeGrant) {
+            const hasAnyGrant = capGrants && capGrants.length > 0;
             return {
               id: req.id,
               status: "failed",
               error: {
-                code: ERR.CAPABILITY_NOT_GRANTED.code,
-                message: `Agent does not have an active grant for capability "${req.capability}".`,
+                code: hasAnyGrant
+                  ? ERR.CONSTRAINT_VIOLATED.code
+                  : ERR.CAPABILITY_NOT_GRANTED.code,
+                message: hasAnyGrant
+                  ? `No grant for "${req.capability}" covers the provided arguments.`
+                  : `Agent does not have an active grant for capability "${req.capability}".`,
               },
             };
-          }
-
-          if (activeGrant.constraints) {
-            const constraintArgs = (req.arguments ?? {}) as Record<
-              string,
-              ConstraintPrimitive | undefined
-            >;
-            const validation = validateConstraints(
-              activeGrant.constraints,
-              constraintArgs,
-            );
-            if (validation.unknownOperators.length > 0) {
-              return {
-                id: req.id,
-                status: "failed",
-                error: {
-                  code: ERR.UNKNOWN_CONSTRAINT_OPERATOR.code,
-                  message: ERR.UNKNOWN_CONSTRAINT_OPERATOR.message,
-                },
-              };
-            }
-            if (validation.violations.length > 0) {
-              return {
-                id: req.id,
-                status: "failed",
-                error: {
-                  code: ERR.CONSTRAINT_VIOLATED.code,
-                  message: ERR.CONSTRAINT_VIOLATED.message,
-                },
-              };
-            }
           }
 
           const startTime = Date.now();
