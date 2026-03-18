@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 export const GET = async (req: Request) => {
 	const origin = new URL(req.url).origin;
 	const metadata = {
-		resource: `${origin}/api`,
+		resource: origin,
 		authorization_servers: [origin],
 	};
 	return new Response(JSON.stringify(metadata), {
