@@ -60,6 +60,68 @@ const capabilities: Capability[] = [
     },
   },
   {
+    name: "gmail.messages.listDetailed",
+    description:
+      "List messages with full details (subject, from, to, date, snippet, labels) in one call. Supports date range filtering and pagination. Much more efficient than listing IDs then fetching each.",
+    input: {
+      type: "object",
+      properties: {
+        q: {
+          type: "string",
+          description:
+            "Gmail search query (e.g. 'from:user@example.com is:unread'). Date filters from 'after'/'before' params are appended automatically.",
+        },
+        maxResults: {
+          type: "number",
+          description:
+            "Maximum number of messages to return with details (default 10, max 50)",
+        },
+        after: {
+          type: "string",
+          description:
+            "Only return messages after this date (ISO 8601 or YYYY/MM/DD, e.g. '2025-01-15')",
+        },
+        before: {
+          type: "string",
+          description:
+            "Only return messages before this date (ISO 8601 or YYYY/MM/DD, e.g. '2025-02-01')",
+        },
+        pageToken: {
+          type: "string",
+          description: "Page token for pagination (from previous response)",
+        },
+        labelIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Filter by label IDs",
+        },
+        format: {
+          type: "string",
+          description:
+            "Detail level: 'metadata' (headers + snippet, default), 'full' (includes body), 'minimal' (IDs + labels only)",
+        },
+      },
+    },
+    constrainable_fields: {
+      maxResults: {
+        type: "number",
+        description: "Constrain maximum results per request",
+        operators: ["max"],
+      },
+      q: {
+        type: "string",
+        description:
+          "Constrain search query (e.g. restrict to specific senders)",
+        operators: ["eq"],
+      },
+      format: {
+        type: "string",
+        description: "Restrict which format the agent can request",
+        operators: ["eq", "in"],
+      },
+    },
+  },
+  {
     name: "gmail.messages.get",
     description: "Get a specific message by ID, including full content",
     input: {
@@ -352,6 +414,7 @@ const capabilities: Capability[] = [
 
 const READ_ONLY_CAPABILITIES = [
   "gmail.messages.list",
+  "gmail.messages.listDetailed",
   "gmail.messages.get",
   "gmail.threads.list",
   "gmail.threads.get",
@@ -562,6 +625,110 @@ export const auth = betterAuth({
         );
 
         switch (capability) {
+          case "gmail.messages.listDetailed": {
+            const maxResults = Math.min(
+              Math.max(1, Number(args?.maxResults ?? 10)),
+              50,
+            );
+
+            const queryParts: string[] = [];
+            if (args?.q) queryParts.push(String(args.q));
+            if (args?.after) {
+              const d = new Date(args.after as string);
+              if (!isNaN(d.getTime()))
+                queryParts.push(
+                  `after:${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`,
+                );
+            }
+            if (args?.before) {
+              const d = new Date(args.before as string);
+              if (!isNaN(d.getTime()))
+                queryParts.push(
+                  `before:${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`,
+                );
+            }
+
+            const listParams = new URLSearchParams();
+            if (queryParts.length)
+              listParams.set("q", queryParts.join(" "));
+            listParams.set("maxResults", String(maxResults));
+            if (args?.pageToken)
+              listParams.set("pageToken", String(args.pageToken));
+            if (args?.labelIds) {
+              for (const l of args.labelIds as string[])
+                listParams.append("labelIds", l);
+            }
+
+            const listResult = (await gmailFetch(
+              token,
+              `/users/me/messages?${listParams}`,
+            )) as {
+              messages?: { id: string; threadId: string }[];
+              nextPageToken?: string;
+              resultSizeEstimate?: number;
+            };
+
+            if (!listResult.messages?.length) {
+              return {
+                messages: [],
+                nextPageToken: listResult.nextPageToken ?? null,
+                resultSizeEstimate: listResult.resultSizeEstimate ?? 0,
+              };
+            }
+
+            const format = String(args?.format ?? "metadata");
+            const details = await Promise.all(
+              listResult.messages.map((m) => {
+                const p = new URLSearchParams({ format });
+                return gmailFetch(
+                  token,
+                  `/users/me/messages/${m.id}?${p}`,
+                ) as Promise<{
+                  id: string;
+                  threadId: string;
+                  labelIds?: string[];
+                  snippet?: string;
+                  internalDate?: string;
+                  sizeEstimate?: number;
+                  payload?: {
+                    headers?: { name: string; value: string }[];
+                    [k: string]: unknown;
+                  };
+                  [k: string]: unknown;
+                }>;
+              }),
+            );
+
+            const messages = details.map((msg) => {
+              const headers = msg.payload?.headers ?? [];
+              const hdr = (name: string) =>
+                headers.find(
+                  (h) => h.name.toLowerCase() === name.toLowerCase(),
+                )?.value ?? null;
+
+              return {
+                id: msg.id,
+                threadId: msg.threadId,
+                labelIds: msg.labelIds ?? [],
+                snippet: msg.snippet ?? "",
+                from: hdr("From"),
+                to: hdr("To"),
+                cc: hdr("Cc"),
+                subject: hdr("Subject"),
+                date: hdr("Date"),
+                internalDate: msg.internalDate ?? null,
+                sizeEstimate: msg.sizeEstimate ?? null,
+                ...(format === "full" ? { payload: msg.payload } : {}),
+              };
+            });
+
+            return {
+              messages,
+              nextPageToken: listResult.nextPageToken ?? null,
+              resultSizeEstimate: listResult.resultSizeEstimate ?? 0,
+            };
+          }
+
           case "gmail.messages.list": {
             const params = new URLSearchParams();
             if (args?.q) params.set("q", String(args.q));

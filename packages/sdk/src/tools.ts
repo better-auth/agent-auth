@@ -45,7 +45,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "search",
       description:
-        "Search for capabilities across all providers. Returns ranked results from local cache and the registry. Each result includes provider info so you can go straight to connect_agent. This is the recommended starting point — use it instead of listing/searching providers individually.",
+        "Search for capabilities across all providers. This ALREADY searches both the local cache AND the registry in a single call — you do NOT need to call search_providers or list_providers afterwards. Results include provider info so you can go straight to connect_agent. This is the ONLY search tool you need for finding capabilities.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -63,9 +63,16 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
         required: ["query"],
       },
       async execute(args) {
-        return client.search(args.query as string, {
+        const results = await client.search(args.query as string, {
           limit: args.limit as number | undefined,
         });
+        return {
+          results,
+          _meta: {
+            source: "cache+registry",
+            hint: "Registry was already searched. Do NOT call search_providers — these results are comprehensive.",
+          },
+        };
       },
     },
 
@@ -85,7 +92,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "search_providers",
       description:
-        "Search the registry for providers by name or intent. Only needed when search returns no results and you want to discover new providers explicitly.",
+        "Search the registry for providers by name or intent. ALMOST NEVER NEEDED — the search tool already queries the registry. Only use this if search returned zero results AND you believe there may be a provider not yet indexed for the capability you want.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",

@@ -7,6 +7,8 @@ import { generateUserCode, hashToken } from "../utils/approval";
 import { resolveGrantExpiresAt } from "../utils/grant-ttl";
 import {
 	findBlockedCapabilities,
+	hasCapability,
+	parseCapabilityIds,
 } from "../utils/capabilities";
 import type {
 	AdapterCreate,
@@ -798,6 +800,85 @@ export async function resolvePendingApprovalRequests(
 /**
  * Fire-and-forget CIBA push/ping notification for resolved approval requests.
  */
+/**
+ * Try to auto-grant a capability from the host's default budget.
+ *
+ * When an agent executes a capability it doesn't have a grant for,
+ * this checks whether the capability falls within the host's
+ * `defaultCapabilities` budget. If so, it creates an active grant
+ * on the fly and returns it — avoiding a wasted round trip through
+ * `request_capability`.
+ *
+ * Returns the newly created grant, or `null` if auto-grant isn't possible.
+ */
+export async function tryAutoGrantFromHostBudget(
+	adapter: AdapterFindOne & AdapterCreate,
+	opts: ResolvedAgentAuthOptions,
+	ctx: GenericEndpointContext,
+	params: {
+		agentId: string;
+		hostId: string;
+		userId: string | null;
+		capabilityName: string;
+	},
+): Promise<AgentCapabilityGrant | null> {
+	const host = await adapter.findOne<AgentHost>({
+		model: TABLE.host,
+		where: [{ field: "id", value: params.hostId }],
+	});
+	if (!host || host.status !== "active") return null;
+
+	const budget = parseCapabilityIds(host.defaultCapabilities);
+	if (!hasCapability(budget, params.capabilityName)) return null;
+
+	const expiresAt = await resolveGrantExpiresAt(
+		opts,
+		params.capabilityName,
+		{
+			agentId: params.agentId,
+			hostId: params.hostId,
+			userId: params.userId,
+		},
+	);
+
+	const now = new Date();
+	const grant = await adapter.create<
+		Record<string, unknown>,
+		AgentCapabilityGrant
+	>({
+		model: TABLE.grant,
+		data: {
+			agentId: params.agentId,
+			capability: params.capabilityName,
+			constraints: null,
+			grantedBy: host.userId ?? null,
+			deniedBy: null,
+			expiresAt,
+			status: "active",
+			reason: "auto_granted_from_host_budget",
+			createdAt: now,
+			updatedAt: now,
+		},
+	});
+
+	emit(
+		opts,
+		{
+			type: "capability.granted",
+			actorType: "system",
+			agentId: params.agentId,
+			hostId: params.hostId,
+			metadata: {
+				capabilities: [params.capabilityName],
+				auto: true,
+			},
+		},
+		ctx,
+	);
+
+	return grant;
+}
+
 export async function deliverApprovalNotifications(
 	requests: ApprovalRequest[],
 	payload: Record<string, unknown>,

@@ -9,6 +9,7 @@ import {
 } from "../errors";
 import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
+import { tryAutoGrantFromHostBudget } from "./_helpers";
 import { validateConstraints } from "../utils/constraints";
 import type {
   AgentCapabilityGrant,
@@ -147,6 +148,25 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
         }
       }
 
+      // Try auto-granting missing capabilities from host budget
+      for (const capName of uniqueCapNames) {
+        if (dbGrantMap.has(capName)) continue;
+        const autoGranted = await tryAutoGrantFromHostBudget(
+          ctx.context.adapter,
+          opts,
+          ctx,
+          {
+            agentId: agentSession.agent.id,
+            hostId: agentSession.agent.hostId,
+            userId: agentSession.host?.userId ?? null,
+            capabilityName: capName,
+          },
+        );
+        if (autoGranted) {
+          dbGrantMap.set(capName, autoGranted);
+        }
+      }
+
       const onExecute = opts.onExecute;
 
       const responses = await pMap(
@@ -160,17 +180,6 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
               error: {
                 code: ERR.CAPABILITY_NOT_FOUND.code,
                 message: `Capability "${req.capability}" does not exist.`,
-              },
-            };
-          }
-
-          if (!sessionGrantMap.has(req.capability)) {
-            return {
-              id: req.id,
-              status: "failed",
-              error: {
-                code: ERR.CAPABILITY_NOT_GRANTED.code,
-                message: `Agent does not have an active grant for capability "${req.capability}".`,
               },
             };
           }

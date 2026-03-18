@@ -9,6 +9,7 @@ import {
 } from "../errors";
 import { emit } from "../emit";
 import { isAsyncResult, isStreamResult } from "../execute-helpers";
+import { tryAutoGrantFromHostBudget } from "./_helpers";
 import { validateConstraints } from "../utils/constraints";
 import type {
   AgentCapabilityGrant,
@@ -75,33 +76,45 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
       }
 
       // §5.3: If the JWT included a `capabilities` claim, the middleware
-      // already narrowed capabilityGrants to that intersection. Reject
-      // early if the requested capability is outside the JWT scope.
+      // already narrowed capabilityGrants to that intersection. Check
+      // for an existing grant first; if missing, try auto-granting from
+      // the host's default budget before rejecting.
       const sessionGrant = agentSession.agent.capabilityGrants.find(
         (g) => g.capability === capabilityName,
       );
-      if (!sessionGrant) {
-        throw agentError(
-          "FORBIDDEN",
-          ERR.CAPABILITY_NOT_GRANTED,
-          `Agent does not have an active grant for capability "${capabilityName}".`,
+
+      let activeGrant: AgentCapabilityGrant | undefined | null;
+
+      if (sessionGrant) {
+        const grants =
+          await ctx.context.adapter.findMany<AgentCapabilityGrant>({
+            model: TABLE.grant,
+            where: [
+              { field: "agentId", value: agentSession.agent.id },
+              { field: "capability", value: capabilityName },
+            ],
+          });
+        const now = new Date();
+        activeGrant = grants.find(
+          (g) =>
+            g.status === "active" &&
+            (!g.expiresAt || new Date(g.expiresAt) > now),
         );
       }
 
-      const grants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-        model: TABLE.grant,
-        where: [
-          { field: "agentId", value: agentSession.agent.id },
-          { field: "capability", value: capabilityName },
-        ],
-      });
-
-      const now = new Date();
-      const activeGrant = grants.find(
-        (g) =>
-          g.status === "active" &&
-          (!g.expiresAt || new Date(g.expiresAt) > now),
-      );
+      if (!activeGrant) {
+        activeGrant = await tryAutoGrantFromHostBudget(
+          ctx.context.adapter,
+          opts,
+          ctx,
+          {
+            agentId: agentSession.agent.id,
+            hostId: agentSession.agent.hostId,
+            userId: agentSession.host?.userId ?? null,
+            capabilityName,
+          },
+        );
+      }
 
       if (!activeGrant) {
         throw agentError(
