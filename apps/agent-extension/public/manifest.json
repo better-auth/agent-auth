@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Better Auth — Agent Auth",
+  "description": "Approve agent requests, monitor agents, and connect AI tools — powered by Better Auth.",
+  "version": "0.1.0",
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "notifications",
+    "alarms",
+    "cookies",
+    "tabs",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Better Auth — Agent Auth",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  }
+}
