@@ -452,10 +452,13 @@ export async function validateCapabilitiesExist(
 		const known = new Set(opts.capabilities!.map((c) => c.name));
 		const unknown = capabilityIds.filter((id) => !known.has(id));
 		if (unknown.length > 0) {
+			// §5.13: SHOULD include invalid_capabilities list
 			throw agentError(
 				"BAD_REQUEST",
 				ERR.INVALID_CAPABILITIES,
-				`Unknown capabilities: ${unknown.join(", ")}`,
+				undefined,
+				undefined,
+				{ invalid_capabilities: unknown },
 			);
 		}
 	}

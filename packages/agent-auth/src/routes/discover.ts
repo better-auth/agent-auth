@@ -23,31 +23,38 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 		async (ctx) => {
 			const issuer = ctx.context.baseURL.replace(/\/$/, "");
 
+			// §5.1: endpoint paths are relative to issuer
 			const endpoints: Record<string, string> = {
-				register: `${issuer}/agent/register`,
-				capabilities: `${issuer}/capability/list`,
-				execute: `${issuer}/capability/execute`,
-				request_capability: `${issuer}/agent/request-capability`,
-				status: `${issuer}/agent/status`,
-				revoke: `${issuer}/agent/revoke`,
-				reactivate: `${issuer}/agent/reactivate`,
-				revoke_host: `${issuer}/host/revoke`,
-				rotate_key: `${issuer}/agent/rotate-key`,
-				rotate_host_key: `${issuer}/host/rotate-key`,
-				switch_account: `${issuer}/host/switch-account`,
-				introspect: `${issuer}/agent/introspect`,
-				describe_capability: `${issuer}/capability/describe`,
-				device_authorization: `${issuer}/device/code`,
+				register: "/agent/register",
+				capabilities: "/capability/list",
+				execute: "/capability/execute",
+				request_capability: "/agent/request-capability",
+				status: "/agent/status",
+				revoke: "/agent/revoke",
+				reactivate: "/agent/reactivate",
+				revoke_host: "/host/revoke",
+				rotate_key: "/agent/rotate-key",
+				rotate_host_key: "/host/rotate-key",
+				switch_account: "/host/switch-account",
+				introspect: "/agent/introspect",
+				describe_capability: "/capability/describe",
+				device_authorization: "/device/code",
 			};
 
 			if (opts.approvalMethods.includes("ciba")) {
-				endpoints.ciba_authorize = `${issuer}/agent/ciba/authorize`;
+				endpoints.ciba_authorize = "/agent/ciba/authorize";
 			}
 
 			const proofOfPresenceMethods: string[] = [];
 			if (opts.proofOfPresence?.enabled) {
 				proofOfPresenceMethods.push("webauthn");
 			}
+
+			// §5.1: default_location is a full URL (used as JWT aud)
+			const defaultLocation = `${issuer}${endpoints.execute}`;
+
+			// §5.1: Cache-Control per RFC 9111; 1 hour RECOMMENDED
+			ctx.setHeader("Cache-Control", "public, max-age=3600");
 
 			return ctx.json({
 				version: "1.0-draft",
@@ -56,7 +63,7 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 					opts.providerDescription ??
 					"Agent Auth enabled service",
 				issuer,
-				default_location: endpoints.execute,
+				default_location: defaultLocation,
 				algorithms: opts.allowedKeyAlgorithms,
 				modes: opts.modes,
 				approval_methods: opts.approvalMethods,

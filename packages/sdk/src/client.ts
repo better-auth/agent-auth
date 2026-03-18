@@ -199,8 +199,7 @@ export class AgentAuthClient {
 		limit?: number;
 	}): Promise<CapabilitiesResponse> {
 		const config = await this.resolveConfig(opts.provider);
-		const capEndpoint = config.endpoints.capabilities;
-		const url = new URL(capEndpoint ?? `${config.issuer}/capability/list`);
+		const url = new URL(this.resolveEndpoint(config, "capabilities", "/capability/list"));
 		if (opts.query) url.searchParams.set("query", opts.query);
 		if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
 		if (opts.limit != null) url.searchParams.set("limit", String(opts.limit));
@@ -245,8 +244,7 @@ export class AgentAuthClient {
 		agentId?: string;
 	}): Promise<Capability> {
 		const config = await this.resolveConfig(opts.provider);
-		const describeEndpoint = config.endpoints.describe_capability;
-		const url = new URL(describeEndpoint ?? `${config.issuer}/capability/describe`);
+		const url = new URL(this.resolveEndpoint(config, "describe_capability", "/capability/describe"));
 		url.searchParams.set("name", opts.name);
 
 		const headers: Record<string, string> = { accept: "application/json" };
@@ -691,8 +689,7 @@ export class AgentAuthClient {
 			audience: config.issuer,
 		});
 
-		const statusEndpoint = config.endpoints.status;
-		const url = new URL(statusEndpoint ?? `${config.issuer}/agent/status`);
+		const url = new URL(this.resolveEndpoint(config, "status", "/agent/status"));
 		url.searchParams.set("agent_id", agentId);
 
 		const res = await this.fetchFn(url.toString(), {
@@ -1185,8 +1182,7 @@ export class AgentAuthClient {
 					audience: config.issuer,
 				});
 
-				const statusEndpoint = config.endpoints.status;
-				const url = new URL(statusEndpoint ?? `${config.issuer}/agent/status`);
+				const url = new URL(this.resolveEndpoint(config, "status", "/agent/status"));
 				url.searchParams.set("agent_id", agentId);
 
 				const res = await this.fetchFn(url.toString(), {

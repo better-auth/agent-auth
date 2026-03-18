@@ -116,7 +116,8 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 			const constraintArgs = (args ?? {}) as Record<string, ConstraintPrimitive | undefined>;
 			const result = validateConstraints(activeGrant.constraints, constraintArgs);
 			if (result.unknownOperators.length > 0) {
-				throw agentError("BAD_REQUEST", ERR.UNKNOWN_CONSTRAINT_OPERATOR, `Unknown constraint operators: ${result.unknownOperators.join(", ")}`, undefined, { operators: result.unknownOperators });
+				// §2.13: SHOULD include unknown_operators array
+				throw agentError("BAD_REQUEST", ERR.UNKNOWN_CONSTRAINT_OPERATOR, undefined, undefined, { unknown_operators: result.unknownOperators });
 			}
 			if (result.violations.length > 0) {
 				throw agentError("FORBIDDEN", ERR.CONSTRAINT_VIOLATED, undefined, undefined, { violations: result.violations });
