@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { getSetting, setSetting } from "@/lib/db";
+import { getSettingAsync, setSettingAsync } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -17,14 +17,18 @@ export async function GET() {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
+	const [freshSessionEnabled, freshSessionWindow, preferredApprovalMethod] =
+		await Promise.all([
+			getSettingAsync("freshSessionEnabled"),
+			getSettingAsync("freshSessionWindow"),
+			getSettingAsync("preferredApprovalMethod"),
+		]);
+
 	return NextResponse.json({
-		freshSessionEnabled: getSetting("freshSessionEnabled") === "true",
-		freshSessionWindow: parseInt(
-			getSetting("freshSessionWindow") ?? "300",
-			10,
-		),
+		freshSessionEnabled: freshSessionEnabled === "true",
+		freshSessionWindow: parseInt(freshSessionWindow ?? "300", 10),
 		preferredApprovalMethod:
-			getSetting("preferredApprovalMethod") ?? "device_authorization",
+			preferredApprovalMethod ?? "device_authorization",
 	});
 }
 
@@ -40,7 +44,7 @@ export async function PUT(req: Request) {
 
 	for (const key of ALLOWED_KEYS) {
 		if (key in body) {
-			setSetting(key, String(body[key]));
+			await setSettingAsync(key, String(body[key]));
 		}
 	}
 

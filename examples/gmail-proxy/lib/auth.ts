@@ -1,8 +1,11 @@
 import { agentAuth } from "@better-auth/agent-auth";
 import type { Capability } from "@better-auth/agent-auth";
 import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth, anonymous } from "better-auth/plugins";
-import { db, getSetting, insertLog } from "./db";
+import { db } from "./db/index";
+import * as schema from "./db/schema";
+import { getSetting, insertLogAsync } from "./db";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID as string;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET as string;
@@ -469,7 +472,10 @@ async function gmailFetch(
 }
 
 export const auth = betterAuth({
-  database: db,
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema,
+  }),
   plugins: [
     genericOAuth({
       config: [
@@ -693,21 +699,17 @@ export const auth = betterAuth({
         }
       },
       onEvent: (event) => {
-        try {
-          const { type, actorId, actorType, agentId, hostId, orgId, ...rest } =
-            event as unknown as Record<string, unknown>;
-          insertLog.run(
-            type ?? null,
-            (actorId as string) ?? null,
-            (actorType as string) ?? null,
-            (agentId as string) ?? null,
-            (hostId as string) ?? null,
-            (orgId as string) ?? null,
-            JSON.stringify(rest),
-          );
-        } catch {
-          // never let logging break the flow
-        }
+        const { type, actorId, actorType, agentId, hostId, orgId, ...rest } =
+          event as unknown as Record<string, unknown>;
+        insertLogAsync(
+          (type as string) ?? null,
+          (actorId as string) ?? null,
+          (actorType as string) ?? null,
+          (agentId as string) ?? null,
+          (hostId as string) ?? null,
+          (orgId as string) ?? null,
+          JSON.stringify(rest),
+        ).catch(() => {});
       },
     }),
   ],

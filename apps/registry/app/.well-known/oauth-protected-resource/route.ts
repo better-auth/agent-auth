@@ -1,14 +1,11 @@
-import { serverClient } from "@/lib/server-client";
-
-const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://localhost:4200";
-
 export const dynamic = "force-dynamic";
 
-export const GET = async () => {
-	const metadata = await serverClient.getProtectedResourceMetadata({
-		resource: `${BASE_URL}/api`,
-		authorization_servers: [BASE_URL],
-	});
+export const GET = async (req: Request) => {
+	const origin = new URL(req.url).origin;
+	const metadata = {
+		resource: `${origin}/api`,
+		authorization_servers: [origin],
+	};
 	return new Response(JSON.stringify(metadata), {
 		headers: {
 			"Content-Type": "application/json",

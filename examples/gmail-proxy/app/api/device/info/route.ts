@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, schema } from "@/lib/db";
+import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -20,40 +21,47 @@ export async function GET(req: Request) {
 		);
 	}
 
-	const agent = db
-		.prepare("SELECT * FROM agent WHERE id = ?")
-		.get(agentId) as Record<string, unknown> | undefined;
+	const [agentRow] = await db
+		.select()
+		.from(schema.agent)
+		.where(eq(schema.agent.id, agentId))
+		.limit(1);
 
-	if (!agent) {
+	if (!agentRow) {
 		return NextResponse.json({ error: "Agent not found" }, { status: 404 });
 	}
 
-	if (agent.userId && agent.userId !== session.user.id) {
+	if (agentRow.userId && agentRow.userId !== session.user.id) {
 		return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	}
 
-	const grants = db
-		.prepare("SELECT * FROM agentCapabilityGrant WHERE agentId = ?")
-		.all(agentId) as Record<string, unknown>[];
+	const grants = await db
+		.select()
+		.from(schema.agentCapabilityGrant)
+		.where(eq(schema.agentCapabilityGrant.agentId, agentId));
 
-	const host = agent.hostId
-		? (db
-				.prepare("SELECT * FROM agentHost WHERE id = ?")
-				.get(agent.hostId as string) as Record<string, unknown> | undefined)
+	const host = agentRow.hostId
+		? (
+				await db
+					.select()
+					.from(schema.agentHost)
+					.where(eq(schema.agentHost.id, agentRow.hostId))
+					.limit(1)
+			)[0] ?? null
 		: null;
 
 	const needsActivation =
-		agent.status === "pending" ||
+		agentRow.status === "pending" ||
 		(host && host.status === "pending");
 
 	return NextResponse.json({
 		agent: {
-			id: agent.id,
-			name: agent.name,
-			status: agent.status,
-			mode: agent.mode,
-			hostId: agent.hostId,
-			createdAt: agent.createdAt,
+			id: agentRow.id,
+			name: agentRow.name,
+			status: agentRow.status,
+			mode: agentRow.mode,
+			hostId: agentRow.hostId,
+			createdAt: agentRow.createdAt,
 		},
 		host: host
 			? { id: host.id, name: host.name, status: host.status }
