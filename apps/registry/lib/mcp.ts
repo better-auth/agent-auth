@@ -94,14 +94,22 @@ export function getToolsForUser(userId: string): AgentAuthTool[] {
 						const codeNote = pending.userCode
 							? `\nVerification code: ${pending.userCode}`
 							: "";
+						const agentId =
+							err &&
+							typeof err === "object" &&
+							"agentId" in err
+								? (err as { agentId: string }).agentId
+								: undefined;
 
 						return {
 							status: "approval_required",
 							approval_url: uri,
+							...(agentId ? { agent_id: agentId } : {}),
 							message:
 								`User approval is required. Please open the following URL to approve access:` +
 								`\n\n${uri}${codeNote}` +
-								`\n\nAfter approving, retry this tool call.`,
+								`\n\nAfter approving, retry this tool call.` +
+								(agentId ? ` Use agent_id: ${agentId}` : ""),
 						};
 					}
 					throw err;

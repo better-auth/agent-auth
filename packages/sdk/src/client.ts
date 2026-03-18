@@ -310,7 +310,7 @@ export class AgentAuthClient {
     query: string,
     opts?: { limit?: number },
   ): Promise<CapabilitySearchResult[]> {
-    const limit = opts?.limit ?? 10;
+    const limit = opts?.limit ?? 5;
     const connectedIssuers = new Set(
       (await this.storage.listAgentConnections()).map((c) => c.issuer),
     );
@@ -454,23 +454,33 @@ export class AgentAuthClient {
     await this.storage.setAgentConnection(regBody.agent_id, connection);
 
     if (regBody.status === "pending" && regBody.approval) {
-      const finalStatus = await this.waitForApproval(
-        config,
-        host,
-        regBody.agent_id,
-        regBody.approval,
-        { signal: opts.signal },
-      );
+      try {
+        const finalStatus = await this.waitForApproval(
+          config,
+          host,
+          regBody.agent_id,
+          regBody.approval,
+          { signal: opts.signal },
+        );
 
-      connection.capabilityGrants = finalStatus.agent_capability_grants;
-      await this.storage.setAgentConnection(regBody.agent_id, connection);
+        connection.capabilityGrants = finalStatus.agent_capability_grants;
+        await this.storage.setAgentConnection(regBody.agent_id, connection);
 
-      return {
-        agentId: regBody.agent_id,
-        hostId: regBody.host_id,
-        status: finalStatus.status,
-        capabilityGrants: finalStatus.agent_capability_grants,
-      };
+        return {
+          agentId: regBody.agent_id,
+          hostId: regBody.host_id,
+          status: finalStatus.status,
+          capabilityGrants: finalStatus.agent_capability_grants,
+        };
+      } catch (err) {
+        if (
+          err instanceof AgentAuthSDKError &&
+          (err.code === "approval_timeout" || err.code === "agent_rejected" || err.code === "agent_revoked")
+        ) {
+          throw new AgentAuthSDKError(err.code, err.message, err.status, regBody.agent_id);
+        }
+        throw err;
+      }
     }
 
     return {
@@ -600,15 +610,25 @@ export class AgentAuthClient {
     if (resBody.status === "pending" && resBody.approval) {
       const host = await this.storage.getHostIdentity();
       if (host) {
-        const finalStatus = await this.waitForApproval(
-          config,
-          host,
-          opts.agentId,
-          resBody.approval,
-          { signal: opts.signal },
-        );
-        conn.capabilityGrants = finalStatus.agent_capability_grants;
-        await this.storage.setAgentConnection(opts.agentId, conn);
+        try {
+          const finalStatus = await this.waitForApproval(
+            config,
+            host,
+            opts.agentId,
+            resBody.approval,
+            { signal: opts.signal },
+          );
+          conn.capabilityGrants = finalStatus.agent_capability_grants;
+          await this.storage.setAgentConnection(opts.agentId, conn);
+        } catch (err) {
+          if (
+            err instanceof AgentAuthSDKError &&
+            (err.code === "approval_timeout" || err.code === "agent_rejected" || err.code === "agent_revoked")
+          ) {
+            throw new AgentAuthSDKError(err.code, err.message, err.status, opts.agentId);
+          }
+          throw err;
+        }
       }
     } else {
       conn.capabilityGrants = resBody.agent_capability_grants;
@@ -708,22 +728,32 @@ export class AgentAuthClient {
     const body = (await res.json()) as RegisterResponse;
 
     if (body.status === "pending" && body.approval) {
-      const finalStatus = await this.waitForApproval(
-        config,
-        host,
-        agentId,
-        body.approval,
-        { signal: opts?.signal },
-      );
+      try {
+        const finalStatus = await this.waitForApproval(
+          config,
+          host,
+          agentId,
+          body.approval,
+          { signal: opts?.signal },
+        );
 
-      conn.capabilityGrants = finalStatus.agent_capability_grants;
-      await this.storage.setAgentConnection(agentId, conn);
+        conn.capabilityGrants = finalStatus.agent_capability_grants;
+        await this.storage.setAgentConnection(agentId, conn);
 
-      return {
-        agentId,
-        status: finalStatus.status,
-        capabilityGrants: finalStatus.agent_capability_grants,
-      };
+        return {
+          agentId,
+          status: finalStatus.status,
+          capabilityGrants: finalStatus.agent_capability_grants,
+        };
+      } catch (err) {
+        if (
+          err instanceof AgentAuthSDKError &&
+          (err.code === "approval_timeout" || err.code === "agent_rejected" || err.code === "agent_revoked")
+        ) {
+          throw new AgentAuthSDKError(err.code, err.message, err.status, agentId);
+        }
+        throw err;
+      }
     }
 
     conn.capabilityGrants = body.agent_capability_grants;

@@ -866,5 +866,5 @@ export const auth = betterAuth({
       },
     }),
   ],
-  trustedOrigins: ["chrome-extension://*"],
+  trustedOrigins: ["chrome-extension://"],
 });

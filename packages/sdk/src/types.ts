@@ -388,12 +388,14 @@ export interface AgentAuthError {
 export class AgentAuthSDKError extends Error {
 	public readonly code: string;
 	public readonly status: number;
+	public readonly agentId?: string;
 
-	constructor(code: string, message: string, status: number = 0) {
+	constructor(code: string, message: string, status: number = 0, agentId?: string) {
 		super(message);
 		this.name = "AgentAuthSDKError";
 		this.code = code;
 		this.status = status;
+		this.agentId = agentId;
 	}
 
 	static fromResponse(

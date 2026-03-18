@@ -52,7 +52,7 @@ export const auth = betterAuth({
       validAudiences: [BASE_URL, `${BASE_URL}/`],
     }),
   ],
-  trustedOrigins: ["chrome-extension://*"],
+  trustedOrigins: ["chrome-extension://"],
 });
 
 export type Auth = typeof auth;

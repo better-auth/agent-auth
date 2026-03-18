@@ -57,7 +57,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
           },
           limit: {
             type: "number",
-            description: "Max results to return (default 10)",
+            description: "Max results to return (default 5)",
           },
         },
         required: ["query"],
