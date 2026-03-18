@@ -64,7 +64,10 @@ export const account = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("account_userId_idx").on(table.userId)],
+  (table) => [
+    index("account_userId_idx").on(table.userId),
+    index("account_userId_providerId_idx").on(table.userId, table.providerId),
+  ],
 );
 
 export const verification = pgTable(
@@ -109,7 +112,12 @@ export const agentHost = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("agentHost_userId_idx").on(table.userId)],
+  (table) => [
+    index("agentHost_userId_idx").on(table.userId),
+    index("agentHost_kid_idx").on(table.kid),
+    index("agentHost_enrollmentTokenHash_idx").on(table.enrollmentTokenHash),
+    index("agentHost_status_idx").on(table.status),
+  ],
 );
 
 export const agent = pgTable(
@@ -141,6 +149,9 @@ export const agent = pgTable(
   (table) => [
     index("agent_userId_idx").on(table.userId),
     index("agent_hostId_idx").on(table.hostId),
+    index("agent_kid_idx").on(table.kid),
+    index("agent_status_idx").on(table.status),
+    index("agent_userId_status_idx").on(table.userId, table.status),
   ],
 );
 
@@ -171,6 +182,14 @@ export const agentCapabilityGrant = pgTable(
   (table) => [
     index("agentCapabilityGrant_agentId_idx").on(table.agentId),
     index("agentCapabilityGrant_grantedBy_idx").on(table.grantedBy),
+    index("agentCapabilityGrant_agentId_capability_idx").on(
+      table.agentId,
+      table.capability,
+    ),
+    index("agentCapabilityGrant_agentId_status_idx").on(
+      table.agentId,
+      table.status,
+    ),
   ],
 );
 
@@ -209,22 +228,34 @@ export const approvalRequest = pgTable(
     index("approvalRequest_agentId_idx").on(table.agentId),
     index("approvalRequest_hostId_idx").on(table.hostId),
     index("approvalRequest_userId_idx").on(table.userId),
+    index("approvalRequest_agentId_status_idx").on(table.agentId, table.status),
+    index("approvalRequest_userId_status_idx").on(table.userId, table.status),
+    index("approvalRequest_status_idx").on(table.status),
   ],
 );
 
 // ── App-specific tables ──────────────────────────────────────────────
 
-export const eventLog = pgTable("event_log", {
-  id: serial("id").primaryKey(),
-  type: text("type").notNull(),
-  actorId: text("actor_id"),
-  actorType: text("actor_type"),
-  agentId: text("agent_id"),
-  hostId: text("host_id"),
-  orgId: text("org_id"),
-  data: text("data"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const eventLog = pgTable(
+  "event_log",
+  {
+    id: serial("id").primaryKey(),
+    type: text("type").notNull(),
+    actorId: text("actor_id"),
+    actorType: text("actor_type"),
+    agentId: text("agent_id"),
+    hostId: text("host_id"),
+    orgId: text("org_id"),
+    data: text("data"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("eventLog_actorId_idx").on(table.actorId),
+    index("eventLog_agentId_idx").on(table.agentId),
+    index("eventLog_hostId_idx").on(table.hostId),
+    index("eventLog_type_idx").on(table.type),
+  ],
+);
 
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),

@@ -1016,7 +1016,7 @@ export class AgentAuthClient {
       return this.hostName ? `${tool.name} on ${this.hostName}` : tool.name;
     }
     if (this.hostName) return this.hostName;
-    return `agent-${Date.now()}`;
+    return "AI Agent";
   }
 
   private async findExistingConnection(

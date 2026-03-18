@@ -47,32 +47,35 @@ export const agentSchema = () =>
 					required: false,
 					input: false,
 				},
-				kid: {
-					type: "string",
-					required: false,
-					input: false,
-				},
-				jwksUrl: {
-					type: "string",
-					required: false,
-					input: false,
-				},
-				enrollmentTokenHash: {
-					type: "string",
-					required: false,
-					input: false,
-				},
-				enrollmentTokenExpiresAt: {
-					type: "date",
-					required: false,
-					input: false,
-				},
-				status: {
-					type: "string",
-					required: true,
-					input: false,
-					defaultValue: "active",
-				},
+			kid: {
+				type: "string",
+				required: false,
+				input: false,
+				index: true,
+			},
+			jwksUrl: {
+				type: "string",
+				required: false,
+				input: false,
+			},
+			enrollmentTokenHash: {
+				type: "string",
+				required: false,
+				input: false,
+				index: true,
+			},
+			enrollmentTokenExpiresAt: {
+				type: "date",
+				required: false,
+				input: false,
+			},
+			status: {
+				type: "string",
+				required: true,
+				input: false,
+				defaultValue: "active",
+				index: true,
+			},
 				activatedAt: {
 					type: "date",
 					required: false,
@@ -125,28 +128,30 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-				status: {
-					type: "string",
-					required: true,
-					input: false,
-					defaultValue: "active",
-				},
-				mode: {
-					type: "string",
-					required: true,
-					input: false,
-					defaultValue: "delegated",
-				},
-				publicKey: {
-					type: "string",
-					required: true,
-					input: false,
-				},
-				kid: {
-					type: "string",
-					required: false,
-					input: false,
-				},
+			status: {
+				type: "string",
+				required: true,
+				input: false,
+				defaultValue: "active",
+				index: true,
+			},
+			mode: {
+				type: "string",
+				required: true,
+				input: false,
+				defaultValue: "delegated",
+			},
+			publicKey: {
+				type: "string",
+				required: true,
+				input: false,
+			},
+			kid: {
+				type: "string",
+				required: false,
+				input: false,
+				index: true,
+			},
 				jwksUrl: {
 					type: "string",
 					required: false,
@@ -202,17 +207,18 @@ export const agentSchema = () =>
 					input: false,
 					index: true,
 				},
-				capability: {
-					type: "string",
-					required: true,
-					input: false,
-				},
-			deniedBy: {
+			capability: {
 				type: "string",
-				references: { model: "user", field: "id", onDelete: "cascade" },
-				required: false,
+				required: true,
 				input: false,
+				index: true,
 			},
+		deniedBy: {
+			type: "string",
+			references: { model: "user", field: "id", onDelete: "cascade" },
+			required: false,
+			input: false,
+		},
 				grantedBy: {
 					type: "string",
 					references: { model: "user", field: "id", onDelete: "cascade" },
@@ -235,17 +241,18 @@ export const agentSchema = () =>
 					required: true,
 					input: false,
 				},
-			status: {
-				type: "string",
-				required: true,
-				input: false,
-				defaultValue: "active",
-			},
-			reason: {
-				type: "string",
-				required: false,
-				input: false,
-			},
+		status: {
+			type: "string",
+			required: true,
+			input: false,
+			defaultValue: "active",
+			index: true,
+		},
+		reason: {
+			type: "string",
+			required: false,
+			input: false,
+		},
 			constraints: {
 				type: "string",
 				required: false,
@@ -308,12 +315,13 @@ export const agentSchema = () =>
 					required: false,
 					input: false,
 				},
-				status: {
-					type: "string",
-					required: true,
-					input: false,
-					defaultValue: "pending",
-				},
+			status: {
+				type: "string",
+				required: true,
+				input: false,
+				defaultValue: "pending",
+				index: true,
+			},
 				userCodeHash: {
 					type: "string",
 					required: false,
