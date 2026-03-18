@@ -176,11 +176,14 @@ export const auth = betterAuth({
   plugins: [
     agentAuth({
       providerName: "Agent Deploy",
+      freshSessionWindow: 0,
       providerDescription:
         "A deployment platform for HTML sites. AI agents can create, update, and manage static HTML deployments through capability-based authentication.",
       capabilities,
       defaultHostCapabilities: ({ mode }) =>
-        mode === "autonomous" ? AUTONOMOUS_CAPABILITIES : READ_ONLY_CAPABILITIES,
+        mode === "autonomous"
+          ? AUTONOMOUS_CAPABILITIES
+          : READ_ONLY_CAPABILITIES,
       modes: ["delegated", "autonomous"],
       approvalMethods: ["ciba", "device_authorization"],
       allowDynamicHostRegistration: true,
