@@ -13,6 +13,7 @@
     "@better-auth/oauth-provider": "latest",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "better-auth": "^1.5.5",
+    "jose": "^6.0.0",
     "mcp-handler": "^1.0.7",
     "next": "^15.3.3",
     "pg": "^8.13.0",

@@ -1,41 +1,9 @@
-import { createHash } from "crypto";
+import { mcpHandler } from "@better-auth/oauth-provider";
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
-import { pool } from "@/lib/db";
 import { getToolsForUser, jsonSchemaToZod } from "@/lib/mcp";
 
-function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("base64url");
-}
-
-async function verifyOpaqueToken(
-  token: string,
-): Promise<{ userId: string } | null> {
-  const hashed = hashToken(token);
-  const result = await pool.query(
-    `SELECT "user_id", "expires_at" FROM "oauth_access_token" WHERE "token" = $1 LIMIT 1`,
-    [hashed],
-  );
-  const row = result.rows[0];
-  if (!row) return null;
-  if (row.expires_at && new Date(row.expires_at) < new Date()) return null;
-  if (!row.user_id) return null;
-  return { userId: row.user_id };
-}
-
-function unauthorizedResponse(req: Request) {
-  const origin = new URL(req.url).origin;
-  return new Response(
-    JSON.stringify({ error: "unauthorized" }),
-    {
-      status: 401,
-      headers: {
-        "Content-Type": "application/json",
-        "WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
-      },
-    },
-  );
-}
+const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://localhost:3400";
 
 type McpRequestHandler = (req: Request) => Response | Promise<Response>;
 const userHandlers = new Map<string, McpRequestHandler>();
@@ -46,7 +14,7 @@ function getOrCreateHandler(userId: string): McpRequestHandler {
 
   const tools = getToolsForUser(userId);
 
-  const mcpHandler = createMcpHandler(
+  const mcpReqHandler = createMcpHandler(
     (server) => {
       for (const tool of tools) {
         const zodShape = jsonSchemaToZod(tool.parameters, z);
@@ -94,23 +62,27 @@ function getOrCreateHandler(userId: string): McpRequestHandler {
     },
   );
 
-  userHandlers.set(userId, mcpHandler);
-  return mcpHandler;
+  userHandlers.set(userId, mcpReqHandler);
+  return mcpReqHandler;
 }
 
-async function handler(req: Request) {
-  const authorization = req.headers.get("authorization");
-  const token = authorization?.startsWith("Bearer ")
-    ? authorization.slice(7)
-    : null;
-
-  if (!token) return unauthorizedResponse(req);
-
-  const verified = await verifyOpaqueToken(token);
-  if (!verified) return unauthorizedResponse(req);
-
-  const { userId } = verified;
-  return getOrCreateHandler(userId)(req);
-}
+const handler = mcpHandler(
+  {
+    jwksUrl: `${BASE_URL}/api/auth/jwks`,
+    verifyOptions: {
+      audience: `${BASE_URL}/api`,
+      issuer: `${BASE_URL}/api/auth`,
+    },
+  },
+  async (req, jwt) => {
+    const userId = jwt.sub;
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "missing sub claim" }), {
+        status: 401,
+      });
+    }
+    return getOrCreateHandler(userId)(req);
+  },
+);
 
 export { handler as GET, handler as POST, handler as DELETE };
