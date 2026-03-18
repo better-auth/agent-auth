@@ -66,12 +66,19 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
         const results = await client.search(args.query as string, {
           limit: args.limit as number | undefined,
         });
+        const hasConstrainable = results.some(
+          (r) =>
+            r.constrainable_fields &&
+            typeof r.constrainable_fields === "object" &&
+            Object.keys(r.constrainable_fields as Record<string, unknown>)
+              .length > 0,
+        );
         return {
           results,
-          _meta: {
-            source: "cache+registry",
-            hint: "Registry was already searched. Do NOT call search_providers — these results are comprehensive.",
-          },
+          ...(hasConstrainable && {
+            constraint_reminder:
+              "Some capabilities have constrainable_fields. When calling connect_agent, you MUST use constraints to limit scope (e.g. { name: 'gmail.messages.send', constraints: { to: { in: ['user@example.com'] } } }).",
+          }),
         };
       },
     },
@@ -212,7 +219,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "connect_agent",
       description:
-        "Connect to a provider and get an agent_id. Call ONCE, then use execute_capability for everything. Typical flow: connect_agent → execute_capability. You do NOT need to call list_providers, list_capabilities, or describe_capability first — skip them if you know what you need. NEVER re-call connect_agent for the same provider unless execute_capability returns 'agent_not_found' or 'revoked'.",
+        "Connect to a provider and get an agent_id. Call ONCE, then use execute_capability for everything. Typical flow: search → connect_agent → execute_capability. NEVER re-call connect_agent for the same provider unless execute_capability returns 'agent_not_found' or 'revoked'. IMPORTANT: When capabilities have constrainable_fields, you MUST apply constraints to limit your scope (principle of least privilege). For example, if sending email and you know the recipient, constrain the 'to' field.",
       annotations: { readOnlyHint: true, title: "Connect Agent" },
       parameters: {
         type: "object",
@@ -233,7 +240,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
                     constraints: {
                       type: "object",
                       description:
-                        "Scope limits on constrainable_fields from list_capabilities. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Example: { amount: { max: 500 }, currency: { in: ['USD', 'EUR'] } }",
+                        "REQUIRED when constrainable_fields exist. Scope limits from constrainable_fields. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Examples: { to: { in: ['alice@example.com'] } }, { maxResults: { max: 10 } }, { format: 'metadata' }",
                     },
                   },
                   required: ["name"],
@@ -241,7 +248,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
               ],
             },
             description:
-              "Capabilities to request. PREFER using objects with constraints to request minimal scope. Only use plain strings if no constraints apply.",
+              "Capabilities to request. ALWAYS use objects with constraints when the capability has constrainable_fields — never use plain strings for constrainable capabilities. Only use plain strings for capabilities with no constrainable_fields.",
           },
           mode: {
             type: "string",
@@ -425,7 +432,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "request_capability",
       description:
-        "Request additional capabilities for an already-connected agent. Only call if execute_capability fails with 'capability_not_granted'. Do NOT use this to reconnect — use connect_agent for that.",
+        "Request additional capabilities for an already-connected agent. Only call if execute_capability fails with 'capability_not_granted'. Do NOT use this to reconnect — use connect_agent for that. ALWAYS apply constraints when constrainable_fields are available.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -446,7 +453,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
                     constraints: {
                       type: "object",
                       description:
-                        "Scope limits on constrainable_fields. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Example: { environment: { in: ['preview'] } }",
+                        "REQUIRED when constrainable_fields exist. Scope limits from constrainable_fields. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Examples: { to: { in: ['alice@example.com'] } }, { environment: { in: ['preview'] } }",
                     },
                   },
                   required: ["name"],
@@ -454,7 +461,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
               ],
             },
             description:
-              "Capabilities to request. PREFER using objects with constraints to request minimal scope. Only use plain strings if no constraints apply.",
+              "Capabilities to request. ALWAYS use objects with constraints when the capability has constrainable_fields — never use plain strings for constrainable capabilities.",
           },
           reason: {
             type: "string",

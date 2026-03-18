@@ -249,7 +249,7 @@ export function formatGrantsResponse(
 			}
 		}
 
-		if (g.status === "denied" && g.reason) {
+		if ((g.status === "denied" || g.status === "pending") && g.reason) {
 			base.reason = g.reason;
 		}
 

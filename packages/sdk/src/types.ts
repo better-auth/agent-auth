@@ -257,8 +257,10 @@ export interface EnrollHostResponse {
 
 /** A capability enriched with its provider identity for cross-provider search results. */
 export interface CapabilitySearchResult extends Capability {
+	/** Provider issuer URL — pass this directly to connect_agent's `provider` param. */
 	provider: string;
-	issuer: string;
+	/** Human-readable provider name for display. */
+	provider_name: string;
 }
 
 /** Capabilities list response from GET /capabilities — §6.2. */

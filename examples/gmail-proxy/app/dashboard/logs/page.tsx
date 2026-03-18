@@ -180,9 +180,13 @@ export default function LogsPage() {
 										onClick={() => setExpandedLog(isExpanded ? null : log.id)}
 										className="cursor-pointer flex flex-col w-full rounded-2xl border border-border bg-white text-left shadow-sm transition-colors hover:bg-surface"
 									>
-										<div className="flex items-center gap-3 px-5 py-3">
-											<EventTypeBadge type={log.type} />
-											<div className="flex-1 min-w-0 flex items-center gap-3">
+									<div className="flex items-center gap-3 px-5 py-3">
+										<EventTypeBadge type={log.type} />
+										<div className="flex-1 min-w-0">
+											<div className="flex items-center gap-3">
+												{log.data?.capability && (
+													<code className="text-xs font-mono text-foreground">{String(log.data.capability)}</code>
+												)}
 												{log.agentId && (
 													<span className="text-xs text-muted truncate">
 														agent: <code className="text-foreground">{log.agentId.slice(0, 8)}…</code>
@@ -199,17 +203,21 @@ export default function LogsPage() {
 													</span>
 												)}
 											</div>
-											<span className="text-[11px] text-muted shrink-0">
-												{formatTimestamp(log.createdAt)}
-											</span>
+											{log.data?.reason && (
+												<p className="text-[11px] text-muted italic mt-0.5 truncate">&ldquo;{String(log.data.reason)}&rdquo;</p>
+											)}
 										</div>
-										{isExpanded && log.data && (
-											<div className="border-t border-border px-5 py-3">
-												<pre className="text-xs font-mono text-muted whitespace-pre-wrap break-all">
-													{JSON.stringify(log.data, null, 2)}
-												</pre>
-											</div>
-										)}
+										<span className="text-[11px] text-muted shrink-0">
+											{formatTimestamp(log.createdAt)}
+										</span>
+									</div>
+									{isExpanded && log.data && (
+										<div className="border-t border-border px-5 py-3">
+											<pre className="text-xs font-mono text-muted whitespace-pre-wrap break-all">
+												{JSON.stringify(log.data, null, 2)}
+											</pre>
+										</div>
+									)}
 									</button>
 								);
 							})}

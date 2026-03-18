@@ -38,6 +38,8 @@ export function cibaPending() {
 				active.map(async (r) => {
 					let agentName: string | null = null;
 					let grantConstraints: Record<string, unknown> | null = null;
+					let capReasons: Record<string, string> | null = null;
+
 					if (r.agentId) {
 						const agent =
 							await ctx.context.adapter.findOne<Agent>({
@@ -46,31 +48,57 @@ export function cibaPending() {
 							});
 						agentName = agent?.name ?? null;
 
-						const pendingGrants = await ctx.context.adapter.findMany<AgentCapabilityGrant>({
-							model: TABLE.grant,
-							where: [
-								{ field: "agentId", value: r.agentId },
-								{ field: "status", value: "pending" },
-							],
-						});
-						const withConstraints = pendingGrants.filter((g) => g.constraints);
+						const pendingGrants =
+							await ctx.context.adapter.findMany<AgentCapabilityGrant>(
+								{
+									model: TABLE.grant,
+									where: [
+										{
+											field: "agentId",
+											value: r.agentId,
+										},
+										{
+											field: "status",
+											value: "pending",
+										},
+									],
+								},
+							);
+
+						const withConstraints = pendingGrants.filter(
+							(g) => g.constraints,
+						);
 						if (withConstraints.length > 0) {
 							grantConstraints = {};
 							for (const g of withConstraints) {
-								(grantConstraints as Record<string, unknown>)[g.capability] = g.constraints;
+								(
+									grantConstraints as Record<string, unknown>
+								)[g.capability] = g.constraints;
+							}
+						}
+
+						const withReason = pendingGrants.filter(
+							(g) => g.reason,
+						);
+						if (withReason.length > 0) {
+							capReasons = {};
+							for (const g of withReason) {
+								capReasons[g.capability] = g.reason!;
 							}
 						}
 					}
+
 					return {
 						approval_id: r.id,
 						method: r.method,
 						agent_id: r.agentId ?? null,
 						agent_name: agentName,
-						binding_message: r.bindingMessage,
+						binding_message: r.bindingMessage ?? null,
 						capabilities: r.capabilities
 							? r.capabilities.split(/\s+/).filter(Boolean)
 							: [],
 						capability_constraints: grantConstraints,
+						capability_reasons: capReasons,
 						expires_in: Math.max(
 							0,
 							Math.floor(

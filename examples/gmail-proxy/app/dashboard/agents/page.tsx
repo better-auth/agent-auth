@@ -47,6 +47,7 @@ function AgentIcon({ status }: { name: string; status: string }) {
 interface GrantData {
 	capability: string;
 	status: string;
+	reason?: string | null;
 	granted_by?: string | null;
 	expires_at?: string | null;
 }
@@ -178,23 +179,28 @@ function AgentActivityLog({ agentId }: { agentId: string }) {
 						<div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center">
 							<span className={`h-2.5 w-2.5 rounded-full ring-[3px] ring-white ${c.dot} transition-transform group-hover:scale-125`} />
 						</div>
-						<div className={`flex-1 ml-1 mb-1.5 rounded-xl border border-transparent transition-colors ${isExpanded ? "bg-surface border-border" : "group-hover:bg-surface/70"}`}>
-							<div className="flex items-center gap-2 px-3 py-2">
-							<span className="flex-1 text-[13px] text-foreground">
-								{formatEventMessage(log)}
-							</span>
+					<div className={`flex-1 ml-1 mb-1.5 rounded-xl border border-transparent transition-colors ${isExpanded ? "bg-surface border-border" : "group-hover:bg-surface/70"}`}>
+						<div className="px-3 py-2">
+							<div className="flex items-center gap-2">
+								<span className="flex-1 text-[13px] text-foreground">
+									{formatEventMessage(log)}
+								</span>
 								<span className="text-[11px] text-muted shrink-0 tabular-nums">
 									{timeAgo(log.createdAt)}
 								</span>
 							</div>
-							{isExpanded && log.data && (
-								<div className="border-t border-border px-3 py-2.5">
-									<pre className="text-[11px] font-mono text-muted whitespace-pre-wrap break-all max-h-40 overflow-y-auto leading-relaxed">
-										{JSON.stringify(log.data, null, 2)}
-									</pre>
-								</div>
+							{log.data?.reason && (
+								<p className="text-[11px] text-muted italic mt-0.5 truncate">&ldquo;{String(log.data.reason)}&rdquo;</p>
 							)}
 						</div>
+						{isExpanded && log.data && (
+							<div className="border-t border-border px-3 py-2.5">
+								<pre className="text-[11px] font-mono text-muted whitespace-pre-wrap break-all max-h-40 overflow-y-auto leading-relaxed">
+									{JSON.stringify(log.data, null, 2)}
+								</pre>
+							</div>
+						)}
+					</div>
 					</button>
 				);
 			})}
@@ -220,7 +226,12 @@ function CapabilityRow({ grant }: { grant: GrantData }) {
 					<path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
 				</svg>
 			</div>
-			<code className="flex-1 text-[12px] font-mono text-foreground truncate">{grant.capability}</code>
+			<div className="flex-1 min-w-0">
+				<code className="text-[12px] font-mono text-foreground truncate block">{grant.capability}</code>
+				{grant.reason && (
+					<p className="text-[11px] text-muted italic truncate mt-0.5">&ldquo;{grant.reason}&rdquo;</p>
+				)}
+			</div>
 			<StatusBadge status={grant.status} />
 		</div>
 	);

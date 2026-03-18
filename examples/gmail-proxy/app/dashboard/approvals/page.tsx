@@ -2,6 +2,26 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+function formatConstraintValue(value: unknown): string {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return String(value);
+	}
+	const ops = value as Record<string, unknown>;
+	const parts: string[] = [];
+	if (ops.eq !== undefined) parts.push(`${ops.eq}`);
+	if (ops.in !== undefined && Array.isArray(ops.in)) {
+		const items = ops.in.map(String);
+		parts.push(items.length === 1 ? `only ${items[0]}` : `only ${items.join(" or ")}`);
+	}
+	if (ops.not_in !== undefined && Array.isArray(ops.not_in)) {
+		const items = ops.not_in.map(String);
+		parts.push(`not ${items.join(" or ")}`);
+	}
+	if (ops.max !== undefined) parts.push(`at most ${ops.max}`);
+	if (ops.min !== undefined) parts.push(`at least ${ops.min}`);
+	return parts.join(", ") || JSON.stringify(value);
+}
+
 function Spinner() {
 	return (
 		<svg className="animate-spin h-5 w-5 text-muted" viewBox="0 0 24 24" fill="none">
@@ -19,6 +39,7 @@ interface ApprovalRequest {
 	binding_message: string | null;
 	capabilities: string[];
 	capability_constraints: Record<string, Record<string, unknown>> | null;
+	capability_reasons: Record<string, string> | null;
 	expires_in: number;
 	created_at: string;
 }
@@ -151,33 +172,34 @@ export default function ApprovalsPage() {
 											Requested Capabilities
 										</p>
 										<div className="flex flex-col gap-1.5">
-											{req.capabilities.map((cap) => {
-												const capConstraints = req.capability_constraints?.[cap];
-												return (
-													<div key={cap}>
-														<code className="rounded-lg bg-surface px-2.5 py-1 text-xs font-mono text-foreground">
-															{cap}
-														</code>
-														{capConstraints && Object.keys(capConstraints).length > 0 && (
-															<div className="mt-1 ml-2 flex flex-wrap gap-1">
-																{Object.entries(capConstraints).map(([field, value]) => (
-																	<span
-																		key={field}
-																		className="inline-flex items-center rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] font-mono text-gmail-blue ring-1 ring-inset ring-gmail-blue/20"
-																	>
-																		{field}:{" "}
-																		{typeof value === "object" && value !== null && !Array.isArray(value)
-																			? Object.entries(value as Record<string, unknown>)
-																					.map(([op, v]) => `${op}=${JSON.stringify(v)}`)
-																					.join(", ")
-																			: JSON.stringify(value)}
-																	</span>
-																))}
-															</div>
-														)}
-													</div>
-												);
-											})}
+										{req.capabilities.map((cap) => {
+											const capConstraints = req.capability_constraints?.[cap];
+											const capReason = req.capability_reasons?.[cap];
+											return (
+												<div key={cap}>
+													<code className="rounded-lg bg-surface px-2.5 py-1 text-xs font-mono text-foreground">
+														{cap}
+													</code>
+													{capReason && (
+														<p className="mt-1 ml-2 text-[11px] text-muted italic">
+															&ldquo;{capReason}&rdquo;
+														</p>
+													)}
+													{capConstraints && Object.keys(capConstraints).length > 0 && (
+														<div className="mt-1 ml-2 flex flex-wrap gap-1">
+															{Object.entries(capConstraints).map(([field, value]) => (
+																<span
+																	key={field}
+																	className="inline-flex items-center rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] text-gmail-blue ring-1 ring-inset ring-gmail-blue/20"
+																>
+																	{field}: {formatConstraintValue(value)}
+																</span>
+															))}
+														</div>
+													)}
+												</div>
+											);
+										})}
 										</div>
 									</div>
 								)}

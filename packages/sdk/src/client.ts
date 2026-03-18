@@ -327,8 +327,8 @@ export class AgentAuthClient {
         scored.push({
           cap: {
             ...matched[i],
-            provider: config.provider_name,
-            issuer: config.issuer,
+            provider: config.issuer,
+            provider_name: config.provider_name,
           },
           boost,
         });
@@ -364,7 +364,7 @@ export class AgentAuthClient {
     const seen = new Set<string>();
     const results: CapabilitySearchResult[] = [];
     for (const { cap } of scored) {
-      const key = `${cap.issuer}:${cap.name}`;
+      const key = `${cap.provider}:${cap.name}`;
       if (seen.has(key)) continue;
       seen.add(key);
       results.push(cap);

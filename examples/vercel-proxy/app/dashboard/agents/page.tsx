@@ -223,12 +223,23 @@ function MetaItem({ label, children }: { label: string; children: React.ReactNod
 }
 
 function formatConstraintValue(value: unknown): string {
-	if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-		return Object.entries(value as Record<string, unknown>)
-			.map(([op, v]) => `${op}=${JSON.stringify(v)}`)
-			.join(", ");
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return String(value);
 	}
-	return JSON.stringify(value);
+	const ops = value as Record<string, unknown>;
+	const parts: string[] = [];
+	if (ops.eq !== undefined) parts.push(`${ops.eq}`);
+	if (ops.in !== undefined && Array.isArray(ops.in)) {
+		const items = ops.in.map(String);
+		parts.push(items.length === 1 ? `only ${items[0]}` : `only ${items.join(" or ")}`);
+	}
+	if (ops.not_in !== undefined && Array.isArray(ops.not_in)) {
+		const items = ops.not_in.map(String);
+		parts.push(`not ${items.join(" or ")}`);
+	}
+	if (ops.max !== undefined) parts.push(`at most ${ops.max}`);
+	if (ops.min !== undefined) parts.push(`at least ${ops.min}`);
+	return parts.join(", ") || JSON.stringify(value);
 }
 
 function CapabilityRow({ grant }: { grant: GrantData }) {
@@ -250,7 +261,7 @@ function CapabilityRow({ grant }: { grant: GrantData }) {
 					{Object.entries(grant.constraints!).map(([field, value]) => (
 						<span
 							key={field}
-							className="inline-flex items-center rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-mono text-blue-300 ring-1 ring-blue-500/20"
+							className="inline-flex items-center rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-300 ring-1 ring-blue-500/20"
 						>
 							{field}: {formatConstraintValue(value)}
 						</span>

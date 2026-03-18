@@ -55,20 +55,35 @@ interface AgentInfo {
 	needsActivation?: boolean;
 }
 
+function formatConstraintValue(value: unknown): string {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return String(value);
+	}
+	const ops = value as Record<string, unknown>;
+	const parts: string[] = [];
+	if (ops.eq !== undefined) parts.push(`${ops.eq}`);
+	if (ops.in !== undefined && Array.isArray(ops.in)) {
+		const items = ops.in.map(String);
+		parts.push(items.length === 1 ? `only ${items[0]}` : `only ${items.join(" or ")}`);
+	}
+	if (ops.not_in !== undefined && Array.isArray(ops.not_in)) {
+		const items = ops.not_in.map(String);
+		parts.push(`not ${items.join(" or ")}`);
+	}
+	if (ops.max !== undefined) parts.push(`at most ${ops.max}`);
+	if (ops.min !== undefined) parts.push(`at least ${ops.min}`);
+	return parts.join(", ") || JSON.stringify(value);
+}
+
 function ConstraintBadges({ constraints }: { constraints: Record<string, unknown> }) {
 	return (
 		<div className="mt-1.5 ml-10 flex flex-wrap gap-1">
 			{Object.entries(constraints).map(([field, value]) => (
 				<span
 					key={field}
-					className="inline-flex items-center rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] font-mono text-gmail-blue ring-1 ring-inset ring-gmail-blue/20"
+					className="inline-flex items-center rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] text-gmail-blue ring-1 ring-inset ring-gmail-blue/20"
 				>
-					{field}:{" "}
-					{typeof value === "object" && value !== null && !Array.isArray(value)
-						? Object.entries(value as Record<string, unknown>)
-								.map(([op, v]) => `${op}=${JSON.stringify(v)}`)
-								.join(", ")
-						: JSON.stringify(value)}
+					{field}: {formatConstraintValue(value)}
 				</span>
 			))}
 		</div>
