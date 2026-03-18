@@ -219,7 +219,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "connect_agent",
       description:
-        "Connect to a provider and get an agent_id. Call ONCE, then use execute_capability for everything. Typical flow: search → connect_agent → execute_capability. NEVER re-call connect_agent for the same provider unless execute_capability returns 'agent_not_found' or 'revoked'. IMPORTANT: When capabilities have constrainable_fields, you MUST apply constraints to limit your scope (principle of least privilege). For example, if sending email and you know the recipient, constrain the 'to' field.",
+        "Connect to a provider and get an agent_id. Call ONCE, then use execute_capability for everything. Typical flow: search → connect_agent → execute_capability. NEVER re-call connect_agent for the same provider unless execute_capability returns 'agent_not_found' or 'revoked'. IMPORTANT: When capabilities have constrainable_fields, you MUST apply constraints to limit your scope (principle of least privilege). For example, if sending email and you know the recipient, constrain the 'to' field. NOTE: If you omit 'mode', this tool will return a mode selection prompt — you MUST present the options to the user and let them choose, then call connect_agent again with the chosen mode.",
       annotations: { readOnlyHint: true, title: "Connect Agent" },
       parameters: {
         type: "object",
@@ -253,7 +253,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
           mode: {
             type: "string",
             enum: ["delegated", "autonomous"],
-            description: "Agent mode",
+            description:
+              "Connection mode. 'delegated' = act on behalf of a user (they link their account and approve access). 'autonomous' = work independently without a user account (get default capabilities immediately, user can claim later). If omitted, the tool will return a prompt for the user to choose.",
           },
           name: {
             type: "string",
@@ -281,12 +282,69 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
         required: ["provider"],
       },
       async execute(args, ctx) {
+        const mode = args.mode as "delegated" | "autonomous" | undefined;
+
+        if (!mode) {
+          let supportedModes: string[] = ["delegated", "autonomous"];
+          try {
+            const config = await client.getProviderConfig(
+              args.provider as string,
+            );
+            if (config.modes?.length) {
+              supportedModes = config.modes;
+            }
+          } catch {
+            // Discovery failed — present both options
+          }
+
+          if (supportedModes.length === 1) {
+            return client.connectAgent({
+              provider: args.provider as string,
+              capabilities: args.capabilities as
+                | CapabilityRequestItem[]
+                | undefined,
+              mode: supportedModes[0] as "delegated" | "autonomous",
+              name: args.name as string | undefined,
+              reason: args.reason as string | undefined,
+              preferredMethod: args.preferred_method as string | undefined,
+              loginHint: args.login_hint as string | undefined,
+              bindingMessage: args.binding_message as string | undefined,
+              signal: ctx?.signal,
+            });
+          }
+
+          const options = supportedModes.map((m) =>
+            m === "autonomous"
+              ? {
+                  mode: "autonomous",
+                  title: "Work autonomously",
+                  description:
+                    "I'll work independently without linking to your account. I get default capabilities immediately and you can claim ownership later.",
+                }
+              : {
+                  mode: "delegated",
+                  title: "Link your account",
+                  description:
+                    "Connect using your account. You'll approve the capabilities I can use and I'll act on your behalf.",
+                },
+          );
+
+          return {
+            action_required: "choose_mode",
+            message:
+              "Before connecting, ask the user how they'd like to connect:",
+            options,
+            instruction:
+              "Present these options to the user and let them choose. Then call connect_agent again with the same arguments plus the chosen mode.",
+          };
+        }
+
         return client.connectAgent({
           provider: args.provider as string,
           capabilities: args.capabilities as
             | CapabilityRequestItem[]
             | undefined,
-          mode: args.mode as "delegated" | "autonomous" | undefined,
+          mode,
           name: args.name as string | undefined,
           reason: args.reason as string | undefined,
           preferredMethod: args.preferred_method as string | undefined,

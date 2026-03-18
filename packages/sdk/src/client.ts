@@ -1155,6 +1155,14 @@ export class AgentAuthClient {
     return this.storage.getAgentConnection(agentId);
   }
 
+  /**
+   * Resolve and return a cached provider config by issuer, name, or URL.
+   * Triggers discovery if the provider is a URL and not yet cached.
+   */
+  async getProviderConfig(provider: string): Promise<ProviderConfig> {
+    return this.resolveConfig(provider);
+  }
+
   // ─── Internals ──────────────────────────────────────────────
 
   private resolveAgentName(): string {

@@ -145,8 +145,11 @@ function DeviceCapabilitiesContent() {
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error_description || data.message || "Action failed");
+      const errorCode = data.error;
+      const errorMessage = data.error_description || data.message || "Action failed";
+
+      if (!res.ok || errorCode) {
+        setError(errorMessage);
         setActionState("idle");
         return;
       }
