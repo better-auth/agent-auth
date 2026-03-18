@@ -5,31 +5,7 @@ import { settings, eventLog } from "./db/schema";
 export { db } from "./db/index";
 export * as schema from "./db/schema";
 
-// In-memory settings cache for sync access in auth config callbacks.
-// Postgres queries are async, but agentAuth callbacks (freshSessionWindow,
-// resolveApprovalMethod) require sync return values.
-const settingsCache = new Map<string, string>();
-let cacheLoaded = false;
-
-async function loadSettingsCache(): Promise<void> {
-	const rows = await db.select().from(settings);
-	settingsCache.clear();
-	for (const row of rows) {
-		settingsCache.set(row.key, row.value);
-	}
-	cacheLoaded = true;
-}
-
-const cacheReady = loadSettingsCache().catch(() => {});
-
-export function getSetting(key: string): string | undefined {
-	return settingsCache.get(key);
-}
-
-export async function getSettingAsync(
-	key: string,
-): Promise<string | undefined> {
-	if (!cacheLoaded) await cacheReady;
+export async function getSetting(key: string): Promise<string | undefined> {
 	const rows = await db
 		.select({ value: settings.value })
 		.from(settings)
@@ -38,10 +14,7 @@ export async function getSettingAsync(
 	return rows[0]?.value;
 }
 
-export async function setSettingAsync(
-	key: string,
-	value: string,
-): Promise<void> {
+export async function setSetting(key: string, value: string): Promise<void> {
 	await db
 		.insert(settings)
 		.values({ key, value })
@@ -49,10 +22,9 @@ export async function setSettingAsync(
 			target: settings.key,
 			set: { value },
 		});
-	settingsCache.set(key, value);
 }
 
-export async function insertLogAsync(
+export async function insertLog(
 	type: string | null,
 	actorId: string | null,
 	actorType: string | null,

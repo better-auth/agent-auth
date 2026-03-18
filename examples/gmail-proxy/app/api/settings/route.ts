@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { getSettingAsync, setSettingAsync } from "@/lib/db";
+import { getSetting, setSetting } from "@/lib/db";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -19,9 +19,9 @@ export async function GET() {
 
 	const [freshSessionEnabled, freshSessionWindow, preferredApprovalMethod] =
 		await Promise.all([
-			getSettingAsync("freshSessionEnabled"),
-			getSettingAsync("freshSessionWindow"),
-			getSettingAsync("preferredApprovalMethod"),
+			getSetting("freshSessionEnabled"),
+			getSetting("freshSessionWindow"),
+			getSetting("preferredApprovalMethod"),
 		]);
 
 	return NextResponse.json({
@@ -44,7 +44,7 @@ export async function PUT(req: Request) {
 
 	for (const key of ALLOWED_KEYS) {
 		if (key in body) {
-			await setSettingAsync(key, String(body[key]));
+			await setSetting(key, String(body[key]));
 		}
 	}
 

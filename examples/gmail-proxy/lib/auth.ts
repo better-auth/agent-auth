@@ -5,7 +5,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth, anonymous } from "better-auth/plugins";
 import { db } from "./db/index";
 import * as schema from "./db/schema";
-import { getSetting, insertLogAsync } from "./db";
+import { getSetting, insertLog } from "./db";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID as string;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET as string;
@@ -495,9 +495,9 @@ export const auth = betterAuth({
     anonymous(),
     agentAuth({
       allowDynamicHostRegistration: true,
-      freshSessionWindow: () => {
-        if (getSetting("freshSessionEnabled") !== "true") return 0;
-        return parseInt(getSetting("freshSessionWindow") ?? "300", 10);
+      freshSessionWindow: async () => {
+        if ((await getSetting("freshSessionEnabled")) !== "true") return 0;
+        return parseInt((await getSetting("freshSessionWindow")) ?? "300", 10);
       },
       capabilities,
       defaultHostCapabilities: READ_ONLY_CAPABILITIES,
@@ -506,9 +506,9 @@ export const auth = betterAuth({
         "Gmail is Google's email service with over 1.8 billion users. This proxy provides AI agents with secure access to read, send, and manage emails, threads, labels, and drafts through the Gmail API.",
       modes: ["delegated"],
       approvalMethods: ["ciba", "device_authorization"],
-      resolveApprovalMethod: ({ preferredMethod, supportedMethods }) => {
+      resolveApprovalMethod: async ({ preferredMethod, supportedMethods }) => {
         const serverPreferred =
-          getSetting("preferredApprovalMethod") ?? "device_authorization";
+          (await getSetting("preferredApprovalMethod")) ?? "device_authorization";
         const method = preferredMethod ?? serverPreferred;
         return supportedMethods.includes(method)
           ? method
@@ -701,7 +701,7 @@ export const auth = betterAuth({
       onEvent: (event) => {
         const { type, actorId, actorType, agentId, hostId, orgId, ...rest } =
           event as unknown as Record<string, unknown>;
-        insertLogAsync(
+        insertLog(
           (type as string) ?? null,
           (actorId as string) ?? null,
           (actorType as string) ?? null,
