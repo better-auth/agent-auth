@@ -15,17 +15,17 @@ async function verifyOpaqueToken(
 ): Promise<{ userId: string } | null> {
 	const hashed = hashToken(token);
 	const rows = await sql`
-		SELECT "userId", "expiresAt"
-		FROM "oauthAccessToken"
+		SELECT "user_id", "expires_at"
+		FROM "oauth_access_token"
 		WHERE "token" = ${hashed}
 		LIMIT 1
 	`;
 	const row = rows[0];
 	if (!row) return null;
-	if (row.expiresAt && new Date(row.expiresAt as string) < new Date())
+	if (row.expires_at && new Date(row.expires_at as string) < new Date())
 		return null;
-	if (!row.userId) return null;
-	return { userId: row.userId as string };
+	if (!row.user_id) return null;
+	return { userId: row.user_id as string };
 }
 
 function unauthorizedResponse() {
