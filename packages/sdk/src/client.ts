@@ -1093,6 +1093,8 @@ export class AgentAuthClient {
           capabilityGrants: finalStatus.agent_capability_grants,
         };
       }
+      await this.storage.deleteAgentConnection(conn.agentId);
+      return this.connectAgent({ ...opts, provider: config.issuer });
     }
 
     if (opts.capabilities && opts.capabilities.length > 0) {
