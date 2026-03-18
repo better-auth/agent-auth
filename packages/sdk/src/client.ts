@@ -1018,9 +1018,10 @@ export class AgentAuthClient {
 		key: string,
 		fallback: string,
 	): string {
-		const endpoint = config.endpoints[key];
-		if (endpoint) return new URL(endpoint, config.issuer).toString();
-		return `${config.issuer}${fallback}`;
+		const path = config.endpoints[key] ?? fallback;
+		if (path.startsWith("http://") || path.startsWith("https://")) return path;
+		const issuer = config.issuer.replace(/\/+$/, "");
+		return `${issuer}${path.startsWith("/") ? path : `/${path}`}`;
 	}
 
 	/**
