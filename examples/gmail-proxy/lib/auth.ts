@@ -611,8 +611,7 @@ export const auth = betterAuth({
             }
 
             const listParams = new URLSearchParams();
-            if (queryParts.length)
-              listParams.set("q", queryParts.join(" "));
+            if (queryParts.length) listParams.set("q", queryParts.join(" "));
             listParams.set("maxResults", String(maxResults));
             if (args?.pageToken)
               listParams.set("pageToken", String(args.pageToken));
@@ -664,9 +663,8 @@ export const auth = betterAuth({
             const messages = details.map((msg) => {
               const headers = msg.payload?.headers ?? [];
               const hdr = (name: string) =>
-                headers.find(
-                  (h) => h.name.toLowerCase() === name.toLowerCase(),
-                )?.value ?? null;
+                headers.find((h) => h.name.toLowerCase() === name.toLowerCase())
+                  ?.value ?? null;
 
               return {
                 id: msg.id,
@@ -868,4 +866,5 @@ export const auth = betterAuth({
       },
     }),
   ],
+  trustedOrigins: ["chrome-extension://*"],
 });
