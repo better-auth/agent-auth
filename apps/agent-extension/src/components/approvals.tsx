@@ -5,6 +5,7 @@ import {
 	Clock,
 	Fingerprint,
 	Loader2,
+	Lock,
 	RefreshCw,
 	ShieldCheck,
 	X,
@@ -16,6 +17,75 @@ import type { PendingApprovalRequest } from "@/lib/types";
 import { cn, formatRelativeTime, formatTimeLeft } from "@/lib/utils";
 
 const POLL_INTERVAL = 5000;
+
+const FIELD_LABELS: Record<string, string> = {
+	to: "Recipients",
+	from: "Sender",
+	cc: "CC",
+	bcc: "BCC",
+	subject: "Subject",
+	body: "Body",
+	amount: "Amount",
+	url: "URL",
+	path: "Path",
+	method: "Method",
+};
+
+function parseConstraints(
+	raw: unknown,
+): Record<string, unknown> | null {
+	if (!raw) return null;
+	if (typeof raw === "string") {
+		try {
+			const parsed = JSON.parse(raw);
+			if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+				return parsed as Record<string, unknown>;
+			}
+		} catch {
+			return null;
+		}
+		return null;
+	}
+	if (typeof raw === "object" && !Array.isArray(raw)) {
+		return raw as Record<string, unknown>;
+	}
+	return null;
+}
+
+function formatConstraint(field: string, value: unknown): string {
+	const label = FIELD_LABELS[field.toLowerCase()] ?? field;
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return `${label} is ${String(value)}`;
+	}
+	const ops = value as Record<string, unknown>;
+	const parts: string[] = [];
+	if (ops.eq !== undefined) parts.push(`must be "${ops.eq}"`);
+	if (ops.in !== undefined && Array.isArray(ops.in)) {
+		const items = ops.in.map(String);
+		parts.push(
+			items.length === 1
+				? `limited to ${items[0]}`
+				: `limited to ${items.join(", ")}`,
+		);
+	}
+	if (ops.not_in !== undefined && Array.isArray(ops.not_in)) {
+		const items = ops.not_in.map(String);
+		parts.push(
+			items.length === 1
+				? `excludes ${items[0]}`
+				: `excludes ${items.join(", ")}`,
+		);
+	}
+	if (ops.max !== undefined && ops.min !== undefined) {
+		parts.push(`between ${ops.min} and ${ops.max}`);
+	} else {
+		if (ops.max !== undefined) parts.push(`at most ${ops.max}`);
+		if (ops.min !== undefined) parts.push(`at least ${ops.min}`);
+	}
+	return parts.length > 0
+		? `${label} ${parts.join(", ")}`
+		: `${label}: ${JSON.stringify(value)}`;
+}
 
 function RequestCard({
 	request,
@@ -165,23 +235,45 @@ function RequestCard({
 						</div>
 					)}
 
-					{request.capabilities.length > 0 && (
-						<div>
-							<p className="text-[11px] text-muted-foreground mb-1 uppercase tracking-wider font-medium">
-								Capabilities
-							</p>
-							<div className="flex flex-wrap gap-1">
-								{request.capabilities.map((s) => (
-									<span
-										key={s}
-										className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded-sm text-muted-foreground"
-									>
-										{s}
+			{request.capabilities.length > 0 && (
+				<div>
+					<p className="text-[11px] text-muted-foreground mb-1 uppercase tracking-wider font-medium">
+						Capabilities
+					</p>
+					<div className="space-y-1.5">
+						{request.capabilities.map((cap) => {
+							const rawConstraints = request.capability_constraints?.[cap];
+							const constraints = parseConstraints(rawConstraints);
+							const reason = request.capability_reasons?.[cap];
+							return (
+								<div key={cap}>
+									<span className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded-sm text-muted-foreground">
+										{cap}
 									</span>
-								))}
-							</div>
-						</div>
-					)}
+									{reason && (
+										<p className="mt-0.5 ml-1 text-[10px] text-muted-foreground/70 italic">
+											&ldquo;{reason}&rdquo;
+										</p>
+									)}
+									{constraints && Object.keys(constraints).length > 0 && (
+										<div className="mt-1 ml-1 space-y-0.5">
+											{Object.entries(constraints).map(([field, value]) => (
+												<div
+													key={field}
+													className="flex items-start gap-1 text-[10px] text-muted-foreground"
+												>
+													<Lock className="mt-px h-2.5 w-2.5 shrink-0 text-blue-500 dark:text-blue-400" />
+													<span>{formatConstraint(field, value)}</span>
+												</div>
+											))}
+										</div>
+									)}
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			)}
 
 					{request.binding_message && (
 						<div>

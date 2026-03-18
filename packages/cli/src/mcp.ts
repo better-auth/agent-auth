@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z, type ZodRawShape } from "zod";
 import {
   getAgentAuthTools,
+  filterTools,
   type ToolParameters,
 } from "@auth/agent";
 import { createClient, type ClientConfig } from "./client.js";

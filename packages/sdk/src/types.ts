@@ -52,6 +52,33 @@ export interface Capability {
 	[key: string]: unknown;
 }
 
+/** A single request within a batch execute call. */
+export interface BatchExecuteRequest {
+	/** Client-assigned ID for correlating responses. Auto-generated if omitted. */
+	id?: string;
+	/** Capability to execute. */
+	capability: string;
+	/** Arguments for the capability. */
+	arguments?: Record<string, unknown>;
+}
+
+/** A single response item within a batch execute result. */
+export interface BatchExecuteResponseItem {
+	/** Correlation ID matching the request. */
+	id: string;
+	/** Whether this individual request succeeded or failed. */
+	status: "completed" | "failed";
+	/** Result data (when status is "completed"). */
+	data?: unknown;
+	/** Error details (when status is "failed"). */
+	error?: { code?: string; message?: string };
+}
+
+/** Response from POST /capability/batch-execute. */
+export interface BatchExecuteResponse {
+	responses: BatchExecuteResponseItem[];
+}
+
 /** Response from POST /capabilities/execute (§6.11). */
 export interface ExecuteCapabilityResponse {
 	/** Sync result payload. */
@@ -228,6 +255,14 @@ export interface EnrollHostResponse {
 	status: string;
 }
 
+/** A capability enriched with its provider identity for cross-provider search results. */
+export interface CapabilitySearchResult extends Capability {
+	/** Provider issuer URL — pass this directly to connect_agent's `provider` param. */
+	provider: string;
+	/** Human-readable provider name for display. */
+	provider_name: string;
+}
+
 /** Capabilities list response from GET /capabilities — §6.2. */
 export interface CapabilitiesResponse {
 	capabilities: Capability[];
@@ -269,6 +304,7 @@ export interface Storage {
 		conn: AgentConnection,
 	): Promise<void>;
 	deleteAgentConnection(agentId: string): Promise<void>;
+	listAgentConnections(): Promise<AgentConnection[]>;
 
 	getProviderConfig(issuer: string): Promise<ProviderConfig | null>;
 	setProviderConfig(
@@ -352,12 +388,14 @@ export interface AgentAuthError {
 export class AgentAuthSDKError extends Error {
 	public readonly code: string;
 	public readonly status: number;
+	public readonly agentId?: string;
 
-	constructor(code: string, message: string, status: number = 0) {
+	constructor(code: string, message: string, status: number = 0, agentId?: string) {
 		super(message);
 		this.name = "AgentAuthSDKError";
 		this.code = code;
 		this.status = status;
+		this.agentId = agentId;
 	}
 
 	static fromResponse(

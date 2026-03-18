@@ -50,6 +50,18 @@ export default function DashboardLayout({
             >
               Sites
             </Link>
+            <Link
+              href="/dashboard/agents"
+              className="text-[11px] font-mono text-foreground/45 hover:text-foreground/70 transition-colors"
+            >
+              Agents
+            </Link>
+            <Link
+              href="/dashboard/hosts"
+              className="text-[11px] font-mono text-foreground/45 hover:text-foreground/70 transition-colors"
+            >
+              Hosts
+            </Link>
           </div>
         </div>
         <div className="flex items-center gap-4">

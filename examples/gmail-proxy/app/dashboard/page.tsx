@@ -13,7 +13,7 @@ function CopyButton({ value }: { value: string }) {
 	return (
 		<button
 			onClick={copy}
-			className="cursor-pointer rounded-full px-2.5 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
+			className="cursor-pointer rounded-md px-2 py-0.5 text-[12px] text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
 		>
 			{copied ? "Copied!" : "Copy"}
 		</button>
@@ -80,54 +80,54 @@ export default function DashboardOverview() {
 	];
 
 	const statCards = [
-		{ label: "Total Agents", value: stats?.totalAgents ?? "—", color: "text-foreground" },
-		{ label: "Active", value: stats?.activeAgents ?? "—", color: "text-gmail-green" },
-		{ label: "Pending", value: stats?.pendingAgents ?? "—", color: "text-gmail-yellow" },
-		{ label: "Hosts", value: stats?.totalHosts ?? "—", color: "text-gmail-blue" },
-		{ label: "Events", value: stats?.recentLogs ?? "—", color: "text-foreground" },
+		{ label: "Total Agents", value: stats?.totalAgents ?? "—" },
+		{ label: "Active", value: stats?.activeAgents ?? "—" },
+		{ label: "Pending", value: stats?.pendingAgents ?? "—" },
+		{ label: "Hosts", value: stats?.totalHosts ?? "—" },
+		{ label: "Events", value: stats?.recentLogs ?? "—" },
 	];
 
 	return (
-		<div className="mx-auto w-full max-w-3xl px-6 py-8">
-			<div className="flex flex-col gap-8">
+		<div className="mx-auto w-full max-w-3xl px-6 py-6">
+			<div className="flex flex-col gap-6">
 				<div>
-					<h1 className="text-[22px] font-normal text-foreground">
+					<h1 className="text-lg font-medium text-gray-900">
 						Overview
 					</h1>
-					<p className="mt-1 text-sm text-muted">
+					<p className="mt-0.5 text-[13px] text-gray-500">
 						Your Google account is connected. AI agents can access Gmail through Agent Auth.
 					</p>
 				</div>
 
-				<div className="grid grid-cols-5 gap-3">
+				<div className="grid grid-cols-5 gap-2">
 					{statCards.map((s) => (
 						<div
 							key={s.label}
-							className="rounded-2xl border border-border bg-white px-4 py-3.5 shadow-sm"
+							className="rounded-xl border border-gray-200 bg-white px-3.5 py-3"
 						>
-							<p className="text-xs text-muted">{s.label}</p>
-							<p className={`mt-1 text-2xl font-medium ${s.color}`}>
+							<p className="text-[11px] text-gray-400">{s.label}</p>
+							<p className="mt-0.5 text-xl font-medium text-gray-900">
 								{s.value}
 							</p>
 						</div>
 					))}
 				</div>
 
-				<div className="flex flex-col gap-3">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+				<div className="flex flex-col gap-2">
+					<h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-400">
 						Account
 					</h2>
-					<div className="rounded-2xl border border-border bg-white shadow-sm">
-						<div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-							<span className="text-sm text-muted">Email</span>
-							<span className="text-sm text-foreground">
+					<div className="rounded-xl border border-gray-200 bg-white">
+						<div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
+							<span className="text-[13px] text-gray-500">Email</span>
+							<span className="text-[13px] text-gray-900">
 								{session?.user.email}
 							</span>
 						</div>
-						<div className="flex items-center justify-between px-5 py-3.5">
-							<span className="text-sm text-muted">User ID</span>
+						<div className="flex items-center justify-between px-4 py-2.5">
+							<span className="text-[13px] text-gray-500">User ID</span>
 							<div className="flex items-center gap-1">
-							<code className="font-mono text-xs text-foreground">
+							<code className="font-mono text-[12px] text-gray-700">
 								{session?.user.id}
 							</code>
 								<CopyButton value={session?.user.id ?? ""} />
@@ -136,21 +136,21 @@ export default function DashboardOverview() {
 					</div>
 				</div>
 
-				<div className="flex flex-col gap-3">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+				<div className="flex flex-col gap-2">
+					<h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-400">
 						Agent Auth Endpoints
 					</h2>
-					<div className="rounded-2xl border border-border bg-white shadow-sm">
+					<div className="rounded-xl border border-gray-200 bg-white">
 						{endpoints.map((ep, i) => (
 							<div
 								key={ep.path}
-								className={`flex items-center justify-between px-5 py-3.5 ${
-									i < endpoints.length - 1 ? "border-b border-border" : ""
+								className={`flex items-center justify-between px-4 py-2.5 ${
+									i < endpoints.length - 1 ? "border-b border-gray-100" : ""
 								}`}
 							>
-								<span className="text-sm text-muted">{ep.label}</span>
+								<span className="text-[13px] text-gray-500">{ep.label}</span>
 								<div className="flex items-center gap-1">
-								<code className="font-mono text-xs text-foreground">
+								<code className="font-mono text-[12px] text-gray-700">
 									{ep.path}
 								</code>
 									<CopyButton value={`${baseUrl}${ep.path}`} />
@@ -160,12 +160,12 @@ export default function DashboardOverview() {
 					</div>
 				</div>
 
-				<div className="flex flex-col gap-3">
-					<h2 className="text-xs font-medium uppercase tracking-wider text-muted">
+				<div className="flex flex-col gap-2">
+					<h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-400">
 						Quick Start
 					</h2>
-					<div className="rounded-2xl border border-border bg-white p-5 shadow-sm">
-						<pre className="overflow-x-auto font-mono text-xs leading-6 text-foreground">
+					<div className="rounded-xl border border-gray-200 bg-white p-4">
+						<pre className="overflow-x-auto font-mono text-[12px] leading-5 text-gray-700">
 							<code>{`# Discover this provider
 curl ${baseUrl}/api/auth/agent/agent-configuration
 

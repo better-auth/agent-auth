@@ -2,9 +2,11 @@ import { agentAuth } from "@better-auth/agent-auth";
 import { createFromOpenAPI } from "@better-auth/agent-auth/openapi";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth, anonymous } from "better-auth/plugins";
 import {
   db,
+  schema,
   getSetting,
   insertLog,
   trackAutonomousProject,
@@ -83,7 +85,7 @@ async function transferProjects(
   hostId: string,
   userAccessToken: string,
 ): Promise<void> {
-  const projects = getUntransferredProjects(hostId);
+  const projects = await getUntransferredProjects(hostId);
   if (projects.length === 0) {
     console.log("[transfer] No untransferred projects for host", hostId);
     return;
@@ -131,7 +133,7 @@ async function transferProjects(
       });
 
       if (acceptRes.ok || acceptRes.status === 202) {
-        markProjectTransferred(project.projectId);
+        await markProjectTransferred(project.projectId);
         console.log(
           `[transfer] Successfully transferred ${project.projectId} (${project.projectName})`,
         );
@@ -148,7 +150,10 @@ async function transferProjects(
 }
 
 export const auth = betterAuth({
-  database: db,
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema,
+  }),
   plugins: [
     genericOAuth({
       config: [
@@ -180,7 +185,9 @@ export const auth = betterAuth({
               "https://vercel.com/api/login/oauth/token",
               {
                 method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                headers: {
+                  "Content-Type": "application/x-www-form-urlencoded",
+                },
                 body: params.toString(),
               },
             );
@@ -251,7 +258,7 @@ export const auth = betterAuth({
           try {
             const extracted = extractProjectId(result);
             if (extracted) {
-              trackAutonomousProject(
+              await trackAutonomousProject(
                 context.agentSession.host.id,
                 extracted.projectId,
                 extracted.projectName,
@@ -319,15 +326,15 @@ export const auth = betterAuth({
         try {
           const { type, actorId, actorType, agentId, hostId, orgId, ...rest } =
             event as unknown as Record<string, unknown>;
-          insertLog.run(
-            type ?? null,
+          insertLog(
+            (type as string) ?? null,
             (actorId as string) ?? null,
             (actorType as string) ?? null,
             (agentId as string) ?? null,
             (hostId as string) ?? null,
             (orgId as string) ?? null,
             JSON.stringify(rest),
-          );
+          ).catch(() => {});
         } catch {
           // never let logging break the flow
         }

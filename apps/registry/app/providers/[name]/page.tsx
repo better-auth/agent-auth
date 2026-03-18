@@ -18,6 +18,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { provider } from "@/lib/db/schema";
 import { safeJsonParse } from "@/lib/utils";
+import { TogglePublicButton } from "./toggle-public";
 
 export const dynamic = "force-dynamic";
 
@@ -37,10 +38,10 @@ export default async function ProviderDetailPage({
 
 	if (!row) notFound();
 
-	if (!row.public) {
-		const session = await auth.api.getSession({ headers: await headers() });
-		if (!session || row.submittedBy !== session.user.id) notFound();
-	}
+	const session = await auth.api.getSession({ headers: await headers() });
+	const isOwner = !!session && row.submittedBy === session.user.id;
+
+	if (!row.public && !isOwner) notFound();
 
 	const modes = safeJsonParse<string[]>(row.modes, []);
 	const approvalMethods = safeJsonParse<string[]>(row.approvalMethods, []);
@@ -61,13 +62,20 @@ export default async function ProviderDetailPage({
 					All Providers
 				</Link>
 
-				{!row.public && (
-					<div className="flex items-center gap-2 border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3 mb-6">
-						<EyeOff className="h-3.5 w-3.5 text-foreground/40 shrink-0" />
-						<p className="text-[11px] font-mono text-foreground/45">
-							This provider is not public. Only you can see this page.
-						</p>
-					</div>
+				{isOwner ? (
+					<TogglePublicButton
+						providerName={row.name}
+						initialPublic={row.public}
+					/>
+				) : (
+					!row.public && (
+						<div className="flex items-center gap-2 border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3 mb-6">
+							<EyeOff className="h-3.5 w-3.5 text-foreground/40 shrink-0" />
+							<p className="text-[11px] font-mono text-foreground/45">
+								This provider is not public. Only you can see this page.
+							</p>
+						</div>
+					)
 				)}
 
 				<div className="space-y-4 mb-10">

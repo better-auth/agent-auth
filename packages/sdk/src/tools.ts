@@ -1,5 +1,5 @@
 import type { AgentAuthClient } from "./client";
-import type { CapabilityRequestItem } from "./types";
+import type { BatchExecuteRequest, CapabilityRequestItem } from "./types";
 
 export interface ToolParameters {
   type: "object";
@@ -11,9 +11,18 @@ export interface ToolContext {
   signal?: AbortSignal;
 }
 
+export interface ToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 export interface AgentAuthTool {
   name: string;
   description: string;
+  annotations?: ToolAnnotations;
   parameters: ToolParameters;
   execute: (
     args: Record<string, unknown>,
@@ -31,12 +40,56 @@ export interface AgentAuthTool {
  */
 export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
   return [
-    // ── Step 1: Find a provider ──
+    // ── Search (primary entry point) ──
+
+    {
+      name: "search",
+      description:
+        "Search for capabilities across all providers. This ALREADY searches both the local cache AND the registry in a single call — you do NOT need to call search_providers or list_providers afterwards. Results include provider info so you can go straight to connect_agent. This is the ONLY search tool you need for finding capabilities.",
+      annotations: { readOnlyHint: true },
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "What you want to do (e.g. 'send email', 'deploy app', 'list repos')",
+          },
+          limit: {
+            type: "number",
+            description: "Max results to return (default 5)",
+          },
+        },
+        required: ["query"],
+      },
+      async execute(args) {
+        const results = await client.search(args.query as string, {
+          limit: args.limit as number | undefined,
+        });
+        const hasConstrainable = results.some(
+          (r) =>
+            r.constrainable_fields &&
+            typeof r.constrainable_fields === "object" &&
+            Object.keys(r.constrainable_fields as Record<string, unknown>)
+              .length > 0,
+        );
+        return {
+          results,
+          ...(hasConstrainable && {
+            constraint_reminder:
+              "Some capabilities have constrainable_fields. When calling connect_agent, you MUST use constraints to limit scope (e.g. { name: 'gmail.messages.send', constraints: { to: { in: ['user@example.com'] } } }).",
+          }),
+        };
+      },
+    },
+
+    // ── Discovery (fallback — only needed for edge cases) ──
 
     {
       name: "list_providers",
       description:
-        "Step 1a — ALWAYS call this first. Lists providers that have already been discovered, connected, or pre-configured. Check here before searching or discovering. If the provider you need is already listed, skip straight to Step 2.",
+        "List all known providers. Only needed to see everything in the cache — prefer search for finding capabilities.",
+      annotations: { readOnlyHint: true },
       parameters: { type: "object", properties: {} },
       async execute() {
         return client.listProviders();
@@ -46,7 +99,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "search_providers",
       description:
-        "Step 1b: Search the registry for providers by name or intent. Call this when list_providers doesn't have what you need. Use the provider name (e.g. 'vercel', 'github') or describe what you want to do (e.g. 'deploy web apps'). Found providers are automatically cached so you can use them immediately.",
+        "Search the registry for providers by name or intent. ALMOST NEVER NEEDED — the search tool already queries the registry. Only use this if search returned zero results AND you believe there may be a provider not yet indexed for the capability you want.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -66,7 +120,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "discover_provider",
       description:
-        "Look up a provider by URL. IMPORTANT: Do NOT call this alongside search_providers — always wait for search_providers results first. Only use this if BOTH list_providers and search_providers have already been called and neither returned the provider you need. When a registry is configured (default), this only resolves providers through the registry — it will NOT fetch from arbitrary URLs.",
+        "Look up a provider by URL. Only needed if you have a specific URL that isn't in the registry.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -83,12 +138,11 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       },
     },
 
-    // ── Step 2: Browse capabilities ──
-
     {
       name: "list_capabilities",
       description:
-        "Step 2: List capabilities offered by a provider. Call after discovering a provider to see what it offers before connecting an agent. Some providers require authentication — if you get an 'authentication_required' error, call connect_agent first, then retry with the agent_id. Each capability may include 'constrainable_fields' — use these to apply constraints when requesting capabilities (e.g. { name: 'send:email', constraints: { recipient_count: { max: 5 } } }).",
+        "Browse all capabilities for a specific provider. Use when you need the full list or need to paginate. Prefer search for finding capabilities by intent.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -131,7 +185,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "describe_capability",
       description:
-        "Get the full definition (including input schema) for a single capability by name. Use when you need to check what arguments a capability accepts before calling execute_capability.",
+        "OPTIONAL. Get input schema for a capability. Skip if you already know the arguments — just call execute_capability directly. The server will validate arguments.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -159,12 +214,13 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       },
     },
 
-    // ── Step 3: Connect an agent ──
+    // ── Connect (call ONCE per provider) ──
 
     {
       name: "connect_agent",
       description:
-        "Step 3: Connect an agent to a provider. Reuses an existing identity if one is already active for this provider (requesting any missing capabilities automatically). Only creates a new agent if none exists or all are expired/revoked. Returns the agent_id you'll need for all subsequent operations. IMPORTANT: When requesting capabilities, apply constraints to limit scope to only what you need — check 'constrainable_fields' from list_capabilities. Example: [{ name: 'send:email', constraints: { recipient_count: { max: 10 } } }].",
+        "Connect to a provider and get an agent_id. Call ONCE, then use execute_capability for everything. Typical flow: search → connect_agent → execute_capability. NEVER re-call connect_agent for the same provider unless execute_capability returns 'agent_not_found' or 'revoked'. IMPORTANT: When capabilities have constrainable_fields, you MUST apply constraints to limit your scope (principle of least privilege). For example, if sending email and you know the recipient, constrain the 'to' field. NOTE: If you omit 'mode', this tool will return a mode selection prompt — you MUST present the options to the user and let them choose, then call connect_agent again with the chosen mode.",
+      annotations: { readOnlyHint: true, title: "Connect Agent" },
       parameters: {
         type: "object",
         properties: {
@@ -184,7 +240,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
                     constraints: {
                       type: "object",
                       description:
-                        "Scope limits on constrainable_fields from list_capabilities. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Example: { amount: { max: 500 }, currency: { in: ['USD', 'EUR'] } }",
+                        "REQUIRED when constrainable_fields exist. Scope limits from constrainable_fields. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Examples: { to: { in: ['alice@example.com'] } }, { maxResults: { max: 10 } }, { format: 'metadata' }",
                     },
                   },
                   required: ["name"],
@@ -192,16 +248,18 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
               ],
             },
             description:
-              "Capabilities to request. PREFER using objects with constraints to request minimal scope. Only use plain strings if no constraints apply.",
+              "Capabilities to request. ALWAYS use objects with constraints when the capability has constrainable_fields — never use plain strings for constrainable capabilities. Only use plain strings for capabilities with no constrainable_fields.",
           },
           mode: {
             type: "string",
             enum: ["delegated", "autonomous"],
-            description: "Agent mode",
+            description:
+              "Connection mode. 'delegated' = act on behalf of a user (they link their account and approve access). 'autonomous' = work independently without a user account (get default capabilities immediately, user can claim later). If omitted, the tool will return a prompt for the user to choose.",
           },
           name: {
             type: "string",
-            description: "Agent name",
+            description:
+              "A descriptive agent name (e.g. 'Email Assistant', 'Code Review Bot'). Provide a clear, human-readable name — avoid generic names.",
           },
           reason: {
             type: "string",
@@ -224,12 +282,69 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
         required: ["provider"],
       },
       async execute(args, ctx) {
+        const mode = args.mode as "delegated" | "autonomous" | undefined;
+
+        if (!mode) {
+          let supportedModes: string[] = ["delegated", "autonomous"];
+          try {
+            const config = await client.getProviderConfig(
+              args.provider as string,
+            );
+            if (config.modes?.length) {
+              supportedModes = config.modes;
+            }
+          } catch {
+            // Discovery failed — present both options
+          }
+
+          if (supportedModes.length === 1) {
+            return client.connectAgent({
+              provider: args.provider as string,
+              capabilities: args.capabilities as
+                | CapabilityRequestItem[]
+                | undefined,
+              mode: supportedModes[0] as "delegated" | "autonomous",
+              name: args.name as string | undefined,
+              reason: args.reason as string | undefined,
+              preferredMethod: args.preferred_method as string | undefined,
+              loginHint: args.login_hint as string | undefined,
+              bindingMessage: args.binding_message as string | undefined,
+              signal: ctx?.signal,
+            });
+          }
+
+          const options = supportedModes.map((m) =>
+            m === "autonomous"
+              ? {
+                  mode: "autonomous",
+                  title: "Work autonomously",
+                  description:
+                    "I'll work independently without linking to your account. I get default capabilities immediately and you can claim ownership later.",
+                }
+              : {
+                  mode: "delegated",
+                  title: "Link your account",
+                  description:
+                    "Connect using your account. You'll approve the capabilities I can use and I'll act on your behalf.",
+                },
+          );
+
+          return {
+            action_required: "choose_mode",
+            message:
+              "Before connecting, ask the user how they'd like to connect:",
+            options,
+            instruction:
+              "Present these options to the user and let them choose. Then call connect_agent again with the same arguments plus the chosen mode.",
+          };
+        }
+
         return client.connectAgent({
           provider: args.provider as string,
           capabilities: args.capabilities as
             | CapabilityRequestItem[]
             | undefined,
-          mode: args.mode as "delegated" | "autonomous" | undefined,
+          mode,
           name: args.name as string | undefined,
           reason: args.reason as string | undefined,
           preferredMethod: args.preferred_method as string | undefined,
@@ -240,12 +355,13 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       },
     },
 
-    // ── Step 4: Use the agent ──
+    // ── Execute (main tool — use repeatedly after connecting) ──
 
     {
       name: "execute_capability",
       description:
-        "Step 4: Execute a capability on behalf of an agent. Requires an agent_id from connect_agent. Signs a scoped JWT and sends the request to the provider.",
+        "Invoke a capability using agent_id from connect_agent. Just call it — do NOT ask the user for permission, do NOT confirm before executing. The user already approved access when they connected the agent. Call repeatedly for all operations. IMPORTANT: Always translate the user's intent into the capability's input arguments. For listing/search operations, use filters and query parameters to scope results to what the user actually asked for (e.g. date ranges, search terms, status filters, labels). Refer to the input schema returned by connect_agent to know which arguments are available. If unsure about exact argument format, try calling it — the server returns descriptive errors.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -260,7 +376,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
           arguments: {
             type: "object",
             description:
-              "Arguments for the capability, conforming to its input schema",
+              "Arguments for the capability. ALWAYS pass relevant filters derived from the user's request — e.g. search queries, date ranges, IDs, labels, pagination. The input schema is available in the connect_agent response for each granted capability.",
           },
         },
         required: ["agent_id", "capability"],
@@ -275,9 +391,53 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     },
 
     {
+      name: "batch_execute_capabilities",
+      description:
+        "Invoke multiple capabilities in a single batch. Use this instead of calling execute_capability repeatedly when you need to run the same or different capabilities with multiple inputs (e.g. fetching several emails by ID after listing them). Do NOT ask the user for permission — just execute. Each request in the batch can independently succeed or fail.",
+      annotations: { readOnlyHint: true },
+      parameters: {
+        type: "object",
+        properties: {
+          agent_id: {
+            type: "string",
+            description: "Agent ID returned by connect_agent",
+          },
+          requests: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                capability: {
+                  type: "string",
+                  description: "Capability to execute",
+                },
+                arguments: {
+                  type: "object",
+                  description:
+                    "Arguments for the capability, conforming to its input schema",
+                },
+              },
+              required: ["capability"],
+            },
+            description:
+              "Array of capability executions to run in parallel. Max 50.",
+          },
+        },
+        required: ["agent_id", "requests"],
+      },
+      async execute(args) {
+        return client.batchExecuteCapabilities({
+          agentId: args.agent_id as string,
+          requests: args.requests as BatchExecuteRequest[],
+        });
+      },
+    },
+
+    {
       name: "agent_status",
       description:
-        "Check the status of an agent (active, pending, expired, revoked) and its capability grants. Requires an agent_id from connect_agent.",
+        "Check agent status and grants. Only call if execute_capability returned an error suggesting the agent may be inactive.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -296,7 +456,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "sign_jwt",
       description:
-        "Sign an agent JWT for manual authentication. Requires an agent_id from connect_agent. Usually not needed — execute_capability handles signing automatically. Set 'audience' to the target location URL for execution requests.",
+        "Sign an agent JWT manually. Rarely needed — execute_capability signs JWTs automatically. Only use for custom integrations that need a raw token.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -329,7 +490,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "request_capability",
       description:
-        "Request additional capabilities for an existing agent. Requires an agent_id from connect_agent. Apply constraints to limit scope — check 'constrainable_fields' from list_capabilities. Operators: eq, min, max, in, not_in. Example: [{ name: 'deploy', constraints: { environment: { in: ['preview'] } } }].",
+        "Request additional capabilities for an already-connected agent. Only call if execute_capability fails with 'capability_not_granted'. Do NOT use this to reconnect — use connect_agent for that. ALWAYS apply constraints when constrainable_fields are available.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -349,7 +511,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
                     constraints: {
                       type: "object",
                       description:
-                        "Scope limits on constrainable_fields. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Example: { environment: { in: ['preview'] } }",
+                        "REQUIRED when constrainable_fields exist. Scope limits from constrainable_fields. Keys are field names, values are primitives (shorthand for eq) or operator objects: { eq, min, max, in: [...], not_in: [...] }. Examples: { to: { in: ['alice@example.com'] } }, { environment: { in: ['preview'] } }",
                     },
                   },
                   required: ["name"],
@@ -357,7 +519,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
               ],
             },
             description:
-              "Capabilities to request. PREFER using objects with constraints to request minimal scope. Only use plain strings if no constraints apply.",
+              "Capabilities to request. ALWAYS use objects with constraints when the capability has constrainable_fields — never use plain strings for constrainable capabilities.",
           },
           reason: {
             type: "string",
@@ -394,7 +556,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "disconnect_agent",
       description:
-        "Disconnect and revoke an agent. Requires an agent_id from connect_agent.",
+        "Disconnect and revoke an agent. Only call when explicitly asked to disconnect or when done with a provider permanently.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -414,7 +577,8 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "reactivate_agent",
       description:
-        "Reactivate an expired agent. Requires an agent_id from connect_agent.",
+        "Reactivate an expired agent. Only call if agent_status or execute_capability reports the agent is expired.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -438,6 +602,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "enroll_host",
       description:
         "Enroll a host using a one-time enrollment token. Only needed when the host was pre-registered without a public key.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -469,6 +634,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       name: "rotate_agent_key",
       description:
         "Rotate an agent's keypair. Requires an agent_id from connect_agent.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {
@@ -487,6 +653,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "rotate_host_key",
       description: "Rotate the host keypair for a provider.",
+      annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
         properties: {

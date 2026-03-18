@@ -1,8 +1,9 @@
 import { agentAuth } from "@better-auth/agent-auth";
 import { createFromOpenAPI } from "@better-auth/agent-auth/openapi";
 import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { anonymous } from "better-auth/plugins";
-import { db, getSetting, insertLog } from "./db";
+import { db, schema, getSetting, insertLog } from "./db";
 
 const GITHUB_OPENAPI_URL =
   "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json";
@@ -11,7 +12,6 @@ const githubSpec = await fetch(GITHUB_OPENAPI_URL).then((r) => r.json());
 
 const openapi = createFromOpenAPI(githubSpec, {
   baseUrl: "https://api.github.com",
-  // defaultHostCapabilities: "GET",
   async resolveHeaders({ agentSession, ctx }) {
     const account = await ctx.context.adapter.findOne<{
       accessToken: string | null;
@@ -38,7 +38,10 @@ const openapi = createFromOpenAPI(githubSpec, {
 });
 
 export const auth = betterAuth({
-  database: db,
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema,
+  }),
   socialProviders: {
     github: {
       clientId: process.env.GITHUB_CLIENT_ID!,
@@ -78,15 +81,15 @@ export const auth = betterAuth({
         try {
           const { type, actorId, actorType, agentId, hostId, orgId, ...rest } =
             event as unknown as Record<string, unknown>;
-          insertLog.run(
-            type ?? null,
+          insertLog(
+            (type as string) ?? null,
             (actorId as string) ?? null,
             (actorType as string) ?? null,
             (agentId as string) ?? null,
             (hostId as string) ?? null,
             (orgId as string) ?? null,
             JSON.stringify(rest),
-          );
+          ).catch(() => {});
         } catch {
           // never let logging break the flow
         }

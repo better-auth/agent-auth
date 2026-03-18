@@ -1,38 +1,49 @@
-import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
+import { db } from "./db/index";
+import { settings, eventLog } from "./db/schema";
 
-export const db = new Database("github-proxy.db");
+export { db } from "./db/index";
+export * as schema from "./db/schema";
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS event_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    actorId TEXT,
-    actorType TEXT,
-    agentId TEXT,
-    hostId TEXT,
-    orgId TEXT,
-    data TEXT,
-    createdAt TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  )
-`);
+const settingsCache = new Map<string, string>();
+const rows = await db
+	.select({ key: settings.key, value: settings.value })
+	.from(settings);
+for (const row of rows) {
+	settingsCache.set(row.key, row.value);
+}
 
 export function getSetting(key: string): string | undefined {
-	const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
-	return row?.value;
+	return settingsCache.get(key);
 }
 
-export function setSetting(key: string, value: string): void {
-	db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+export async function setSetting(key: string, value: string): Promise<void> {
+	await db
+		.insert(settings)
+		.values({ key, value })
+		.onConflictDoUpdate({
+			target: settings.key,
+			set: { value },
+		});
+	settingsCache.set(key, value);
 }
 
-export const insertLog = db.prepare(
-	`INSERT INTO event_log (type, actorId, actorType, agentId, hostId, orgId, data, createdAt)
-	 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-);
+export async function insertLog(
+	type: string | null,
+	actorId: string | null,
+	actorType: string | null,
+	agentId: string | null,
+	hostId: string | null,
+	orgId: string | null,
+	data: string | null,
+): Promise<void> {
+	await db.insert(eventLog).values({
+		type: type ?? "unknown",
+		actorId,
+		actorType,
+		agentId,
+		hostId,
+		orgId,
+		data,
+	});
+}

@@ -23,9 +23,9 @@ import {
 	buildApprovalInfo,
 	capabilityItemZ,
 	formatGrantsResponse,
-	normalizeCapabilities,
 	validateCapabilitiesExist,
 } from "./_helpers";
+import { constraintsCover } from "../utils/constraints";
 
 const capabilityRequestItem = z.union([
 	z.string(),
@@ -121,35 +121,37 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 			const ownerId = agentSession.host?.userId ?? null;
 			const now = new Date();
 
-			const activeCapIds = existingGrants
-				.filter(
-					(g) =>
-						g.status === "active" &&
-						(!g.expiresAt || new Date(g.expiresAt) > now),
-				)
-				.map((g) => g.capability);
+			const activeGrants = existingGrants.filter(
+				(g) =>
+					g.status === "active" &&
+					(!g.expiresAt || new Date(g.expiresAt) > now),
+			);
+			const pendingGrants = existingGrants.filter(
+				(g) =>
+					g.status === "pending" &&
+					(!g.grantedBy || g.grantedBy === ownerId),
+			);
 
-			const pendingCapIds = existingGrants
-				.filter(
+			const isCoveredByActive = (capId: string) =>
+				activeGrants.some(
 					(g) =>
-						g.status === "pending" &&
-						(!g.grantedBy || g.grantedBy === ownerId),
-				)
-				.map((g) => g.capability);
+						g.capability === capId &&
+						constraintsCover(g.constraints, constraintsMap.get(capId) ?? null),
+				);
+			const isCoveredByPending = (capId: string) =>
+				pendingGrants.some(
+					(g) =>
+						g.capability === capId &&
+						constraintsCover(g.constraints, constraintsMap.get(capId) ?? null),
+				);
 
-			const alreadyActive = new Set(activeCapIds);
-			const alreadyPending = new Set(pendingCapIds);
-			const alreadyTracked = new Set([
-				...activeCapIds,
-				...pendingCapIds,
-			]);
 			const newOnly = capabilityIds.filter(
-				(c) => !alreadyTracked.has(c),
+				(c) => !isCoveredByActive(c) && !isCoveredByPending(c),
 			);
 
 			if (newOnly.length === 0) {
 				const allActive = capabilityIds.every((c) =>
-					alreadyActive.has(c),
+					isCoveredByActive(c),
 				);
 				if (allActive) {
 					throw agentError(
@@ -160,7 +162,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 
 				// Some still pending — return pending with approval info
 				const stillPending = capabilityIds.filter((c) =>
-					alreadyPending.has(c),
+					isCoveredByPending(c),
 				);
 
 				// §5.4: return only the requested grants, not the full set

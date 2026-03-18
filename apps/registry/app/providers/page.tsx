@@ -51,6 +51,14 @@ export default async function ProvidersPage({
 					<h1 className="text-[11px] font-mono uppercase tracking-wider text-foreground/40">
 						All Providers ({total})
 					</h1>
+					<a
+						href="https://agent-auth-protocol.com/specification/v1.0-draft#611-registry"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="text-[10px] font-mono text-foreground/25 hover:text-foreground/50 transition-colors"
+					>
+						§6.11 Registry
+					</a>
 				</div>
 
 				{providers.length > 0 ? (

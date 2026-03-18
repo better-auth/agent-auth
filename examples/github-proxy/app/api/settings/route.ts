@@ -40,7 +40,7 @@ export async function PUT(req: Request) {
 
 	for (const key of ALLOWED_KEYS) {
 		if (key in body) {
-			setSetting(key, String(body[key]));
+			await setSetting(key, String(body[key]));
 		}
 	}
 

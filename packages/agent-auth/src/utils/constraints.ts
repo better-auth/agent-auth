@@ -110,6 +110,83 @@ export function validateConstraints(
 }
 
 /**
+ * Check whether an existing grant's constraints fully cover the
+ * requested constraints (i.e. the request would already be allowed).
+ *
+ * - Unrestricted grant (null constraints) covers everything.
+ * - Restricted grant cannot cover an unrestricted request.
+ * - When both have constraints, each requested field must be
+ *   subsumed by the existing grant's constraint on that field.
+ */
+export function constraintsCover(
+	existing: CapabilityConstraints | null | undefined,
+	requested: CapabilityConstraints | null | undefined,
+): boolean {
+	if (!existing) return true;
+	if (!requested) return false;
+
+	for (const [field, reqValue] of Object.entries(requested)) {
+		const exValue = existing[field];
+		if (exValue === undefined) continue;
+		if (!fieldConstraintCovers(exValue, reqValue)) return false;
+	}
+	return true;
+}
+
+function fieldConstraintCovers(
+	existing: ConstraintValue,
+	requested: ConstraintValue,
+): boolean {
+	const exOps = normOps(existing);
+	const reqOps = normOps(requested);
+
+	if (exOps.eq !== undefined) {
+		if (reqOps.eq !== undefined) return exOps.eq === reqOps.eq;
+		if (reqOps.in !== undefined) return reqOps.in.length === 1 && reqOps.in[0] === exOps.eq;
+		return false;
+	}
+
+	if (exOps.in !== undefined) {
+		const exSet = new Set(exOps.in.map(String));
+		if (reqOps.eq !== undefined) return exSet.has(String(reqOps.eq));
+		if (reqOps.in !== undefined) return reqOps.in.every((v) => exSet.has(String(v)));
+		return false;
+	}
+
+	if (exOps.min !== undefined || exOps.max !== undefined) {
+		if (reqOps.min !== undefined && exOps.min !== undefined && reqOps.min < exOps.min) return false;
+		if (reqOps.max !== undefined && exOps.max !== undefined && reqOps.max > exOps.max) return false;
+	}
+
+	return JSON.stringify(existing) === JSON.stringify(requested);
+}
+
+function normOps(v: ConstraintValue): ConstraintOperators {
+	if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+		return { eq: v };
+	}
+	return v;
+}
+
+/**
+ * Find the first grant whose constraints allow the given execution
+ * arguments. Use this instead of a plain `.find()` when an agent
+ * may hold multiple grants for the same capability with different
+ * constraint scopes.
+ */
+export function findMatchingGrant<T extends { constraints: CapabilityConstraints | null }>(
+	grants: T[],
+	args: Record<string, ConstraintPrimitive | undefined> | undefined,
+): T | undefined {
+	for (const grant of grants) {
+		if (!grant.constraints) return grant;
+		const result = validateConstraints(grant.constraints, args);
+		if (result.valid) return grant;
+	}
+	return undefined;
+}
+
+/**
  * Intersect (narrow) constraints — §2.13.
  * When both agent-proposed and server-imposed constraints exist for the same
  * field, the tightest constraint wins.

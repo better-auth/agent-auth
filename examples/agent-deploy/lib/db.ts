@@ -1,137 +1,161 @@
-import Database from "better-sqlite3";
+import { eq, and, desc, count } from "drizzle-orm";
+import { db } from "./db/index";
+import { site, eventLog } from "./db/schema";
 
-export const db = new Database("agent-deploy.db");
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS site (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL UNIQUE,
-    html TEXT NOT NULL DEFAULT '',
-    description TEXT DEFAULT '',
-    userId TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active',
-    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
-    updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS event_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    actorId TEXT,
-    actorType TEXT,
-    agentId TEXT,
-    hostId TEXT,
-    orgId TEXT,
-    data TEXT,
-    createdAt TEXT NOT NULL DEFAULT (datetime('now'))
-  )
-`);
-
-export const insertLog = db.prepare(
-  `INSERT INTO event_log (type, actorId, actorType, agentId, hostId, orgId, data, createdAt)
-   VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-);
+export { db } from "./db/index";
+export * as schema from "./db/schema";
 
 export function generateId(): string {
-  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+	return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
 
 export function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+	return name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 48);
 }
 
 function uniqueSlug(name: string): string {
-  const base = slugify(name);
-  const suffix = crypto.randomUUID().slice(0, 6);
-  return `${base}-${suffix}`;
+	const base = slugify(name);
+	const suffix = crypto.randomUUID().slice(0, 6);
+	return `${base}-${suffix}`;
 }
 
 interface SiteRow {
-  id: string;
-  name: string;
-  slug: string;
-  html: string;
-  description: string;
-  userId: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+	id: string;
+	name: string;
+	slug: string;
+	html: string;
+	description: string | null;
+	userId: string;
+	status: string;
+	createdAt: Date;
+	updatedAt: Date;
 }
 
-export function createSite(params: {
-  name: string;
-  html: string;
-  description?: string;
-  userId: string;
-}): SiteRow {
-  const id = generateId();
-  const slug = uniqueSlug(params.name);
-  db.prepare(
-    `INSERT INTO site (id, name, slug, html, description, userId) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, params.name, slug, params.html, params.description ?? "", params.userId);
-  return db.prepare("SELECT * FROM site WHERE id = ?").get(id) as SiteRow;
+export async function insertLog(
+	type: string | null,
+	actorId: string | null,
+	actorType: string | null,
+	agentId: string | null,
+	hostId: string | null,
+	orgId: string | null,
+	data: string | null,
+): Promise<void> {
+	await db.insert(eventLog).values({
+		type: type ?? "unknown",
+		actorId,
+		actorType,
+		agentId,
+		hostId,
+		orgId,
+		data,
+	});
 }
 
-export function updateSite(params: {
-  id: string;
-  userId: string;
-  name?: string;
-  html?: string;
-  description?: string;
-}): SiteRow | null {
-  const site = db
-    .prepare("SELECT * FROM site WHERE id = ? AND userId = ? AND status = 'active'")
-    .get(params.id, params.userId) as SiteRow | undefined;
-  if (!site) return null;
-
-  const updates: string[] = ["updatedAt = datetime('now')"];
-  const values: unknown[] = [];
-
-  if (params.name !== undefined) {
-    updates.push("name = ?");
-    values.push(params.name);
-  }
-  if (params.html !== undefined) {
-    updates.push("html = ?");
-    values.push(params.html);
-  }
-  if (params.description !== undefined) {
-    updates.push("description = ?");
-    values.push(params.description);
-  }
-
-  values.push(params.id);
-  db.prepare(`UPDATE site SET ${updates.join(", ")} WHERE id = ?`).run(...values);
-  return db.prepare("SELECT * FROM site WHERE id = ?").get(params.id) as SiteRow;
+export async function createSite(params: {
+	name: string;
+	html: string;
+	description?: string;
+	userId: string;
+}): Promise<SiteRow> {
+	const id = generateId();
+	const slug = uniqueSlug(params.name);
+	const [row] = await db
+		.insert(site)
+		.values({
+			id,
+			name: params.name,
+			slug,
+			html: params.html,
+			description: params.description ?? "",
+			userId: params.userId,
+		})
+		.returning();
+	return row;
 }
 
-export function deleteSite(id: string, userId: string): boolean {
-  const result = db
-    .prepare("UPDATE site SET status = 'deleted', updatedAt = datetime('now') WHERE id = ? AND userId = ? AND status = 'active'")
-    .run(id, userId);
-  return result.changes > 0;
+export async function updateSite(params: {
+	id: string;
+	userId: string;
+	name?: string;
+	html?: string;
+	description?: string;
+}): Promise<SiteRow | null> {
+	const existing = await db
+		.select()
+		.from(site)
+		.where(
+			and(
+				eq(site.id, params.id),
+				eq(site.userId, params.userId),
+				eq(site.status, "active"),
+			),
+		)
+		.limit(1);
+	if (existing.length === 0) return null;
+
+	const updates: Partial<{
+		name: string;
+		html: string;
+		description: string;
+	}> = {};
+	if (params.name !== undefined) updates.name = params.name;
+	if (params.html !== undefined) updates.html = params.html;
+	if (params.description !== undefined) updates.description = params.description;
+
+	const [row] = await db
+		.update(site)
+		.set(updates)
+		.where(eq(site.id, params.id))
+		.returning();
+	return row;
 }
 
-export function getSite(id: string): SiteRow | null {
-  return (db.prepare("SELECT * FROM site WHERE id = ? AND status = 'active'").get(id) as SiteRow) ?? null;
+export async function deleteSite(
+	id: string,
+	userId: string,
+): Promise<boolean> {
+	const result = await db
+		.update(site)
+		.set({ status: "deleted" })
+		.where(and(eq(site.id, id), eq(site.userId, userId), eq(site.status, "active")))
+		.returning({ id: site.id });
+	return result.length > 0;
 }
 
-export function getSiteBySlug(slug: string): SiteRow | null {
-  return (db.prepare("SELECT * FROM site WHERE slug = ? AND status = 'active'").get(slug) as SiteRow) ?? null;
+export async function getSite(id: string): Promise<SiteRow | null> {
+	const rows = await db
+		.select()
+		.from(site)
+		.where(and(eq(site.id, id), eq(site.status, "active")))
+		.limit(1);
+	return rows[0] ?? null;
 }
 
-export function listSites(userId: string): SiteRow[] {
-  return db.prepare("SELECT * FROM site WHERE userId = ? AND status = 'active' ORDER BY updatedAt DESC").all(userId) as SiteRow[];
+export async function getSiteBySlug(slug: string): Promise<SiteRow | null> {
+	const rows = await db
+		.select()
+		.from(site)
+		.where(and(eq(site.slug, slug), eq(site.status, "active")))
+		.limit(1);
+	return rows[0] ?? null;
 }
 
-export function countSites(userId: string): number {
-  const row = db.prepare("SELECT COUNT(*) as count FROM site WHERE userId = ? AND status = 'active'").get(userId) as { count: number };
-  return row.count;
+export async function listSites(userId: string): Promise<SiteRow[]> {
+	return db
+		.select()
+		.from(site)
+		.where(and(eq(site.userId, userId), eq(site.status, "active")))
+		.orderBy(desc(site.updatedAt));
+}
+
+export async function countSites(userId: string): Promise<number> {
+	const [row] = await db
+		.select({ count: count() })
+		.from(site)
+		.where(and(eq(site.userId, userId), eq(site.status, "active")));
+	return row?.count ?? 0;
 }

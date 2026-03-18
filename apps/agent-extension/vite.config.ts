@@ -5,6 +5,11 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
 	plugins: [react(), tailwindcss()],
+	define: {
+		__REGISTRY_URL__: JSON.stringify(
+			process.env.REGISTRY_URL || "http://localhost:4200",
+		),
+	},
 	base: "./",
 	build: {
 		outDir: "dist",

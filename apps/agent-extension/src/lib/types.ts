@@ -38,6 +38,8 @@ export type PendingApprovalRequest = {
 	agent_name: string | null;
 	binding_message: string | null;
 	capabilities: string[];
+	capability_constraints: Record<string, Record<string, unknown>> | null;
+	capability_reasons: Record<string, string> | null;
 	expires_in: number;
 	created_at: string;
 	// Client-side additions

@@ -1,5 +1,8 @@
 const ALARM_NAME = "poll-approvals";
 
+declare const __REGISTRY_URL__: string;
+const REGISTRY_URL = __REGISTRY_URL__;
+
 type UserData = {
 	id: string;
 	name: string;
@@ -375,6 +378,122 @@ chrome.storage.local.get("pendingSignIn").then((data) => {
 	}
 });
 
+// ── Registry auto-discovery ──────────────────────────────────────────────────
+
+type RegistryProvider = {
+	url: string;
+	provider_name: string;
+	display_name?: string;
+	issuer: string;
+};
+
+let lastDiscoveryRun = 0;
+const DISCOVERY_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+
+async function fetchRegistryProviders(): Promise<RegistryProvider[]> {
+	const allProviders: RegistryProvider[] = [];
+	let page = 1;
+	const limit = 100;
+
+	while (true) {
+		const res = await fetch(
+			`${REGISTRY_URL}/api/providers?page=${page}&limit=${limit}`,
+			{
+				method: "GET",
+				headers: { accept: "application/json" },
+				signal: AbortSignal.timeout(10_000),
+			},
+		);
+		if (!res.ok) break;
+		const body = (await res.json()) as { providers?: RegistryProvider[] };
+		const providers = body.providers ?? [];
+		allProviders.push(...providers);
+		if (providers.length < limit) break;
+		page++;
+	}
+
+	return allProviders;
+}
+
+async function trySessionForUrl(
+	providerUrl: string,
+): Promise<{ token: string; user: UserData } | null> {
+	try {
+		const cookies = await chrome.cookies.getAll({ url: providerUrl });
+		for (const cookie of cookies) {
+			if (!cookie.value || cookie.value.length < 16) continue;
+			try {
+				const res = await fetch(
+					`${providerUrl}/api/auth/get-session`,
+					{
+						method: "GET",
+						headers: {
+							"Content-Type": "application/json",
+							Authorization: `Bearer ${cookie.value}`,
+						},
+						signal: AbortSignal.timeout(5_000),
+					},
+				);
+				if (!res.ok) continue;
+				const data = await res.json();
+				if (data?.user) {
+					return {
+						token: cookie.value,
+						user: {
+							id: data.user.id,
+							name: data.user.name ?? data.user.email,
+							email: data.user.email,
+							image: data.user.image ?? null,
+						},
+					};
+				}
+			} catch {
+				continue;
+			}
+		}
+	} catch {
+		// Cookie access failed
+	}
+	return null;
+}
+
+async function discoverRegistryAccounts(
+	force = false,
+): Promise<{ discovered: number }> {
+	if (!force && Date.now() - lastDiscoveryRun < DISCOVERY_COOLDOWN_MS) {
+		return { discovered: 0 };
+	}
+	lastDiscoveryRun = Date.now();
+
+	let providers: RegistryProvider[];
+	try {
+		providers = await fetchRegistryProviders();
+	} catch {
+		return { discovered: 0 };
+	}
+
+	const accounts = await getAccounts();
+	const knownUrls = new Set(
+		accounts.map((a) => a.idpUrl.replace(/\/+$/, "")),
+	);
+
+	let discovered = 0;
+
+	for (const provider of providers) {
+		const normalizedUrl = provider.url.replace(/\/+$/, "");
+		if (knownUrls.has(normalizedUrl)) continue;
+
+		const result = await trySessionForUrl(normalizedUrl);
+		if (!result) continue;
+
+		await upsertAccount(normalizedUrl, result.token, result.user);
+		knownUrls.add(normalizedUrl);
+		discovered++;
+	}
+
+	return { discovered };
+}
+
 // ── Side panel ───────────────────────────────────────────────────────────────
 
 let panelClosing = false;
@@ -504,19 +623,19 @@ async function setupAlarm(): Promise<void> {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
 	if (alarm.name === ALARM_NAME) {
-		pollApprovals();
+		discoverRegistryAccounts().then(() => pollApprovals());
 	}
 });
 
 chrome.runtime.onInstalled.addListener(() => {
 	chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 	setupAlarm();
-	pollApprovals();
+	discoverRegistryAccounts().then(() => pollApprovals());
 });
 
 chrome.runtime.onStartup.addListener(() => {
 	setupAlarm();
-	pollApprovals();
+	discoverRegistryAccounts().then(() => pollApprovals());
 });
 
 chrome.notifications.onClicked.addListener(async (notificationId) => {
@@ -530,8 +649,12 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
 	}
 });
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message.type === "close-side-panel") {
 		closeSidePanel();
+	}
+	if (message.type === "discover-accounts") {
+		discoverRegistryAccounts(true).then(sendResponse);
+		return true;
 	}
 });

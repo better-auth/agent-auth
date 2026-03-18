@@ -3,6 +3,7 @@ export { MemoryStorage } from "./storage";
 export { generateKeypair, signHostJWT, signAgentJWT } from "./crypto";
 export { discoverProvider, searchProviders, searchRegistryFull, lookupByUrl } from "./discovery";
 export { detectHostName, detectTool } from "./host-name";
+export { matchQuery } from "./search";
 export { AgentAuthSDKError } from "./types";
 export { getAgentAuthTools, filterTools, toOpenAITools, toAISDKTools, toAnthropicTools } from "./tools";
 
@@ -26,8 +27,12 @@ export type {
 	RequestCapabilityResponse,
 	IntrospectResponse,
 	ExecuteCapabilityResponse,
+	BatchExecuteRequest,
+	BatchExecuteResponseItem,
+	BatchExecuteResponse,
 	CapabilitiesResponse,
 	AgentSessionResponse,
+	CapabilitySearchResult,
 	EnrollHostResponse,
 	AgentConnection,
 	HostIdentity,
@@ -45,6 +50,7 @@ export type {
 export type { ToolDetection } from "./host-name";
 export type {
 	AgentAuthTool,
+	ToolAnnotations,
 	ToolParameters,
 	ToolContext,
 	ToolErrorResult,

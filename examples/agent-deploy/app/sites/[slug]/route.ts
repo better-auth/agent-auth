@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
-  const site = getSiteBySlug(slug);
+  const site = await getSiteBySlug(slug);
   if (!site) {
     return new NextResponse("<!DOCTYPE html><html><body><h1>404 — Site not found</h1></body></html>", {
       status: 404,

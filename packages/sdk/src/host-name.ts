@@ -79,6 +79,11 @@ export function detectTool(): ToolDetection | null {
  */
 function getDeviceName(): string | null {
 	try {
+		const env = typeof process !== "undefined" ? process.env : {};
+
+		if (env.HOSTNAME && env.HOSTNAME !== "localhost") return env.HOSTNAME;
+		if (env.COMPUTERNAME) return env.COMPUTERNAME;
+
 		const { execSync } = require("node:child_process") as typeof import("node:child_process");
 		const { hostname, platform } = require("node:os") as typeof import("node:os");
 		const p = platform();
@@ -99,17 +104,12 @@ function getDeviceName(): string | null {
 			}
 		}
 
-		if (p === "win32") {
-			const computerName = process.env.COMPUTERNAME;
-			if (computerName) return computerName;
-		}
-
 		const h = hostname();
 		if (h && h !== "localhost") {
 			return h;
 		}
 	} catch {
-		// Not in a Node.js environment or unexpected failure
+		// Not in a Node.js environment (edge, browser) or unexpected failure
 	}
 	return null;
 }

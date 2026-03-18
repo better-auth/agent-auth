@@ -50,8 +50,44 @@ interface AgentInfo {
 		capability: string;
 		status: string;
 		reason: string | null;
+		constraints: Record<string, unknown> | null;
 	}>;
 	needsActivation?: boolean;
+}
+
+function formatConstraintValue(value: unknown): string {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return String(value);
+	}
+	const ops = value as Record<string, unknown>;
+	const parts: string[] = [];
+	if (ops.eq !== undefined) parts.push(`${ops.eq}`);
+	if (ops.in !== undefined && Array.isArray(ops.in)) {
+		const items = ops.in.map(String);
+		parts.push(items.length === 1 ? `only ${items[0]}` : `only ${items.join(" or ")}`);
+	}
+	if (ops.not_in !== undefined && Array.isArray(ops.not_in)) {
+		const items = ops.not_in.map(String);
+		parts.push(`not ${items.join(" or ")}`);
+	}
+	if (ops.max !== undefined) parts.push(`at most ${ops.max}`);
+	if (ops.min !== undefined) parts.push(`at least ${ops.min}`);
+	return parts.join(", ") || JSON.stringify(value);
+}
+
+function ConstraintBadges({ constraints }: { constraints: Record<string, unknown> }) {
+	return (
+		<div className="mt-1.5 ml-10 flex flex-wrap gap-1">
+			{Object.entries(constraints).map(([field, value]) => (
+				<span
+					key={field}
+					className="inline-flex items-center rounded-md bg-gmail-blue/8 px-1.5 py-0.5 text-[10px] text-gmail-blue ring-1 ring-inset ring-gmail-blue/20"
+				>
+					{field}: {formatConstraintValue(value)}
+				</span>
+			))}
+		</div>
+	);
 }
 
 export default function DeviceCapabilities({
@@ -335,21 +371,26 @@ export default function DeviceCapabilities({
 										{pendingGrants.map((g) => (
 											<div
 												key={g.id}
-												className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5"
+												className="rounded-xl border border-border bg-surface px-3.5 py-2.5"
 											>
-												<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gmail-blue/10">
-													<svg className="h-3.5 w-3.5 text-gmail-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-													</svg>
+												<div className="flex items-center gap-3">
+													<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gmail-blue/10">
+														<svg className="h-3.5 w-3.5 text-gmail-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+															<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+														</svg>
+													</div>
+													<div className="min-w-0 flex-1">
+														<p className="truncate font-mono text-xs text-foreground">
+															{g.capability}
+														</p>
+														{g.reason && (
+															<p className="text-[11px] text-muted truncate">{g.reason}</p>
+														)}
+													</div>
 												</div>
-												<div className="min-w-0 flex-1">
-													<p className="truncate font-mono text-xs text-foreground">
-														{g.capability}
-													</p>
-													{g.reason && (
-														<p className="text-[11px] text-muted truncate">{g.reason}</p>
-													)}
-												</div>
+												{g.constraints && Object.keys(g.constraints).length > 0 && (
+													<ConstraintBadges constraints={g.constraints} />
+												)}
 											</div>
 										))}
 									</div>

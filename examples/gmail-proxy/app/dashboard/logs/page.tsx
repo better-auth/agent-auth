@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 
 function Spinner() {
 	return (
-		<svg className="animate-spin h-5 w-5 text-muted" viewBox="0 0 24 24" fill="none">
+		<svg className="animate-spin h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none">
 			<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
 			<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 		</svg>
@@ -12,15 +12,8 @@ function Spinner() {
 }
 
 function EventTypeBadge({ type }: { type: string }) {
-	const category = type.split(".")[0];
-	const styles: Record<string, string> = {
-		agent: "bg-gmail-blue/10 text-gmail-blue ring-1 ring-gmail-blue/20",
-		host: "bg-purple-100 text-purple-600 ring-1 ring-purple-200",
-		capability: "bg-gmail-yellow/15 text-gmail-yellow ring-1 ring-gmail-yellow/30",
-		ciba: "bg-teal-50 text-teal-600 ring-1 ring-teal-200",
-	};
 	return (
-		<span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${styles[category] ?? "bg-gray-100 text-gray-500 ring-1 ring-gray-200"}`}>
+		<span className="inline-flex items-center rounded-md bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-500">
 			{type}
 		</span>
 	);
@@ -109,45 +102,45 @@ export default function LogsPage() {
 	const totalPages = Math.ceil(total / pageSize);
 
 	return (
-		<div className="mx-auto w-full max-w-3xl px-6 py-8">
-			<div className="flex flex-col gap-6">
-				<div className="flex items-start justify-between">
+		<div className="mx-auto w-full max-w-3xl px-6 py-6">
+			<div className="flex flex-col gap-5">
+				<div className="flex items-center justify-between">
 					<div>
-						<h1 className="text-[22px] font-normal text-foreground">Event Logs</h1>
-						<p className="mt-1 text-sm text-muted">
+						<h1 className="text-lg font-medium text-gray-900">Event Logs</h1>
+						<p className="mt-0.5 text-[13px] text-gray-500">
 							Audit trail of agent, host, and capability events.
 						</p>
 					</div>
-					<div className="flex items-center gap-3">
+					<div className="flex items-center gap-2">
 						<button
 							onClick={() => setAutoRefresh(!autoRefresh)}
-							className={`cursor-pointer flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+							className={`cursor-pointer flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[12px] font-medium transition-colors ${
 								autoRefresh
-									? "border-gmail-green/30 text-gmail-green bg-gmail-green/5"
-									: "border-border text-muted hover:text-foreground hover:bg-surface"
+									? "border-gray-300 text-gray-700 bg-gray-50"
+									: "border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
 							}`}
 						>
-							<span className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? "bg-gmail-green animate-pulse" : "bg-muted/40"}`} />
+							<span className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? "bg-emerald-500 animate-pulse" : "bg-gray-300"}`} />
 							{autoRefresh ? "Live" : "Auto-refresh"}
 						</button>
 						<button
 							onClick={() => { setLoading(true); fetchLogs(); }}
-							className="cursor-pointer rounded-full border border-border px-3.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-foreground hover:bg-surface"
+							className="cursor-pointer rounded-md border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-gray-500 transition-colors hover:text-gray-700 hover:bg-gray-50"
 						>
 							Refresh
 						</button>
 					</div>
 				</div>
 
-				<div className="flex gap-0.5 rounded-full border border-border bg-white p-0.5 shadow-sm">
+				<div className="flex gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5">
 					{EVENT_CATEGORIES.map((cat) => (
 						<button
 							key={cat.label}
 							onClick={() => { setCategory(cat.prefix ?? ""); setPage(0); }}
-							className={`cursor-pointer rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+							className={`cursor-pointer rounded-md px-3 py-1 text-[12px] font-medium transition-colors ${
 								category === (cat.prefix ?? "")
-									? "bg-accent text-white shadow-sm"
-									: "text-muted hover:text-foreground hover:bg-surface"
+									? "bg-gray-900 text-white"
+									: "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
 							}`}
 						>
 							{cat.label}
@@ -156,60 +149,63 @@ export default function LogsPage() {
 				</div>
 
 				{loading ? (
-					<div className="flex items-center justify-center py-20">
+					<div className="flex items-center justify-center py-16">
 						<Spinner />
 					</div>
 				) : logs.length === 0 ? (
-					<div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-16">
-						<div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-surface">
-							<svg className="h-6 w-6 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-							</svg>
-						</div>
-						<p className="text-sm font-medium text-foreground">No events yet</p>
-						<p className="mt-1 text-xs text-muted">Events will appear here as agents interact with the system.</p>
+					<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 py-12">
+						<p className="text-sm text-gray-500">No events yet</p>
+						<p className="mt-1 text-xs text-gray-400">Events will appear here as agents interact with the system.</p>
 					</div>
 				) : (
 					<>
-						<div className="flex flex-col gap-1.5">
+						<div className="flex flex-col gap-1">
 							{logs.map((log) => {
 								const isExpanded = expandedLog === log.id;
 								return (
 									<button
 										key={log.id}
 										onClick={() => setExpandedLog(isExpanded ? null : log.id)}
-										className="cursor-pointer flex flex-col w-full rounded-2xl border border-border bg-white text-left shadow-sm transition-colors hover:bg-surface"
+										className="cursor-pointer flex flex-col w-full rounded-lg border border-gray-200 bg-white text-left transition-colors hover:bg-gray-50/60"
 									>
-										<div className="flex items-center gap-3 px-5 py-3">
-											<EventTypeBadge type={log.type} />
-											<div className="flex-1 min-w-0 flex items-center gap-3">
+									<div className="flex items-center gap-2.5 px-3.5 py-2.5">
+										<EventTypeBadge type={log.type} />
+										<div className="flex-1 min-w-0">
+											<div className="flex items-center gap-2.5">
+												{!!log.data?.capability && (
+													<code className="text-[12px] font-mono text-gray-700">{String(log.data.capability)}</code>
+												)}
 												{log.agentId && (
-													<span className="text-xs text-muted truncate">
-														agent: <code className="text-foreground">{log.agentId.slice(0, 8)}…</code>
+													<span className="text-[12px] text-gray-400 truncate">
+														agent: <code className="text-gray-600">{log.agentId.slice(0, 8)}…</code>
 													</span>
 												)}
 												{log.hostId && (
-													<span className="text-xs text-muted truncate">
-														host: <code className="text-foreground">{log.hostId.slice(0, 8)}…</code>
+													<span className="text-[12px] text-gray-400 truncate">
+														host: <code className="text-gray-600">{log.hostId.slice(0, 8)}…</code>
 													</span>
 												)}
 												{log.actorId && (
-													<span className="text-xs text-muted truncate">
-														by <code className="text-foreground">{log.actorId.slice(0, 8)}…</code>
+													<span className="text-[12px] text-gray-400 truncate">
+														by <code className="text-gray-600">{log.actorId.slice(0, 8)}…</code>
 													</span>
 												)}
 											</div>
-											<span className="text-[11px] text-muted shrink-0">
-												{formatTimestamp(log.createdAt)}
-											</span>
+											{!!log.data?.reason && (
+												<p className="text-[11px] text-gray-400 italic mt-0.5 truncate">&ldquo;{String(log.data.reason)}&rdquo;</p>
+											)}
 										</div>
-										{isExpanded && log.data && (
-											<div className="border-t border-border px-5 py-3">
-												<pre className="text-xs font-mono text-muted whitespace-pre-wrap break-all">
-													{JSON.stringify(log.data, null, 2)}
-												</pre>
-											</div>
-										)}
+										<span className="text-[11px] text-gray-400 shrink-0">
+											{formatTimestamp(log.createdAt)}
+										</span>
+									</div>
+									{isExpanded && log.data && (
+										<div className="border-t border-gray-100 px-3.5 py-2.5">
+											<pre className="text-[12px] font-mono text-gray-500 whitespace-pre-wrap break-all">
+												{JSON.stringify(log.data, null, 2)}
+											</pre>
+										</div>
+									)}
 									</button>
 								);
 							})}
@@ -217,20 +213,20 @@ export default function LogsPage() {
 
 						{totalPages > 1 && (
 							<div className="flex items-center justify-between">
-								<p className="text-xs text-muted">{total} total events</p>
+								<p className="text-[12px] text-gray-400">{total} total events</p>
 								<div className="flex items-center gap-2">
 									<button
 										onClick={() => setPage(Math.max(0, page - 1))}
 										disabled={page === 0}
-										className="cursor-pointer rounded-full border border-border px-3.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-foreground hover:bg-surface disabled:opacity-30 disabled:pointer-events-none"
+										className="cursor-pointer rounded-md border border-gray-200 px-3 py-1 text-[12px] font-medium text-gray-500 transition-colors hover:text-gray-700 hover:bg-gray-50 disabled:opacity-30 disabled:pointer-events-none"
 									>
 										Previous
 									</button>
-									<span className="text-xs text-muted">{page + 1} / {totalPages}</span>
+									<span className="text-[12px] text-gray-400">{page + 1} / {totalPages}</span>
 									<button
 										onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
 										disabled={page >= totalPages - 1}
-										className="cursor-pointer rounded-full border border-border px-3.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-foreground hover:bg-surface disabled:opacity-30 disabled:pointer-events-none"
+										className="cursor-pointer rounded-md border border-gray-200 px-3 py-1 text-[12px] font-medium text-gray-500 transition-colors hover:text-gray-700 hover:bg-gray-50 disabled:opacity-30 disabled:pointer-events-none"
 									>
 										Next
 									</button>

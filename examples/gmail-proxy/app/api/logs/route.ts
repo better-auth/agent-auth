@@ -1,13 +1,9 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { schema } from "@/lib/db";
+import { and, count, desc, eq, like, or, sql, inArray } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-
-const SCOPE_CLAUSE = `(
-  actorId = ?
-  OR agentId IN (SELECT id FROM agent WHERE userId = ?)
-  OR hostId IN (SELECT id FROM agentHost WHERE userId = ?)
-)`;
 
 export async function GET(req: Request) {
 	const session = await auth.api.getSession({
@@ -25,53 +21,53 @@ export async function GET(req: Request) {
 	);
 	const offset = parseInt(url.searchParams.get("offset") ?? "0");
 	const type = url.searchParams.get("type");
-	const agentId = url.searchParams.get("agent_id");
+	const agentIdParam = url.searchParams.get("agent_id");
 
-	const conditions: string[] = [SCOPE_CLAUSE];
-	const params: (string | number)[] = [userId, userId, userId];
+	const userAgentIds = db
+		.select({ id: schema.agent.id })
+		.from(schema.agent)
+		.where(eq(schema.agent.userId, userId));
 
-	const isPrefix = type?.endsWith(".");
+	const userHostIds = db
+		.select({ id: schema.agentHost.id })
+		.from(schema.agentHost)
+		.where(eq(schema.agentHost.userId, userId));
+
+	const scopeCondition = or(
+		eq(schema.eventLog.actorId, userId),
+		inArray(schema.eventLog.agentId, userAgentIds),
+		inArray(schema.eventLog.hostId, userHostIds),
+	)!;
+
+	const conditions = [scopeCondition];
+
 	if (type) {
-		if (isPrefix) {
-			conditions.push("type LIKE ?");
-			params.push(`${type}%`);
+		if (type.endsWith(".")) {
+			conditions.push(like(schema.eventLog.type, `${type}%`));
 		} else {
-			conditions.push("type = ?");
-			params.push(type);
+			conditions.push(eq(schema.eventLog.type, type));
 		}
 	}
 
-	if (agentId) {
-		conditions.push("agentId = ?");
-		params.push(agentId);
+	if (agentIdParam) {
+		conditions.push(eq(schema.eventLog.agentId, agentIdParam));
 	}
 
-	const where = ` WHERE ${conditions.join(" AND ")}`;
+	const whereClause = and(...conditions);
 
-	const query = `SELECT * FROM event_log${where} ORDER BY id DESC LIMIT ? OFFSET ?`;
-	params.push(limit, offset);
-
-	const logs = db.prepare(query).all(...params) as Record<string, unknown>[];
-
-	const countParams: (string | number)[] = [userId, userId, userId];
-	const countConditions: string[] = [SCOPE_CLAUSE];
-	if (type) {
-		if (isPrefix) {
-			countConditions.push("type LIKE ?");
-			countParams.push(`${type}%`);
-		} else {
-			countConditions.push("type = ?");
-			countParams.push(type);
-		}
-	}
-	if (agentId) {
-		countConditions.push("agentId = ?");
-		countParams.push(agentId);
-	}
-	const countQuery = `SELECT COUNT(*) as count FROM event_log WHERE ${countConditions.join(" AND ")}`;
-	const total = db
-		.prepare(countQuery)
-		.get(...countParams) as { count: number };
+	const [logs, totalResult] = await Promise.all([
+		db
+			.select()
+			.from(schema.eventLog)
+			.where(whereClause)
+			.orderBy(desc(schema.eventLog.id))
+			.limit(limit)
+			.offset(offset),
+		db
+			.select({ count: count() })
+			.from(schema.eventLog)
+			.where(whereClause),
+	]);
 
 	return NextResponse.json({
 		logs: logs.map((l) => ({
@@ -81,9 +77,9 @@ export async function GET(req: Request) {
 			actorType: l.actorType,
 			agentId: l.agentId,
 			hostId: l.hostId,
-			data: l.data ? JSON.parse(l.data as string) : null,
+			data: l.data ? JSON.parse(l.data) : null,
 			createdAt: l.createdAt,
 		})),
-		total: total.count,
+		total: totalResult[0]?.count ?? 0,
 	});
 }
