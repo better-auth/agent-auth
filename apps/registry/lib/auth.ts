@@ -26,11 +26,11 @@ export const auth = betterAuth({
   disabledPaths: ["/token"],
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
-      if (
-        ctx.path === "/oauth2/register" &&
-        ctx.body &&
-        !ctx.body.token_endpoint_auth_method
-      ) {
+      if (ctx.path === "/oauth2/register" && ctx.body) {
+        // MCP clients may send token_endpoint_auth_method values other
+        // than "none" (e.g. "client_secret_post"). Without a session,
+        // Better Auth rejects non-public registrations with 401.
+        // Force all DCR to public since this is an MCP server.
         return {
           context: {
             body: {
