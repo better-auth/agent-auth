@@ -5,16 +5,9 @@ import { getToolsForUser, jsonSchemaToZod } from "@/lib/mcp";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://localhost:4200";
 
-type McpRequestHandler = (req: Request) => Response | Promise<Response>;
-const userHandlers = new Map<string, McpRequestHandler>();
-
-function getOrCreateHandler(userId: string): McpRequestHandler {
-	const cached = userHandlers.get(userId);
-	if (cached) return cached;
-
+function createHandlerForUser(userId: string) {
 	const tools = getToolsForUser(userId);
-
-	const mcpReqHandler = createMcpHandler(
+	return createMcpHandler(
 		(server) => {
 			for (const tool of tools) {
 				const zodShape = jsonSchemaToZod(tool.parameters, z);
@@ -27,7 +20,6 @@ function getOrCreateHandler(userId: string): McpRequestHandler {
 				if (zodShape) {
 					toolOpts.inputSchema = zodShape;
 				}
-
 				server.registerTool(
 					tool.name,
 					toolOpts,
@@ -50,20 +42,9 @@ function getOrCreateHandler(userId: string): McpRequestHandler {
 				);
 			}
 		},
-		{
-			serverInfo: {
-				name: "agent-auth-mcp",
-				version: "1.0.0",
-			},
-		},
-		{
-			basePath: "/api",
-			maxDuration: 60,
-		},
+		{ serverInfo: { name: "agent-auth-mcp", version: "1.0.0" } },
+		{ basePath: "/api", maxDuration: 60 },
 	);
-
-	userHandlers.set(userId, mcpReqHandler);
-	return mcpReqHandler;
 }
 
 const handler = mcpHandler(
@@ -81,7 +62,7 @@ const handler = mcpHandler(
 				status: 401,
 			});
 		}
-		return getOrCreateHandler(userId)(req);
+		return createHandlerForUser(userId)(req);
 	},
 );
 
