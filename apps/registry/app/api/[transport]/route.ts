@@ -91,6 +91,7 @@ function getOrCreateHandler(userId: string): McpRequestHandler {
 		{
 			basePath: "/api",
 			maxDuration: 60,
+			verboseLogs: true,
 		},
 	);
 
@@ -99,18 +100,32 @@ function getOrCreateHandler(userId: string): McpRequestHandler {
 }
 
 async function handler(req: Request) {
-	const authorization = req.headers.get("authorization");
-	const token = authorization?.startsWith("Bearer ")
-		? authorization.slice(7)
-		: null;
+	try {
+		const authorization = req.headers.get("authorization");
+		const token = authorization?.startsWith("Bearer ")
+			? authorization.slice(7)
+			: null;
 
-	if (!token) return unauthorizedResponse(req);
+		if (!token) return unauthorizedResponse(req);
 
-	const verified = await verifyOpaqueToken(token);
-	if (!verified) return unauthorizedResponse(req);
+		const verified = await verifyOpaqueToken(token);
+		if (!verified) {
+			console.error("[mcp] token verification failed");
+			return unauthorizedResponse(req);
+		}
 
-	const { userId } = verified;
-	return getOrCreateHandler(userId)(req);
+		console.log("[mcp] authenticated user:", verified.userId, "method:", req.method);
+		const { userId } = verified;
+		const result = await getOrCreateHandler(userId)(req);
+		console.log("[mcp] handler response status:", result.status);
+		return result;
+	} catch (err) {
+		console.error("[mcp] unhandled error:", err);
+		return new Response(
+			JSON.stringify({ error: "internal_error", message: String(err) }),
+			{ status: 500, headers: { "Content-Type": "application/json" } },
+		);
+	}
 }
 
 export { handler as GET, handler as POST, handler as DELETE };

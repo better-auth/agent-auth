@@ -24,24 +24,24 @@ export const auth = betterAuth({
     },
   },
   disabledPaths: ["/token"],
-  hooks: {
-    before: createAuthMiddleware(async (ctx) => {
-      if (
-        ctx.path === "/oauth2/register" &&
-        ctx.body &&
-        !ctx.body.token_endpoint_auth_method
-      ) {
-        return {
-          context: {
-            body: {
-              ...ctx.body,
-              token_endpoint_auth_method: "none",
-            },
-          },
-        };
-      }
-    }),
-  },
+  //   hooks: {
+  //     before: createAuthMiddleware(async (ctx) => {
+  //       if (
+  //         ctx.path === "/oauth2/register" &&
+  //         ctx.body &&
+  //         !ctx.body.token_endpoint_auth_method
+  //       ) {
+  //         return {
+  //           context: {
+  //             body: {
+  //               ...ctx.body,
+  //               token_endpoint_auth_method: "none",
+  //             },
+  //           },
+  //         };
+  //       }
+  //     }),
+  //   },
   plugins: [
     jwt(),
     oauthProvider({

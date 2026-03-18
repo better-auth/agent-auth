@@ -508,7 +508,8 @@ export const auth = betterAuth({
       approvalMethods: ["ciba", "device_authorization"],
       resolveApprovalMethod: async ({ preferredMethod, supportedMethods }) => {
         const serverPreferred =
-          (await getSetting("preferredApprovalMethod")) ?? "device_authorization";
+          (await getSetting("preferredApprovalMethod")) ??
+          "device_authorization";
         const method = preferredMethod ?? serverPreferred;
         return supportedMethods.includes(method)
           ? method
