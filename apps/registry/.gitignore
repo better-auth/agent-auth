@@ -3,3 +3,4 @@
 *.sqlite
 *.db-shm
 *.db-wal
+.vercel
