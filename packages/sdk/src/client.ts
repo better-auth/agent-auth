@@ -336,8 +336,22 @@ export class AgentAuthClient {
     };
 
     const cachedConfigs = await this.storage.listProviderConfigs();
-    for (const config of cachedConfigs) {
-      scoreConfig(config, "cache");
+
+    const needsCaps = cachedConfigs.filter((c) => !c.capabilities?.length);
+    if (needsCaps.length > 0) {
+      await Promise.allSettled(
+        needsCaps.map((config) =>
+          this.listCapabilities({ provider: config.issuer }).catch(() => {}),
+        ),
+      );
+      const refreshed = await this.storage.listProviderConfigs();
+      for (const config of refreshed) {
+        scoreConfig(config, "cache");
+      }
+    } else {
+      for (const config of cachedConfigs) {
+        scoreConfig(config, "cache");
+      }
     }
 
     if (scored.length < limit && this.registryUrl) {
@@ -347,11 +361,26 @@ export class AgentAuthClient {
           query,
           { fetchFn: this.fetchFn },
         );
-        const cachedIssuers = new Set(cachedConfigs.map((c) => c.issuer));
-        for (const config of registryConfigs) {
+        const cachedIssuers = new Set(
+          (await this.storage.listProviderConfigs()).map((c) => c.issuer),
+        );
+        const newConfigs = registryConfigs.filter(
+          (c) => !cachedIssuers.has(c.issuer),
+        );
+        for (const config of newConfigs) {
           await this.storage.setProviderConfig(config.issuer, config);
-          if (!cachedIssuers.has(config.issuer)) {
-            scoreConfig(config, "registry");
+        }
+        if (newConfigs.length > 0) {
+          await Promise.allSettled(
+            newConfigs.map((config) =>
+              this.listCapabilities({ provider: config.issuer }).catch(
+                () => {},
+              ),
+            ),
+          );
+          for (const config of newConfigs) {
+            const updated = await this.storage.getProviderConfig(config.issuer);
+            if (updated) scoreConfig(updated, "registry");
           }
         }
       } catch {
