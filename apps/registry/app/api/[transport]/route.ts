@@ -16,7 +16,9 @@ async function verifyJwt(token: string): Promise<{ userId: string } | null> {
 		});
 		if (payload.aud) {
 			const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-			const valid = new Set([BASE_URL, `${BASE_URL}/`]);
+			const origin = new URL(BASE_URL).origin;
+			// RFC 8707 — accept MCP endpoint as valid audience
+			const valid = new Set([BASE_URL, `${BASE_URL}/`, `${origin}/api/mcp`]);
 			if (!auds.some((a) => valid.has(a))) return null;
 		}
 		return payload.sub ? { userId: payload.sub } : null;
