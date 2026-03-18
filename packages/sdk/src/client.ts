@@ -684,11 +684,32 @@ export class AgentAuthClient {
     );
     const executeLocation = this.resolveExecuteLocation(config, capLocation);
 
-    const token = await this.signJwt({
-      agentId: opts.agentId,
-      capabilities: [opts.capability],
-      audience: executeLocation,
-    });
+    let token: { token: string; expiresAt: number; expires_in: number };
+    try {
+      token = await this.signJwt({
+        agentId: opts.agentId,
+        capabilities: [opts.capability],
+        audience: executeLocation,
+      });
+    } catch (err) {
+      if (
+        err instanceof AgentAuthSDKError &&
+        err.code === "capability_not_granted"
+      ) {
+        try {
+          await this.agentStatus(opts.agentId);
+        } catch {
+          throw err;
+        }
+        token = await this.signJwt({
+          agentId: opts.agentId,
+          capabilities: [opts.capability],
+          audience: executeLocation,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     const res = await this.fetchFn(executeLocation, {
       method: "POST",
