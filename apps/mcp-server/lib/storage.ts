@@ -104,15 +104,6 @@ export function createUserStorage(pool: Pool, userId: string): Storage {
       );
     },
 
-    async listAgentConnections(issuer: string): Promise<AgentConnection[]> {
-      await init;
-      const { rows } = await pool.query(
-        `SELECT data FROM aa_agent_connections WHERE user_id = $1 AND issuer = $2`,
-        [userId, issuer],
-      );
-      return rows.map((r) => r.data as AgentConnection);
-    },
-
     // ── Provider configs ──────────────────────────────────────
 
     async getProviderConfig(issuer: string): Promise<ProviderConfig | null> {
