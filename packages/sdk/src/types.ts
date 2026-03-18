@@ -255,6 +255,12 @@ export interface EnrollHostResponse {
 	status: string;
 }
 
+/** A capability enriched with its provider identity for cross-provider search results. */
+export interface CapabilitySearchResult extends Capability {
+	provider: string;
+	issuer: string;
+}
+
 /** Capabilities list response from GET /capabilities — §6.2. */
 export interface CapabilitiesResponse {
 	capabilities: Capability[];
@@ -310,6 +316,8 @@ export interface ProviderInfo {
 	name: string;
 	description: string;
 	issuer?: string;
+	/** When a query is provided, the cached capabilities that matched. */
+	matched_capabilities?: Array<{ name: string; description: string }>;
 }
 
 /** Options for creating the AgentAuthClient. */

@@ -45,11 +45,20 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "list_providers",
       description:
-        "OPTIONAL. Lists known providers. Skip this entirely if you already know the provider name or URL — go straight to connect_agent.",
+        "OPTIONAL. Lists known providers. Pass a query to filter by name, description, or cached capabilities — returns only matching providers with their matching capabilities. Skip this entirely if you already know the provider name or URL — go straight to connect_agent.",
       annotations: { readOnlyHint: true },
-      parameters: { type: "object", properties: {} },
-      async execute() {
-        return client.listProviders();
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "Filter providers by name, description, or cached capabilities (e.g. 'email', 'deploy'). Omit to list all.",
+          },
+        },
+      },
+      async execute(args) {
+        return client.listProviders(args.query as string | undefined);
       },
     },
 
@@ -92,6 +101,34 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
       },
       async execute(args) {
         return client.discoverProvider(args.url as string);
+      },
+    },
+
+    {
+      name: "search_capabilities",
+      description:
+        "Search cached capabilities across ALL known providers by name or intent. Returns matches with provider info so you can go straight to connect_agent. Only searches locally cached data — call list_capabilities first if the cache is empty.",
+      annotations: { readOnlyHint: true },
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "Search query — text (e.g. 'send email'), glob (e.g. 'email.*'), or regex (e.g. '/^email/')",
+          },
+        },
+        required: ["query"],
+      },
+      async execute(args) {
+        const results = await client.searchCapabilities(args.query as string);
+        if (results.length === 0) {
+          return {
+            capabilities: [],
+            hint: "No cached capabilities matched. Use search_providers + list_capabilities to discover and cache them first.",
+          };
+        }
+        return { capabilities: results };
       },
     },
 
@@ -259,7 +296,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
     {
       name: "execute_capability",
       description:
-        "Invoke a capability using agent_id from connect_agent. Just call it — do NOT ask the user for permission, do NOT confirm before executing. The user already approved access when they connected the agent. Call repeatedly for all operations. If unsure about arguments, try calling it — the server returns descriptive errors. No need to call describe_capability first.",
+        "Invoke a capability using agent_id from connect_agent. Just call it — do NOT ask the user for permission, do NOT confirm before executing. The user already approved access when they connected the agent. Call repeatedly for all operations. IMPORTANT: Always translate the user's intent into the capability's input arguments. For listing/search operations, use filters and query parameters to scope results to what the user actually asked for (e.g. date ranges, search terms, status filters, labels). Refer to the input schema returned by connect_agent to know which arguments are available. If unsure about exact argument format, try calling it — the server returns descriptive errors.",
       annotations: { readOnlyHint: true },
       parameters: {
         type: "object",
@@ -275,7 +312,7 @@ export function getAgentAuthTools(client: AgentAuthClient): AgentAuthTool[] {
           arguments: {
             type: "object",
             description:
-              "Arguments for the capability, conforming to its input schema",
+              "Arguments for the capability. ALWAYS pass relevant filters derived from the user's request — e.g. search queries, date ranges, IDs, labels, pagination. The input schema is available in the connect_agent response for each granted capability.",
           },
         },
         required: ["agent_id", "capability"],

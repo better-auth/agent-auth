@@ -121,7 +121,7 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 			const cacheScope = grantedCapabilityIds ? "private" : "public";
 			ctx.setHeader("Cache-Control", `${cacheScope}, max-age=300`);
 
-			// §5.2: lightweight listing — only name, description, and grant_status
+			// §5.2: lightweight listing — name, description, grant_status, and input summary
 			return ctx.json({
 				capabilities: page.map((c) => {
 					const entry: Record<string, unknown> = {
@@ -132,6 +132,16 @@ export function listCapabilities(opts: ResolvedAgentAuthOptions) {
 						entry.grant_status = grantedCapabilityIds.has(c.name)
 							? "granted"
 							: "not_granted";
+					}
+					if (c.input && typeof c.input === "object" && "properties" in c.input) {
+						const props = c.input.properties as Record<string, Record<string, unknown>> | undefined;
+						if (props) {
+							entry.input_fields = Object.entries(props).map(([name, prop]) => ({
+								name,
+								type: prop.type,
+								description: prop.description,
+							}));
+						}
 					}
 					return entry;
 				}),

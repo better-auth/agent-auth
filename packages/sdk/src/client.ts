@@ -1,6 +1,7 @@
 import { generateKeypair, signAgentJWT, signHostJWT } from "./crypto";
 import { discoverProvider, lookupByUrl, searchRegistryFull } from "./discovery";
 import { detectHostName, detectTool } from "./host-name";
+import { matchQuery } from "./search";
 import { MemoryStorage } from "./storage";
 import type {
   AgentAuthClientOptions,
@@ -15,6 +16,7 @@ import type {
   Capability,
   CapabilityGrant,
   CapabilityRequestItem,
+  CapabilitySearchResult,
   EnrollHostResponse,
   ExecuteCapabilityResponse,
   HostIdentity,
@@ -102,15 +104,50 @@ export class AgentAuthClient {
 
   /**
    * List providers — §7.1.1.
-   * Returns all providers the client has discovered or been pre-configured with.
+   *
+   * When called without a query, returns all cached providers.
+   * When a query is provided, filters to providers whose name,
+   * description, or cached capabilities match, and includes
+   * the matching capabilities in the result.
    */
-  async listProviders(): Promise<ProviderInfo[]> {
+  async listProviders(query?: string): Promise<ProviderInfo[]> {
     const configs = await this.storage.listProviderConfigs();
-    return configs.map((c) => ({
-      name: c.provider_name,
-      description: c.description,
-      issuer: c.issuer,
-    }));
+
+    if (!query) {
+      return configs.map((c) => ({
+        name: c.provider_name,
+        description: c.description,
+        issuer: c.issuer,
+      }));
+    }
+
+    const results: ProviderInfo[] = [];
+
+    for (const config of configs) {
+      const capMatches = config.capabilities?.length
+        ? matchQuery(query, config.capabilities)
+        : [];
+
+      const providerTextMatches = matchQuery(query, [
+        { name: config.provider_name, description: config.description },
+      ]);
+
+      if (capMatches.length > 0 || providerTextMatches.length > 0) {
+        results.push({
+          name: config.provider_name,
+          description: config.description,
+          issuer: config.issuer,
+          ...(capMatches.length > 0 && {
+            matched_capabilities: capMatches.map((c) => ({
+              name: c.name,
+              description: c.description,
+            })),
+          }),
+        });
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -239,7 +276,19 @@ export class AgentAuthClient {
     if (!res.ok) {
       throw await this.toError(res);
     }
-    return (await res.json()) as CapabilitiesResponse;
+    const result = (await res.json()) as CapabilitiesResponse;
+
+    if (result.capabilities.length > 0) {
+      const existing = config.capabilities ?? [];
+      const byName = new Map(existing.map((c) => [c.name, c]));
+      for (const cap of result.capabilities) {
+        byName.set(cap.name, cap);
+      }
+      config.capabilities = [...byName.values()];
+      await this.storage.setProviderConfig(config.issuer, config);
+    }
+
+    return result;
   }
 
   /**
@@ -279,6 +328,37 @@ export class AgentAuthClient {
     }
 
     return (await res.json()) as Capability;
+  }
+
+  /**
+   * Search cached capabilities across all known providers.
+   *
+   * Returns capabilities enriched with `provider` (name) and `issuer`
+   * so the caller knows which provider to connect to. Supports glob,
+   * regex, and multi-term text search (same syntax as list_capabilities query).
+   *
+   * Only searches locally cached data — no network requests. Capabilities
+   * are cached automatically when `listCapabilities` is called.
+   */
+  async searchCapabilities(
+    query: string,
+  ): Promise<CapabilitySearchResult[]> {
+    const configs = await this.storage.listProviderConfigs();
+    const results: CapabilitySearchResult[] = [];
+
+    for (const config of configs) {
+      if (!config.capabilities?.length) continue;
+      const matched = matchQuery(query, config.capabilities);
+      for (const cap of matched) {
+        results.push({
+          ...cap,
+          provider: config.provider_name,
+          issuer: config.issuer,
+        });
+      }
+    }
+
+    return results;
   }
 
   // ─── Connection (§7.3) ──────────────────────────────────────
