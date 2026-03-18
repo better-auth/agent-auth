@@ -587,7 +587,7 @@ export const auth = betterAuth({
         );
 
         switch (capability) {
-          case "gmail.messages.listDetailed": {
+          case "gmail.messages.list": {
             const maxResults = Math.min(
               Math.max(1, Number(args?.maxResults ?? 10)),
               50,
@@ -689,21 +689,6 @@ export const auth = betterAuth({
               nextPageToken: listResult.nextPageToken ?? null,
               resultSizeEstimate: listResult.resultSizeEstimate ?? 0,
             };
-          }
-
-          case "gmail.messages.list": {
-            const params = new URLSearchParams();
-            if (args?.q) params.set("q", String(args.q));
-            if (args?.maxResults)
-              params.set("maxResults", String(args.maxResults));
-            if (args?.pageToken)
-              params.set("pageToken", String(args.pageToken));
-            if (args?.labelIds) {
-              for (const l of args.labelIds as string[])
-                params.append("labelIds", l);
-            }
-            const qs = params.toString();
-            return gmailFetch(token, `/users/me/messages${qs ? `?${qs}` : ""}`);
           }
 
           case "gmail.messages.get": {
