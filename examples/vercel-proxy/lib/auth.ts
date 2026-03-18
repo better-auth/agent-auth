@@ -150,7 +150,10 @@ async function transferProjects(
 }
 
 export const auth = betterAuth({
-  database: pool,
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema,
+  }),
   plugins: [
     genericOAuth({
       config: [
