@@ -1,8 +1,10 @@
 import { agentAuth } from "@better-auth/agent-auth";
 import type { Capability } from "@better-auth/agent-auth";
 import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import {
   db,
+  schema,
   createSite,
   updateSite,
   deleteSite,
@@ -157,7 +159,10 @@ function siteUrl(slug: string): string {
 }
 
 export const auth = betterAuth({
-  database: db,
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema,
+  }),
   emailAndPassword: {
     enabled: true,
   },
@@ -178,9 +183,9 @@ export const auth = betterAuth({
       }),
       onAutonomousAgentClaimed: async ({ ctx, hostId, userId }) => {
         const autonomousUserId = `autonomous_${hostId}`;
-        const sites = listSites(autonomousUserId);
+        const sites = await listSites(autonomousUserId);
         for (const site of sites) {
-          ctx.context.adapter.update({
+          await ctx.context.adapter.update({
             model: "site",
             where: [{ field: "id", value: site.id }],
             update: { userId },
@@ -192,7 +197,7 @@ export const auth = betterAuth({
 
         switch (capability) {
           case "sites.list": {
-            const sites = listSites(userId);
+            const sites = await listSites(userId);
             const limited = args?.limit
               ? sites.slice(0, Number(args.limit))
               : sites;
@@ -206,13 +211,13 @@ export const auth = betterAuth({
                 createdAt: s.createdAt,
                 updatedAt: s.updatedAt,
               })),
-              total: countSites(userId),
+              total: await countSites(userId),
             };
           }
 
           case "sites.get": {
             if (!args?.id) throw new Error("Missing required argument: id");
-            const site = getSite(String(args.id));
+            const site = await getSite(String(args.id));
             if (!site || site.userId !== userId) {
               throw new Error("Site not found");
             }
@@ -232,7 +237,7 @@ export const auth = betterAuth({
             if (!args?.name || !args?.html) {
               throw new Error("Missing required arguments: name, html");
             }
-            const site = createSite({
+            const site = await createSite({
               name: String(args.name),
               html: String(args.html),
               description: args.description
@@ -251,7 +256,7 @@ export const auth = betterAuth({
 
           case "sites.update": {
             if (!args?.id) throw new Error("Missing required argument: id");
-            const updated = updateSite({
+            const updated = await updateSite({
               id: String(args.id),
               userId,
               name: args.name ? String(args.name) : undefined,
@@ -273,7 +278,7 @@ export const auth = betterAuth({
 
           case "sites.delete": {
             if (!args?.id) throw new Error("Missing required argument: id");
-            const success = deleteSite(String(args.id), userId);
+            const success = await deleteSite(String(args.id), userId);
             if (!success)
               throw new Error("Site not found or not owned by user");
             return { success: true, deletedId: String(args.id) };
@@ -287,15 +292,15 @@ export const auth = betterAuth({
         try {
           const { type, actorId, actorType, agentId, hostId, orgId, ...rest } =
             event as unknown as Record<string, unknown>;
-          insertLog.run(
-            type ?? null,
+          insertLog(
+            (type as string) ?? null,
             (actorId as string) ?? null,
             (actorType as string) ?? null,
             (agentId as string) ?? null,
             (hostId as string) ?? null,
             (orgId as string) ?? null,
             JSON.stringify(rest),
-          );
+          ).catch(() => {});
         } catch {
           // never let logging break the flow
         }

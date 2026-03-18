@@ -42,7 +42,7 @@ function formatConstraint(field: string, value: unknown): string {
 
 function Spinner() {
 	return (
-		<svg className="animate-spin h-5 w-5 text-muted" viewBox="0 0 24 24" fill="none">
+		<svg className="animate-spin h-4 w-4 text-gray-400" viewBox="0 0 24 24" fill="none">
 			<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
 			<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 		</svg>
@@ -165,65 +165,61 @@ export default function ApprovalsPage() {
 	};
 
 	return (
-		<div className="mx-auto w-full max-w-3xl px-6 py-8">
-			<div className="flex flex-col gap-6">
+		<div className="mx-auto w-full max-w-3xl px-6 py-6">
+			<div className="flex flex-col gap-5">
 				<div>
-					<h1 className="text-[22px] font-normal text-foreground">Approval Requests</h1>
-					<p className="mt-1 text-sm text-muted">
+					<h1 className="text-lg font-medium text-gray-900">Approval Requests</h1>
+					<p className="mt-0.5 text-[13px] text-gray-500">
 						Pending capability requests from agents awaiting your approval.
 					</p>
 				</div>
 
 				{loading ? (
-					<div className="flex items-center justify-center py-20">
+					<div className="flex items-center justify-center py-16">
 						<Spinner />
 					</div>
 				) : requests.length === 0 ? (
-					<div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-16">
-						<div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gmail-green/10">
-							<svg className="h-6 w-6 text-gmail-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-							</svg>
-						</div>
-						<p className="text-sm font-medium text-foreground">No pending requests</p>
-						<p className="mt-1 text-xs text-muted">CIBA approval requests will appear here automatically.</p>
+					<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 py-12">
+						<p className="text-sm text-gray-500">No pending requests</p>
+						<p className="mt-1 text-xs text-gray-400">CIBA approval requests will appear here automatically.</p>
 					</div>
 				) : (
-					<div className="flex flex-col gap-3">
+					<div className="flex flex-col gap-2">
 						{requests.map((req) => (
-							<div key={req.approval_id} className="rounded-2xl border border-border bg-white shadow-sm">
-								<div className="px-5 py-5">
-									<div className="flex items-start justify-between gap-4">
+							<div key={req.approval_id} className="rounded-xl border border-gray-200 bg-white">
+								<div className="px-4 py-3.5">
+									<div className="flex items-start justify-between gap-3">
 										<div className="flex-1 min-w-0">
 											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium text-foreground">
+												<span className="text-[13px] font-medium text-gray-900">
 													{req.agent_name ?? "Unknown Agent"}
 												</span>
-												<span className="inline-flex items-center rounded-full bg-gmail-yellow/15 px-2.5 py-0.5 text-[11px] font-medium text-gmail-yellow ring-1 ring-gmail-yellow/30">
+												<span className="inline-flex items-center gap-1.5 rounded-full bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+													<span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
 													pending
 												</span>
 											</div>
 											{req.binding_message && (
-												<p className="mt-1 text-xs text-muted">{req.binding_message}</p>
+												<p className="mt-0.5 text-[12px] text-gray-500">{req.binding_message}</p>
 											)}
-											<p className="mt-1 text-xs text-muted">
+											<p className="mt-0.5 text-[11px] text-gray-400">
 												Requested {timeAgo(req.created_at)}
 												{" · "}
 												Expires in {Math.max(0, Math.floor(req.expires_in / 60))}m
 											</p>
 										</div>
-										<div className="flex gap-2 shrink-0">
+										<div className="flex gap-1.5 shrink-0">
 											<button
 												onClick={() => handleAction(req.approval_id, "approve")}
 												disabled={acting === req.approval_id}
-												className="cursor-pointer rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+												className="cursor-pointer rounded-md bg-gray-900 px-3.5 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
 											>
 												{acting === req.approval_id ? "…" : "Approve"}
 											</button>
 											<button
 												onClick={() => handleAction(req.approval_id, "deny")}
 												disabled={acting === req.approval_id}
-												className="cursor-pointer rounded-full border border-border px-4 py-1.5 text-xs font-medium text-muted transition-colors hover:border-gmail-red/30 hover:text-gmail-red disabled:opacity-50"
+												className="cursor-pointer rounded-md border border-gray-200 px-3.5 py-1.5 text-[12px] font-medium text-gray-500 transition-colors hover:border-red-200 hover:text-red-600 disabled:opacity-50"
 											>
 												Deny
 											</button>
@@ -231,8 +227,8 @@ export default function ApprovalsPage() {
 									</div>
 
 								{req.capabilities.length > 0 && (
-									<div className="mt-4">
-										<p className="mb-2 text-[10px] uppercase tracking-widest text-muted">
+									<div className="mt-3">
+										<p className="mb-1.5 text-[10px] uppercase tracking-widest text-gray-400">
 											Requested Capabilities
 										</p>
 										<div className="flex flex-col gap-1.5">
@@ -241,19 +237,19 @@ export default function ApprovalsPage() {
 											const capReason = req.capability_reasons?.[cap];
 											return (
 												<div key={cap}>
-													<code className="rounded-lg bg-surface px-2.5 py-1 text-xs font-mono text-foreground">
+													<code className="rounded-md bg-gray-50 px-2 py-0.5 text-[12px] font-mono text-gray-700">
 														{cap}
 													</code>
 													{capReason && (
-														<p className="mt-1 ml-2 text-[11px] text-muted italic">
+														<p className="mt-0.5 ml-2 text-[11px] text-gray-400 italic">
 															&ldquo;{capReason}&rdquo;
 														</p>
 													)}
 								{capConstraints && Object.keys(capConstraints).length > 0 && (
-													<div className="mt-1.5 ml-1 space-y-1">
+													<div className="mt-1 ml-1 space-y-0.5">
 														{Object.entries(capConstraints).map(([field, value]) => (
-															<div key={field} className="flex items-start gap-1.5 text-[11px] text-muted">
-																<svg className="mt-px h-3 w-3 shrink-0 text-gmail-blue/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+															<div key={field} className="flex items-start gap-1.5 text-[11px] text-gray-500">
+																<svg className="mt-px h-3 w-3 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
 																	<path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
 																</svg>
 																<span>{formatConstraint(field, value)}</span>

@@ -43,8 +43,8 @@ export default function DashboardLayout({
 
 	if (isPending || !session) {
 		return (
-			<div className="flex min-h-screen items-center justify-center text-muted">
-				<svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+			<div className="flex min-h-screen items-center justify-center text-gray-400">
+				<svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
 					<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
 					<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 				</svg>
@@ -54,27 +54,27 @@ export default function DashboardLayout({
 
 	return (
 		<div className="flex min-h-screen flex-col bg-white">
-			<header className="border-b border-border bg-white">
-				<div className="flex h-16 items-center justify-between px-6">
-					<div className="flex items-center gap-3">
-						<GmailLogo className="h-6 w-6" />
-						<span className="text-[18px] font-normal text-muted">
+			<header className="border-b border-gray-200 bg-white">
+				<div className="flex h-14 items-center justify-between px-6">
+					<div className="flex items-center gap-2.5">
+						<GmailLogo className="h-5 w-5" />
+						<span className="text-[15px] text-gray-400">
 							Proxy
 						</span>
-						<div className="ml-2 rounded-full bg-accent/10 px-2.5 py-0.5 text-[11px] font-medium text-accent">
+						<span className="rounded bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
 							Agent Auth
-						</div>
+						</span>
 					</div>
-					<div className="flex items-center gap-4">
-						<div className="flex items-center gap-2.5">
+					<div className="flex items-center gap-3">
+						<div className="flex items-center gap-2">
 							{session.user.image && (
 								<img
 									src={session.user.image}
 									alt=""
-									className="h-8 w-8 rounded-full"
+									className="h-7 w-7 rounded-full"
 								/>
 							)}
-							<span className="text-sm text-foreground">
+							<span className="text-[13px] text-gray-700">
 								{session.user.name}
 							</span>
 						</div>
@@ -86,7 +86,7 @@ export default function DashboardLayout({
 									},
 								})
 							}
-							className="cursor-pointer rounded-full border border-border px-4 py-1.5 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"
+							className="cursor-pointer rounded-md border border-gray-200 px-3 py-1 text-[13px] text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
 						>
 							Sign out
 						</button>
@@ -102,22 +102,22 @@ export default function DashboardLayout({
 							<Link
 								key={item.href}
 								href={item.href}
-								className={`relative px-4 pb-3 pt-1 text-sm transition-colors ${
+								className={`relative px-3.5 pb-2.5 pt-1 text-[13px] transition-colors ${
 									isActive
-										? "text-accent font-medium"
-										: "text-muted hover:text-foreground"
+										? "text-gray-900 font-medium"
+										: "text-gray-400 hover:text-gray-600"
 								}`}
 							>
 								{item.label}
 								{isActive && (
-									<span className="absolute bottom-0 left-1 right-1 h-[3px] rounded-t-full bg-accent" />
+									<span className="absolute bottom-0 left-1 right-1 h-[2px] rounded-t-full bg-gray-900" />
 								)}
 							</Link>
 						);
 					})}
 				</nav>
 			</header>
-			<main className="flex-1 bg-surface">{children}</main>
+			<main className="flex-1 bg-gray-50/50">{children}</main>
 		</div>
 	);
 }

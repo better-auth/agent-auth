@@ -12,7 +12,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const site = getSite(id);
+  const site = await getSite(id);
   if (!site || site.userId !== session.user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -29,7 +29,7 @@ export async function PATCH(
   }
   const { id } = await params;
   const body = await request.json();
-  const site = updateSite({
+  const site = await updateSite({
     id,
     userId: session.user.id,
     name: body.name,
@@ -51,7 +51,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const success = deleteSite(id, session.user.id);
+  const success = await deleteSite(id, session.user.id);
   if (!success) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

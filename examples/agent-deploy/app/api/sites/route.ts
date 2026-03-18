@@ -8,7 +8,7 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const sites = listSites(session.user.id);
+  const sites = await listSites(session.user.id);
   return NextResponse.json({
     sites: sites.map((s) => ({
       id: s.id,
@@ -19,7 +19,7 @@ export async function GET() {
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     })),
-    total: countSites(session.user.id),
+    total: await countSites(session.user.id),
   });
 }
 
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const site = createSite({
+  const site = await createSite({
     name: body.name,
     html: body.html,
     description: body.description,
