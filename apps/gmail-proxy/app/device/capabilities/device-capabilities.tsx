@@ -113,7 +113,7 @@ export default function DeviceCapabilities({
 			});
 			const data = await res.json();
 			if (!res.ok) {
-				setError(data.message || "Action failed");
+				setError(data.error_description || "Action failed");
 				setActionState("idle");
 				return;
 			}

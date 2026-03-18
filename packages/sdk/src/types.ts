@@ -361,7 +361,13 @@ export class AgentAuthSDKError extends Error {
 		this.status = status;
 	}
 
-	static fromResponse(body: { error?: string; error_description?: string }, status: number): AgentAuthSDKError {
+	static fromResponse(
+		body: {
+			error?: string;
+			error_description?: string;
+		},
+		status: number,
+	): AgentAuthSDKError {
 		return new AgentAuthSDKError(
 			body.error || "unknown_error",
 			body.error_description || "Unknown error",

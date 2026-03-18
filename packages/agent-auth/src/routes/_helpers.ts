@@ -142,7 +142,7 @@ export async function checkSharedOrg(
 }
 
 export async function createGrantRows(
-	adapter: AdapterCreate & AdapterDelete,
+	adapter: AdapterCreate & AdapterDelete & AdapterFindMany,
 	agentId: string,
 	capabilityIds: string[],
 	grantedBy: string | null,
@@ -160,10 +160,16 @@ export async function createGrantRows(
 	constraintsMap?: Map<string, CapabilityConstraints>,
 ): Promise<void> {
 	if (grantOpts?.clearExisting) {
-		await adapter.delete({
+		const existing = await adapter.findMany<{ id: string }>({
 			model: TABLE.grant,
 			where: [{ field: "agentId", value: agentId }],
 		});
+		for (const grant of existing) {
+			await adapter.delete({
+				model: TABLE.grant,
+				where: [{ field: "id", value: grant.id }],
+			});
+		}
 	}
 
 	const status = grantOpts?.status ?? "active";
@@ -557,11 +563,13 @@ export async function claimAutonomousAgents(
 			.filter((g) => g.status === "active")
 			.map((g) => g.capability);
 
-		await adapter.update({
-			model: TABLE.grant,
-			where: [{ field: "agentId", value: agent.id }],
-			update: { status: "revoked", updatedAt: now },
-		});
+		for (const grant of grants) {
+			await adapter.update({
+				model: TABLE.grant,
+				where: [{ field: "id", value: grant.id }],
+				update: { status: "revoked", updatedAt: now },
+			});
+		}
 
 		await adapter.update({
 			model: TABLE.agent,
@@ -719,11 +727,17 @@ async function revokeAgentsForUserOnHost(
 		if (agent.id === params.excludeAgentId) continue;
 		if (agent.status === "revoked" || agent.status === "rejected") continue;
 
-		await adapter.update({
+		const grants = await adapter.findMany<AgentCapabilityGrant>({
 			model: TABLE.grant,
 			where: [{ field: "agentId", value: agent.id }],
-			update: { status: "revoked", updatedAt: now },
 		});
+		for (const grant of grants) {
+			await adapter.update({
+				model: TABLE.grant,
+				where: [{ field: "id", value: grant.id }],
+				update: { status: "revoked", updatedAt: now },
+			});
+		}
 
 		await adapter.update({
 			model: TABLE.agent,

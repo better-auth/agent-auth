@@ -145,9 +145,3 @@ export async function verifyJWT(
 		throw err;
 	}
 }
-
-/** @deprecated Use `VerifyJWTOptions` instead. */
-export type VerifyAgentJWTOptions = VerifyJWTOptions;
-
-/** @deprecated Use `verifyJWT` instead. */
-export const verifyAgentJWT = verifyJWT;

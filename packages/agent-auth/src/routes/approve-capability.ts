@@ -248,11 +248,12 @@ export function approveCapability(
 					: 0;
 				const age = (Date.now() - sessionCreated) / 1000;
 				if (age > freshWindow) {
+					const description =
+						"A fresh authentication session is required for this operation. Please re-authenticate and try again.";
 					return ctx.json(
 						{
 							error: "fresh_session_required",
-							error_description:
-								"A fresh authentication session is required for this operation. Please re-authenticate and try again.",
+							error_description: description,
 							max_age: freshWindow,
 							session_age: Math.floor(age),
 						},

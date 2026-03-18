@@ -1,7 +1,7 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import * as z from "zod";
-import { TABLE } from "../constants";
+import { TABLE, CLOCK_SKEW_TOLERANCE_SEC } from "../constants";
 import type {
 	Agent,
 	AgentCapabilityGrant,
@@ -120,7 +120,7 @@ export function introspect(
 					return ctx.json(inactive);
 				}
 				// Mark as seen so the same token can't be re-introspected
-				await jtiCache.add(jtiKey, opts.jwtMaxAge);
+				await jtiCache.add(jtiKey, opts.jwtMaxAge + CLOCK_SKEW_TOLERANCE_SEC);
 			}
 
 			if (agent.expiresAt && new Date(agent.expiresAt) <= new Date()) {

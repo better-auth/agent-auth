@@ -262,12 +262,12 @@ describe("Algorithm Security", () => {
 		expect(res.ok).toBe(false);
 	});
 
-	it("verifyAgentJWT propagates non-JOSE errors instead of returning null", async () => {
-		const { verifyAgentJWT } = await import("../utils/crypto");
+	it("verifyJWT propagates non-JOSE errors instead of returning null", async () => {
+		const { verifyJWT } = await import("../utils/crypto");
 		const badKey = { kty: "OKP", crv: "Ed25519", x: "INVALID" } as AgentJWK;
 
 		await expect(
-			verifyAgentJWT({
+			verifyJWT({
 				jwt: "not.a.jwt",
 				publicKey: badKey,
 				maxAge: 60,
@@ -362,8 +362,12 @@ describe("Fresh Session Window", () => {
 				}),
 			}),
 		);
-		const body = await json<{ error: string }>(approveRes);
+		const body = await json<{
+			error: string;
+			error_description: string;
+		}>(approveRes);
 		expect(body.error).toBe("fresh_session_required");
+		expect(body.error_description).toContain("fresh authentication session");
 		// If the framework propagates the status, verify it
 		if (!approveRes.ok) {
 			expect(approveRes.status).toBe(403);
@@ -1258,6 +1262,17 @@ describe("Grant Revocation Consistency", () => {
 		// Revoke via user session
 		const revokeRes = await client.authedPost("/agent/revoke", { agent_id: agentId }, sessionCookie);
 		expect(revokeRes.ok).toBe(true);
+
+		const getRes = await client.authedGet(
+			`/agent/get?agent_id=${agentId}`,
+			sessionCookie,
+		);
+		expect(getRes.ok).toBe(true);
+		const getBody = await json<{
+			agent_capability_grants: Array<{ status: string }>;
+		}>(getRes);
+		expect(getBody.agent_capability_grants).toHaveLength(2);
+		expect(getBody.agent_capability_grants.every((g) => g.status === "revoked")).toBe(true);
 
 		// Verify grants are revoked via introspect (agent JWT won't work since agent is revoked)
 		const introRes = await client.api("/agent/introspect", {

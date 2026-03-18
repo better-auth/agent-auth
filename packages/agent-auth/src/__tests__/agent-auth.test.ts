@@ -942,6 +942,18 @@ describe("Agent Lifecycle", () => {
 		);
 		const { agent_id: agentId } = await json<{ agent_id: string }>(regRes);
 
+		const grantRes = await t.auth.handler(
+			new Request(`${API}/agent/grant-capability`, {
+				method: "POST",
+				headers: { "content-type": "application/json", cookie },
+				body: JSON.stringify({
+					agent_id: agentId,
+					capabilities: ["transfer"],
+				}),
+			}),
+		);
+		expect(grantRes.ok).toBe(true);
+
 		await new Promise((r) => setTimeout(r, 1500));
 
 		const jwt = await createAgentJWT(agentKeypair.privateKey, agentId);
@@ -960,6 +972,12 @@ describe("Agent Lifecycle", () => {
 		}>(statusRes);
 		expect(body.agent_id).toBe(agentId);
 		expect(body.status).toBe("active");
+		expect(body.agent_capability_grants).toEqual([
+			expect.objectContaining({
+				capability: "check_balance",
+				status: "active",
+			}),
+		]);
 	});
 });
 
