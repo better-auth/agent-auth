@@ -49,7 +49,7 @@ export const auth = betterAuth({
       consentPage: "/consent",
       allowDynamicClientRegistration: true,
       allowUnauthenticatedClientRegistration: true,
-      validAudiences: [`${BASE_URL}`],
+      validAudiences: [BASE_URL, `${BASE_URL}/api`, `${BASE_URL}/api/mcp`],
     }),
   ],
 });
