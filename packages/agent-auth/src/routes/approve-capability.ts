@@ -213,7 +213,7 @@ export function approveCapability(
 					agent_id: agentId,
 					status: "denied",
 					error: "access_denied",
-					error_description: errorDescription,
+					message: errorDescription,
 				});
 
 				emit(opts, {
@@ -253,7 +253,7 @@ export function approveCapability(
 					return ctx.json(
 						{
 							error: "fresh_session_required",
-							error_description: description,
+							message: description,
 							max_age: freshWindow,
 							session_age: Math.floor(age),
 						},
@@ -309,7 +309,7 @@ export function approveCapability(
 					return ctx.json(
 						{
 							error: "webauthn_not_enrolled",
-							error_description:
+							message:
 								"No passkeys registered. Register a passkey before approving capabilities that require proof of physical presence.",
 						},
 						{ status: 403 },
@@ -331,7 +331,7 @@ export function approveCapability(
 					return ctx.json(
 						{
 							error: "webauthn_required",
-							error_description:
+							message:
 								"This approval requires proof of physical presence. Complete the WebAuthn challenge.",
 							webauthn_options: options,
 						},

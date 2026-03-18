@@ -6,8 +6,8 @@ export interface ErrorDef {
 }
 
 /**
- * Create a spec-compliant error (RFC 6749 §5.2).
- * Response body: `{ error: "error_code", error_description: "Human-readable description", ...extra }`
+ * Create a spec-compliant error (Agent Auth Protocol §5.13).
+ * Response body: `{ error: "error_code", message: "Human-readable description", ...extra }`
  */
 export function agentError(
 	status: ConstructorParameters<typeof APIError>[0],
@@ -20,7 +20,7 @@ export function agentError(
 		status,
 		{
 			error: err.code,
-			error_description: overrideMessage ?? err.message,
+			message: overrideMessage ?? err.message,
 			...extra,
 		},
 		headers ?? {},

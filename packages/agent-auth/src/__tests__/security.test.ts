@@ -364,10 +364,10 @@ describe("Fresh Session Window", () => {
 		);
 		const body = await json<{
 			error: string;
-			error_description: string;
+			message: string;
 		}>(approveRes);
 		expect(body.error).toBe("fresh_session_required");
-		expect(body.error_description).toContain("fresh authentication session");
+		expect(body.message).toContain("fresh authentication session");
 		// If the framework propagates the status, verify it
 		if (!approveRes.ok) {
 			expect(approveRes.status).toBe(403);

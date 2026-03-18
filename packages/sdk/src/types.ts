@@ -343,10 +343,10 @@ export interface AgentAuthClientOptions {
 	approvalTimeoutMs?: number;
 }
 
-/** Error returned by the server (RFC 6749 §5.2). */
+/** Error returned by the server (Agent Auth Protocol §5.13). */
 export interface AgentAuthError {
 	error: string;
-	error_description: string;
+	message: string;
 	status: number;
 }
 
@@ -364,13 +364,13 @@ export class AgentAuthSDKError extends Error {
 	static fromResponse(
 		body: {
 			error?: string;
-			error_description?: string;
+			message?: string;
 		},
 		status: number,
 	): AgentAuthSDKError {
 		return new AgentAuthSDKError(
 			body.error || "unknown_error",
-			body.error_description || "Unknown error",
+			body.message || "Unknown error",
 			status,
 		);
 	}

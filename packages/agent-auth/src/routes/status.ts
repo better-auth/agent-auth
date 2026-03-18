@@ -76,6 +76,7 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 					where: [{ field: "agentId", value: agent.id }],
 				});
 
+			// §5.5: all datetime fields as ISO 8601 strings
 			return ctx.json({
 				agent_id: agent.id,
 				name: agent.name,
@@ -87,9 +88,15 @@ export function agentStatus(opts: ResolvedAgentAuthOptions) {
 				activated_at: agent.activatedAt
 					? new Date(agent.activatedAt).toISOString()
 					: null,
-				created_at: agent.createdAt,
-				last_used_at: agent.lastUsedAt,
-				expires_at: agent.expiresAt,
+				created_at: agent.createdAt
+					? new Date(agent.createdAt).toISOString()
+					: null,
+				last_used_at: agent.lastUsedAt
+					? new Date(agent.lastUsedAt).toISOString()
+					: null,
+				expires_at: agent.expiresAt
+					? new Date(agent.expiresAt).toISOString()
+					: null,
 			});
 		},
 	);

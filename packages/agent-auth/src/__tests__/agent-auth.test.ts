@@ -93,12 +93,12 @@ describe("RFC 6749 §5.2 Error Envelope", () => {
 		});
 		expect(res.ok).toBe(false);
 		const body = await json<Record<string, unknown>>(res);
+		// §5.13: error envelope uses { error, message }
 		expect(body).toHaveProperty("error");
-		expect(body).toHaveProperty("error_description");
-		expect(body).not.toHaveProperty("message");
+		expect(body).toHaveProperty("message");
 		expect(body).not.toHaveProperty("code");
 		expect(typeof body.error).toBe("string");
-		expect(typeof body.error_description).toBe("string");
+		expect(typeof body.message).toBe("string");
 	});
 });
 

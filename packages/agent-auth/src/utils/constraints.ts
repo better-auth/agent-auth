@@ -5,9 +5,10 @@ import type {
 	ConstraintValue,
 } from "../types";
 
+// §5.11: violations use the original constraint object, not a stringified form
 export interface ConstraintViolation {
 	field: string;
-	constraint: string;
+	constraint: Record<string, unknown>;
 	actual: ConstraintPrimitive | undefined;
 }
 
@@ -33,7 +34,7 @@ function checkField(
 
 	if (typeof constraint === "string" || typeof constraint === "number" || typeof constraint === "boolean") {
 		if (actual !== constraint) {
-			violations.push({ field, constraint: `eq:${String(constraint)}`, actual });
+			violations.push({ field, constraint: { eq: constraint }, actual });
 		}
 		return { violations, unknownOps };
 	}
@@ -48,31 +49,31 @@ function checkField(
 
 	if (ops.eq !== undefined) {
 		if (actual !== ops.eq) {
-			violations.push({ field, constraint: `eq:${String(ops.eq)}`, actual });
+			violations.push({ field, constraint: { eq: ops.eq }, actual });
 		}
 	}
 
 	if (ops.min !== undefined) {
 		if (typeof actual !== "number" || actual < ops.min) {
-			violations.push({ field, constraint: `min:${ops.min}`, actual });
+			violations.push({ field, constraint: { min: ops.min }, actual });
 		}
 	}
 
 	if (ops.max !== undefined) {
 		if (typeof actual !== "number" || actual > ops.max) {
-			violations.push({ field, constraint: `max:${ops.max}`, actual });
+			violations.push({ field, constraint: { max: ops.max }, actual });
 		}
 	}
 
 	if (ops.in !== undefined) {
 		if (!isPrimitive(actual) || !ops.in.includes(actual)) {
-			violations.push({ field, constraint: `in:[${ops.in.join(",")}]`, actual });
+			violations.push({ field, constraint: { in: ops.in }, actual });
 		}
 	}
 
 	if (ops.not_in !== undefined) {
 		if (isPrimitive(actual) && ops.not_in.includes(actual)) {
-			violations.push({ field, constraint: `not_in:[${ops.not_in.join(",")}]`, actual });
+			violations.push({ field, constraint: { not_in: ops.not_in }, actual });
 		}
 	}
 
