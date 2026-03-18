@@ -1,20 +1,9 @@
-import { verifyAccessToken } from "better-auth/oauth2";
+import { mcpHandler } from "@better-auth/oauth-provider";
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { getToolsForUser, jsonSchemaToZod } from "@/lib/mcp";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://localhost:4200";
-
-function unauthorizedResponse(req: Request) {
-	const origin = new URL(req.url).origin;
-	return new Response(JSON.stringify({ error: "unauthorized" }), {
-		status: 401,
-		headers: {
-			"Content-Type": "application/json",
-			"WWW-Authenticate": `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
-		},
-	});
-}
 
 function createHandlerForUser(userId: string) {
 	const tools = getToolsForUser(userId);
@@ -58,28 +47,23 @@ function createHandlerForUser(userId: string) {
 	);
 }
 
-async function handler(req: Request) {
-	const authorization = req.headers.get("authorization");
-	const token = authorization?.startsWith("Bearer ")
-		? authorization.slice(7)
-		: null;
-
-	if (!token) return unauthorizedResponse(req);
-
-	try {
-		const payload = await verifyAccessToken(token, {
-			jwksUrl: `${BASE_URL}/api/auth/jwks`,
-			verifyOptions: {
-				audience: `${BASE_URL}/api`,
-				issuer: `${BASE_URL}/api/auth`,
-			},
-		});
-		const userId = payload.sub;
-		if (!userId) return unauthorizedResponse(req);
+const handler = mcpHandler(
+	{
+		jwksUrl: `${BASE_URL}/api/auth/jwks`,
+		verifyOptions: {
+			audience: BASE_URL,
+			issuer: BASE_URL,
+		},
+	},
+	async (req, jwt) => {
+		const userId = jwt.sub;
+		if (!userId) {
+			return new Response(JSON.stringify({ error: "missing sub claim" }), {
+				status: 401,
+			});
+		}
 		return createHandlerForUser(userId)(req);
-	} catch {
-		return unauthorizedResponse(req);
-	}
-}
+	},
+);
 
 export { handler as GET, handler as POST, handler as DELETE };
