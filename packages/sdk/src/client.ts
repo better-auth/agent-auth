@@ -271,13 +271,8 @@ export class AgentAuthClient {
 	/**
 	 * Connect an agent to a service — §7.3.
 	 *
-	 * If the client already has an active connection for this provider,
-	 * it reuses the existing identity (verifying server-side status).
-	 * Otherwise, generates a new agent keypair, registers the agent on
-	 * the server via host JWT, handles approval if needed, and stores
-	 * the connection.
-	 *
-	 * Pass `forceNew: true` to skip reuse and always create a new agent.
+	 * Generates a new agent keypair, registers the agent on the server
+	 * via host JWT, handles approval if needed, and stores the connection.
 	 */
 	async connectAgent(opts: {
 		provider: string;
@@ -288,8 +283,6 @@ export class AgentAuthClient {
 		loginHint?: string;
 		bindingMessage?: string;
 		name?: string;
-		/** Skip identity reuse and always register a new agent. */
-		forceNew?: boolean;
 		/**
 		 * Per-call abort signal. When aborted, the approval polling
 		 * loop exits immediately. Combined with the client-level
@@ -303,11 +296,6 @@ export class AgentAuthClient {
 		capabilityGrants: CapabilityGrant[];
 	}> {
 		const config = await this.resolveConfig(opts.provider);
-
-		if (!opts.forceNew) {
-			const existing = await this.findActiveConnection(config, opts.capabilities);
-			if (existing) return existing;
-		}
 
 		const { regBody, host, agentKeypair } =
 			await this.registerAgent(config, opts);
@@ -352,81 +340,6 @@ export class AgentAuthClient {
 			status: regBody.status,
 			capabilityGrants: regBody.agent_capability_grants,
 		};
-	}
-
-	/**
-	 * Look for an existing active connection for a provider and reuse it.
-	 * If the agent needs additional capabilities, requests them automatically.
-	 * Returns null if no reusable connection is found.
-	 */
-	private async findActiveConnection(
-		config: ProviderConfig,
-		requestedCapabilities?: CapabilityRequestItem[],
-	): Promise<{
-		agentId: string;
-		hostId: string;
-		status: AgentStatus;
-		capabilityGrants: CapabilityGrant[];
-	} | null> {
-		const connections = await this.storage.listAgentConnections(config.issuer);
-		if (connections.length === 0) return null;
-
-		for (const conn of connections) {
-			try {
-				const status = await this.agentStatus(conn.agentId);
-
-				if (status.status !== "active") {
-					await this.storage.deleteAgentConnection(conn.agentId);
-					continue;
-				}
-
-				const missingCaps = this.findMissingCapabilities(
-					requestedCapabilities,
-					status.agent_capability_grants,
-				);
-
-				if (missingCaps.length > 0) {
-					await this.requestCapability({
-						agentId: conn.agentId,
-						capabilities: missingCaps,
-					});
-					const refreshed = await this.agentStatus(conn.agentId);
-					return {
-						agentId: conn.agentId,
-						hostId: conn.hostId,
-						status: refreshed.status,
-						capabilityGrants: refreshed.agent_capability_grants,
-					};
-				}
-
-				return {
-					agentId: conn.agentId,
-					hostId: conn.hostId,
-					status: status.status,
-					capabilityGrants: status.agent_capability_grants,
-				};
-			} catch {
-				await this.storage.deleteAgentConnection(conn.agentId);
-			}
-		}
-
-		return null;
-	}
-
-	private findMissingCapabilities(
-		requested: CapabilityRequestItem[] | undefined,
-		granted: CapabilityGrant[],
-	): CapabilityRequestItem[] {
-		if (!requested || requested.length === 0) return [];
-		const activeNames = new Set(
-			granted
-				.filter((g) => g.status === "active")
-				.map((g) => g.capability),
-		);
-		return requested.filter((cap) => {
-			const name = typeof cap === "string" ? cap : cap.name;
-			return !activeNames.has(name);
-		});
 	}
 
 	// ─── JWT Signing (§7.4) ─────────────────────────────────────
@@ -901,13 +814,6 @@ export class AgentAuthClient {
 	 */
 	async getConnection(agentId: string): Promise<AgentConnection | null> {
 		return this.storage.getAgentConnection(agentId);
-	}
-
-	/**
-	 * List all agent connections for a provider.
-	 */
-	async listConnections(issuer: string): Promise<AgentConnection[]> {
-		return this.storage.listAgentConnections(issuer);
 	}
 
 	// ─── Internals ──────────────────────────────────────────────
