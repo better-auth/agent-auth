@@ -37,9 +37,9 @@ export function SearchBar({
 					type="text"
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
-					placeholder='Search by intent... e.g. "deploy websites", "send emails"'
+					placeholder='Search by intent (§6.11)... e.g. "deploy websites", "send emails"'
 					autoFocus={autoFocus}
-					className={`w-full bg-foreground/[0.03] border border-foreground/[0.08] placeholder:text-foreground/30 text-foreground font-mono focus:outline-none focus:border-foreground/20 focus:bg-foreground/[0.05] transition-all ${
+					className={`w-full bg-background border border-foreground/[0.08] placeholder:text-foreground/30 text-foreground font-mono focus:outline-none focus:border-foreground/20 transition-all ${
 						isLarge ? "pl-12 pr-16 py-3.5 text-sm" : "pl-10 pr-14 py-2.5 text-xs"
 					}`}
 				/>

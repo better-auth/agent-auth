@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import Link from "next/link";
+import { ConnectDialog } from "@/components/connect-dialog";
 import { Nav } from "@/components/nav";
 import { ProviderCard } from "@/components/provider-card";
 import { SearchBar } from "@/components/search-bar";
@@ -82,8 +83,17 @@ export default async function LandingPage() {
 							Agent Registry
 						</h1>
 						<p className="text-sm sm:text-base text-foreground/50 max-w-md mx-auto leading-relaxed">
-							Discover Agent Auth-capable services by intent. The searchable
-							index for AI agent infrastructure.
+							Discover Agent Auth-capable services by intent.
+							A{" "}
+							<a
+								href="https://agent-auth-protocol.com/specification/v1.0-draft#611-registry"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-foreground/70 hover:text-foreground underline underline-offset-[3px] decoration-foreground/20 hover:decoration-foreground/40 transition-colors"
+							>
+								§6.11
+							</a>
+							-compliant searchable index for AI agent infrastructure.
 						</p>
 					</div>
 
@@ -91,15 +101,21 @@ export default async function LandingPage() {
 						<SearchBar size="large" autoFocus />
 					</div>
 
-					<div className="flex items-center justify-center gap-3 sm:gap-4 text-[10px] font-mono text-foreground/30 flex-wrap">
+					<div className="flex items-center justify-center gap-4 sm:gap-5 text-xs font-mono text-foreground/30 flex-wrap">
 						<span>
 							{providers.length} provider
 							{providers.length !== 1 && "s"} registered
 						</span>
 						<span className="text-foreground/15 hidden sm:inline">|</span>
-						<span className="hidden sm:inline">intent-based discovery</span>
-						<span className="text-foreground/15 hidden sm:inline">|</span>
-						<span className="hidden sm:inline">SS6.2 compliant</span>
+						<ConnectDialog>
+							<button
+								type="button"
+								className="text-foreground/45 hover:text-foreground/70 transition-colors cursor-pointer flex items-center gap-1"
+							>
+								<svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="inline -mt-px mr-0.5" aria-hidden="true"><path d="M6 2H3a1 1 0 00-1 1v3m8-4h3a1 1 0 011 1v3m0 4v3a1 1 0 01-1 1h-3M2 10v3a1 1 0 001 1h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+								Connect
+							</button>
+						</ConnectDialog>
 					</div>
 				</div>
 
