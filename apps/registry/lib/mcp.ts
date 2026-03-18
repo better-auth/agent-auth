@@ -30,6 +30,7 @@ export function getClientForUser(userId: string): AgentAuthClient {
 
 	client = new AgentAuthClient({
 		storage,
+		registryUrl: process.env.AGENT_AUTH_REGISTRY_URL ?? "https://agent-auth.directory",
 		allowDirectDiscovery: true,
 		hostName: process.env.AGENT_AUTH_HOST_NAME ?? "Agent Auth Registry",
 		approvalTimeoutMs: APPROVAL_TIMEOUT_MS,
