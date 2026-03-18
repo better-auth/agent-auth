@@ -59,7 +59,7 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				throw agentError("FORBIDDEN", ERR.UNAUTHORIZED);
 			}
 
-			// §6.6 state checks
+			// §5.6: active → return current status (no-op), same shape as §5.5
 			if (agent.status === "active") {
 				const grants =
 					await ctx.context.adapter.findMany<AgentCapabilityGrant>({
@@ -68,10 +68,24 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 					});
 				return ctx.json({
 					agent_id: agent.id,
+					host_id: agent.hostId,
+					name: agent.name,
 					status: "active" as const,
+					mode: agent.mode,
 					agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
-					activated_at: agent.activatedAt,
-					expires_at: agent.expiresAt,
+					user_id: agent.userId ?? null,
+					activated_at: agent.activatedAt
+						? new Date(agent.activatedAt).toISOString()
+						: null,
+					created_at: agent.createdAt
+						? new Date(agent.createdAt).toISOString()
+						: null,
+					last_used_at: agent.lastUsedAt
+						? new Date(agent.lastUsedAt).toISOString()
+						: null,
+					expires_at: agent.expiresAt
+						? new Date(agent.expiresAt).toISOString()
+						: null,
 				});
 			}
 			if (agent.status === "revoked") {
@@ -190,11 +204,20 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
 				},
 			}, ctx);
 
+			// §5.6: response returns same fields as status (§5.5)
 			const response: Record<string, unknown> = {
 				agent_id: agent.id,
+				host_id: agent.hostId,
+				name: agent.name,
 				status: newStatus,
+				mode: agent.mode,
 				agent_capability_grants: formatGrantsResponse(grants, opts.capabilities),
+				user_id: agent.userId ?? null,
 				activated_at: needsApproval ? null : now.toISOString(),
+				created_at: agent.createdAt
+					? new Date(agent.createdAt).toISOString()
+					: null,
+				last_used_at: needsApproval ? null : now.toISOString(),
 				expires_at: expiresAt ? expiresAt.toISOString() : null,
 			};
 

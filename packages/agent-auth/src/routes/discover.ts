@@ -53,6 +53,9 @@ export function agentConfiguration(opts: ResolvedAgentAuthOptions) {
 			// §5.1: default_location is a full URL (used as JWT aud)
 			const defaultLocation = `${issuer}${endpoints.execute}`;
 
+			// §5.1: Cache-Control per RFC 9111; 1 hour RECOMMENDED
+			ctx.setHeader("Cache-Control", "public, max-age=3600");
+
 			return ctx.json({
 				version: "1.0-draft",
 				provider_name: opts.providerName ?? "agent-auth",

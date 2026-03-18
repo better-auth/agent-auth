@@ -50,9 +50,7 @@ export function requestCapability(opts: ResolvedAgentAuthOptions) {
 			body: z.object({
 				capabilities: z.array(capabilityItemZ).min(1),
 				reason: z.string().optional(),
-				preferred_method: z
-					.enum(["device_authorization", "ciba"])
-					.optional(),
+				preferred_method: z.string().optional(),
 				login_hint: z.string().optional(),
 				binding_message: z.string().optional(),
 			}),
