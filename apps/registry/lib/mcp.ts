@@ -4,7 +4,6 @@ import {
 	type AgentAuthTool,
 	type ToolParameters,
 } from "@auth/agent";
-import { UrlElicitationRequiredError } from "@modelcontextprotocol/sdk/types.js";
 import { createUserStorage } from "./storage";
 import { sql } from "./db";
 import type { z, ZodRawShape, ZodTypeAny } from "zod";
@@ -53,7 +52,8 @@ export function getClientForUser(userId: string): AgentAuthClient {
  * request_capability handle the approval timeout gracefully.
  *
  * When approval is needed the SDK times out quickly (500ms)
- * and we return the approval URL via MCP URL-mode elicitation.
+ * and we return the approval URL as a tool result so the AI
+ * can present it to the user across all MCP clients.
  */
 export function getToolsForUser(userId: string): AgentAuthTool[] {
 	const client = getClientForUser(userId);
@@ -85,20 +85,17 @@ export function getToolsForUser(userId: string): AgentAuthTool[] {
 						const uri =
 							pending.verificationUriComplete || pending.verificationUri;
 						const codeNote = pending.userCode
-							? ` Verify code: ${pending.userCode}`
+							? `\nVerification code: ${pending.userCode}`
 							: "";
 
-						throw new UrlElicitationRequiredError(
-							[
-								{
-									mode: "url" as const,
-									elicitationId: crypto.randomUUID(),
-									url: uri,
-									message: `Approve this agent's access to your account.${codeNote}`,
-								},
-							],
-							`User approval required.${codeNote} After approving, retry the tool call.`,
-						);
+						return {
+							status: "approval_required",
+							approval_url: uri,
+							message:
+								`User approval is required. Please open the following URL to approve access:` +
+								`\n\n${uri}${codeNote}` +
+								`\n\nAfter approving, retry this tool call.`,
+						};
 					}
 					throw err;
 				}

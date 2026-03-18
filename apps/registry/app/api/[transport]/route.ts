@@ -58,72 +58,47 @@ function unauthorizedResponse(req: Request) {
 	});
 }
 
-interface UserMcpInstance {
-	transport: WebStandardStreamableHTTPServerTransport;
-	server: McpServer;
-}
-
-const instanceCache = new Map<string, Promise<UserMcpInstance>>();
-
-async function getInstanceForUser(userId: string): Promise<UserMcpInstance> {
-	const existing = instanceCache.get(userId);
-	if (existing) return existing;
-
-	const promise = (async (): Promise<UserMcpInstance> => {
-		const transport = new WebStandardStreamableHTTPServerTransport({
-			sessionIdGenerator: undefined,
-		});
-
-		const server = new McpServer({
-			name: "agent-auth-mcp",
-			version: "1.0.0",
-		});
-
-		const tools = getToolsForUser(userId);
-		for (const tool of tools) {
-			const zodShape = jsonSchemaToZod(tool.parameters, z);
-			const toolOpts: Record<string, unknown> = {
-				description: tool.description,
-			};
-			if (zodShape) {
-				toolOpts.inputSchema = zodShape;
-			}
-			if (tool.annotations) {
-				toolOpts.annotations = tool.annotations;
-			}
-			server.registerTool(
-				tool.name,
-				toolOpts,
-				async (
-					args: Record<string, unknown>,
-					extra?: { signal?: AbortSignal },
-				) => {
-					const result = await tool.execute(args, {
-						signal: extra?.signal,
-					});
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: JSON.stringify(result, null, 2),
-							},
-						],
-					};
-				},
-			);
-		}
-
-		await server.connect(transport);
-		return { transport, server };
-	})();
-
-	instanceCache.set(userId, promise);
-
-	promise.catch(() => {
-		instanceCache.delete(userId);
+function createServerForUser(userId: string): McpServer {
+	const server = new McpServer({
+		name: "agent-auth-mcp",
+		version: "1.0.0",
 	});
 
-	return promise;
+	const tools = getToolsForUser(userId);
+	for (const tool of tools) {
+		const zodShape = jsonSchemaToZod(tool.parameters, z);
+		const toolOpts: Record<string, unknown> = {
+			description: tool.description,
+		};
+		if (zodShape) {
+			toolOpts.inputSchema = zodShape;
+		}
+		if (tool.annotations) {
+			toolOpts.annotations = tool.annotations;
+		}
+		server.registerTool(
+			tool.name,
+			toolOpts,
+			async (
+				args: Record<string, unknown>,
+				extra?: { signal?: AbortSignal },
+			) => {
+				const result = await tool.execute(args, {
+					signal: extra?.signal,
+				});
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: JSON.stringify(result, null, 2),
+						},
+					],
+				};
+			},
+		);
+	}
+
+	return server;
 }
 
 async function handler(req: Request) {
@@ -137,7 +112,11 @@ async function handler(req: Request) {
 	const verified = await verifyToken(token);
 	if (!verified) return unauthorizedResponse(req);
 
-	const { transport } = await getInstanceForUser(verified.userId);
+	const server = createServerForUser(verified.userId);
+	const transport = new WebStandardStreamableHTTPServerTransport({
+		sessionIdGenerator: undefined,
+	});
+	await server.connect(transport);
 	return transport.handleRequest(req);
 }
 
