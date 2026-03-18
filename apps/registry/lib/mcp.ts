@@ -1,6 +1,7 @@
 import {
 	AgentAuthClient,
 	getAgentAuthTools,
+	filterTools,
 	type AgentAuthTool,
 	type ToolParameters,
 } from "@auth/agent";
@@ -55,9 +56,15 @@ export function getClientForUser(userId: string): AgentAuthClient {
  * and we return the approval URL as a tool result so the AI
  * can present it to the user across all MCP clients.
  */
+const ADMIN_TOOLS = [
+	"rotate_host_key",
+	"rotate_agent_key",
+	"enroll_host",
+];
+
 export function getToolsForUser(userId: string): AgentAuthTool[] {
 	const client = getClientForUser(userId);
-	const tools = getAgentAuthTools(client);
+	const tools = filterTools(getAgentAuthTools(client), { exclude: ADMIN_TOOLS });
 
 	return tools.map((tool) => {
 		if (tool.name !== "connect_agent" && tool.name !== "request_capability") {
