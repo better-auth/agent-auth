@@ -256,9 +256,7 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {(settings.webauthnEnabled || setupPasskey) && (
-              <PasskeyManager returnTo={returnTo} />
-            )}
+            {(settings.webauthnEnabled || setupPasskey) && <PasskeyManager returnTo={returnTo} />}
           </div>
         </div>
 
