@@ -1,0 +1,314 @@
+import { Command } from "commander";
+import type { CapabilityConstraints, CapabilityRequestItem } from "@auth/agent";
+import { createClient, getClientConfig } from "./client.js";
+
+function json<T>(data: T): void {
+  console.log(JSON.stringify(data, null, 2));
+}
+
+/**
+ * Merge plain capability IDs with an optional --constraints JSON flag.
+ * Returns `CapabilityRequestItem[]` accepted by the SDK.
+ */
+function mergeConstraints(
+  ids: string[] | undefined,
+  constraintsJson: string | undefined,
+): CapabilityRequestItem[] | undefined {
+  if (!ids) return undefined;
+  if (!constraintsJson) return ids;
+  const parsed = JSON.parse(constraintsJson) as Record<string, CapabilityConstraints>;
+  return ids.map((id): CapabilityRequestItem => {
+    const c = parsed[id];
+    if (c) return { name: id, constraints: c };
+    return id;
+  });
+}
+
+async function run(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Error: ${msg}`);
+    process.exit(1);
+  }
+}
+
+export function buildCli(): Command {
+  const program = new Command();
+
+  program
+    .name("auth-agent")
+    .description("CLI for the Agent Auth Protocol")
+    .version("0.1.0")
+    .option("--storage-dir <path>", "storage directory", process.env.AGENT_AUTH_STORAGE_DIR)
+    .option("--directory-url <url>", "directory URL", process.env.AGENT_AUTH_DIRECTORY_URL)
+    .option("--host-name <name>", "host name", process.env.AGENT_AUTH_HOST_NAME)
+    .option("--no-browser", "don't auto-open the browser for approval URLs")
+    .option("--url <urls...>", "provider URLs to auto-discover at startup");
+
+  function client() {
+    const opts = program.opts();
+    return createClient({
+      ...getClientConfig(),
+      storageDir: opts.storageDir,
+      directoryUrl: opts.directoryUrl,
+      hostName: opts.hostName,
+      noBrowser: !opts.browser,
+      urls: opts.url,
+    });
+  }
+
+  program
+    .command("discover <url>")
+    .description("Discover a provider from a service URL")
+    .action((url: string) =>
+      run(async () => {
+        const result = await client().discoverProvider(url);
+        json(result);
+      }),
+    );
+
+  program
+    .command("search <intent>")
+    .description("Search the directory for providers by intent")
+    .action((intent: string) =>
+      run(async () => {
+        const results = await client().searchProviders(intent);
+        json(results);
+      }),
+    );
+
+  program
+    .command("providers")
+    .description("List known providers")
+    .action(() =>
+      run(async () => {
+        const results = await client().listProviders();
+        json(results);
+      }),
+    );
+
+  program
+    .command("capabilities")
+    .description("List capabilities for a provider")
+    .requiredOption("--provider <url>", "provider URL or name")
+    .option("--query <query>", "search query to filter by name or description")
+    .option("--agent-id <id>", "scope to agent (includes grant status)")
+    .option("--cursor <cursor>", "pagination cursor")
+    .action((opts) =>
+      run(async () => {
+        const result = await client().listCapabilities({
+          provider: opts.provider,
+          query: opts.query,
+          agentId: opts.agentId,
+          cursor: opts.cursor,
+        });
+        json(result);
+      }),
+    );
+
+  program
+    .command("describe <capability-name>")
+    .description("Get the full definition of a capability (including input schema)")
+    .requiredOption("--provider <url>", "provider URL or name")
+    .option("--agent-id <id>", "agent ID for grant status context")
+    .action((name: string, opts) =>
+      run(async () => {
+        const result = await client().describeCapability({
+          provider: opts.provider,
+          name,
+          agentId: opts.agentId,
+        });
+        json(result);
+      }),
+    );
+
+  program
+    .command("connect")
+    .description("Connect an agent to a provider")
+    .requiredOption("--provider <url>", "provider URL or name")
+    .option("--capabilities <ids...>", "capability IDs to request")
+    .option(
+      "--constraints <json>",
+      'JSON constraints map, e.g. \'{"transfer":{"amount":{"max":1000}}}\'',
+    )
+    .option("--mode <mode>", "agent mode (delegated|autonomous)", "delegated")
+    .option("--name <name>", "agent name")
+    .option("--reason <reason>", "reason for requesting capabilities")
+    .option(
+      "--preferred-method <method>",
+      "preferred approval method (e.g. device_authorization, ciba)",
+    )
+    .option("--login-hint <hint>", "login hint for CIBA approval (e.g. user email)")
+    .option("--binding-message <msg>", "binding message shown during approval")
+    .action((opts) =>
+      run(async () => {
+        const capabilities = mergeConstraints(opts.capabilities, opts.constraints);
+        const result = await client().connectAgent({
+          provider: opts.provider,
+          capabilities,
+          mode: opts.mode,
+          name: opts.name,
+          reason: opts.reason,
+          preferredMethod: opts.preferredMethod,
+          loginHint: opts.loginHint,
+          bindingMessage: opts.bindingMessage,
+        });
+        json(result);
+      }),
+    );
+
+  program
+    .command("status <agent-id>")
+    .description("Check agent status")
+    .action((agentId: string) =>
+      run(async () => {
+        const result = await client().agentStatus(agentId);
+        json(result);
+      }),
+    );
+
+  program
+    .command("sign <agent-id>")
+    .description("Sign an agent JWT")
+    .option("--capabilities <ids...>", "scope to specific capability IDs")
+    .action((agentId: string, opts) =>
+      run(async () => {
+        const result = await client().signJwt({
+          agentId,
+          capabilities: opts.capabilities,
+        });
+        json(result);
+      }),
+    );
+
+  program
+    .command("request <agent-id>")
+    .description("Request additional capabilities for an agent")
+    .requiredOption("--capabilities <ids...>", "capability IDs to request")
+    .option(
+      "--constraints <json>",
+      'JSON constraints map, e.g. \'{"transfer":{"amount":{"max":1000}}}\'',
+    )
+    .option("--reason <reason>", "reason for request")
+    .option(
+      "--preferred-method <method>",
+      "preferred approval method (e.g. device_authorization, ciba)",
+    )
+    .option("--login-hint <hint>", "login hint for CIBA approval (e.g. user email)")
+    .option("--binding-message <msg>", "binding message shown during approval")
+    .action((agentId: string, opts) =>
+      run(async () => {
+        const capabilities =
+          mergeConstraints(opts.capabilities as string[], opts.constraints) ??
+          (opts.capabilities as string[]);
+        const result = await client().requestCapability({
+          agentId,
+          capabilities,
+          reason: opts.reason,
+          preferredMethod: opts.preferredMethod,
+          loginHint: opts.loginHint,
+          bindingMessage: opts.bindingMessage,
+        });
+        json(result);
+      }),
+    );
+
+  program
+    .command("disconnect <agent-id>")
+    .description("Disconnect (revoke) an agent")
+    .action((agentId: string) =>
+      run(async () => {
+        await client().disconnectAgent(agentId);
+        json({ ok: true, agentId });
+      }),
+    );
+
+  program
+    .command("reactivate <agent-id>")
+    .description("Reactivate an expired agent")
+    .action((agentId: string) =>
+      run(async () => {
+        const result = await client().reactivateAgent(agentId);
+        json(result);
+      }),
+    );
+
+  program
+    .command("execute <agent-id> <capability-id>")
+    .description("Execute a capability through the server's execute endpoint")
+    .option("--args <json>", "arguments as JSON string")
+    .action((agentId: string, capability: string, opts) =>
+      run(async () => {
+        const args = opts.args ? JSON.parse(opts.args) : undefined;
+        const result = await client().executeCapability({
+          agentId,
+          capability,
+          arguments: args,
+        });
+        json(result);
+      }),
+    );
+
+  program
+    .command("connection <agent-id>")
+    .description("Get a stored agent connection")
+    .action((agentId: string) =>
+      run(async () => {
+        const conn = await client().getConnection(agentId);
+        if (!conn) {
+          console.error(`No connection found for agent ${agentId}`);
+          process.exit(1);
+        }
+        json({
+          agentId: conn.agentId,
+          hostId: conn.hostId,
+          providerName: conn.providerName,
+          issuer: conn.issuer,
+          mode: conn.mode,
+          capabilityGrants: conn.capabilityGrants,
+          createdAt: conn.createdAt,
+        });
+      }),
+    );
+
+  program
+    .command("rotate-agent-key <agent-id>")
+    .description("Rotate an agent's keypair")
+    .action((agentId: string) =>
+      run(async () => {
+        const result = await client().rotateAgentKey(agentId);
+        json(result);
+      }),
+    );
+
+  program
+    .command("rotate-host-key <issuer>")
+    .description("Rotate the host keypair for a provider")
+    .action((issuer: string) =>
+      run(async () => {
+        const result = await client().rotateHostKey(issuer);
+        json(result);
+      }),
+    );
+
+  program
+    .command("enroll-host")
+    .description("Enroll a host using a one-time enrollment token")
+    .requiredOption("--provider <url>", "provider URL or name")
+    .requiredOption("--token <token>", "enrollment token")
+    .option("--name <name>", "host name")
+    .action((opts) =>
+      run(async () => {
+        const result = await client().enrollHost({
+          provider: opts.provider,
+          enrollmentToken: opts.token,
+          name: opts.name,
+        });
+        json(result);
+      }),
+    );
+
+  return program;
+}

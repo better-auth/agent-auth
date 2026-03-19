@@ -1,0 +1,6 @@
+.next/
+*.db
+*.sqlite
+*.db-shm
+*.db-wal
+.vercel

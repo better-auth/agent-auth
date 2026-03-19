@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #202124;
+  --accent: #1a73e8;
+  --muted: #444746;
+  --border: #c4c7c5;
+  --surface: #f0f4f9;
+  --surface-hover: #e3e7ec;
+  --gmail-red: #c5221f;
+  --gmail-blue: #1a73e8;
+  --gmail-green: #188038;
+  --gmail-yellow: #e37400;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-gmail-red: var(--gmail-red);
+  --color-gmail-blue: var(--gmail-blue);
+  --color-gmail-green: var(--gmail-green);
+  --color-gmail-yellow: var(--gmail-yellow);
+  --font-sans: var(--font-google-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}

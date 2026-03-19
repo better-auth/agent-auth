@@ -1,0 +1,20 @@
+{
+  "name": "agent-auth-ba",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check ."
+  },
+  "devDependencies": {
+    "oxfmt": "^0.41.0",
+    "turbo": "^2.5.0"
+  },
+  "engines": {
+    "node": "24.12.0"
+  },
+  "packageManager": "pnpm@10.6.2"
+}

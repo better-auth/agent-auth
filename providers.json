@@ -1,0 +1,26 @@
+[
+  {
+    "version": "1.0-draft",
+    "provider_name": "vercel",
+    "description": "A deployment platform for your apps. Next.js, React, Node.js, etc.",
+    "issuer": "http://localhost:3000",
+    "algorithms": ["Ed25519"],
+    "modes": ["delegated", "autonomous"],
+    "approval_methods": ["ciba", "device_authorization"],
+    "endpoints": {
+      "register": "/api/auth/agent/register",
+      "capabilities": "/api/auth/capability/list",
+      "execute": "/api/auth/capability/execute",
+      "request_capability": "/api/auth/agent/request-capability",
+      "status": "/api/auth/agent/status",
+      "revoke": "/api/auth/agent/revoke",
+      "reactivate": "/api/auth/agent/reactivate",
+      "revoke_host": "/api/auth/host/revoke",
+      "rotate_key": "/api/auth/agent/rotate-key",
+      "rotate_host_key": "/api/auth/host/rotate-key",
+      "introspect": "/api/auth/agent/introspect",
+      "device_authorization": "/api/auth/device/code",
+      "ciba_authorize": "/api/auth/agent/ciba/authorize"
+    }
+  }
+]

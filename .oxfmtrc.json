@@ -1,0 +1,9 @@
+{
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/dist-electron/**",
+    "**/.next/**",
+    "**/coverage/**",
+    "**/release/**"
+  ]
+}
