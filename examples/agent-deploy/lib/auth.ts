@@ -56,7 +56,8 @@ const capabilities: Capability[] = [
   },
   {
     name: "sites.get",
-    description: "Get details of a specific deployed site including its HTML content",
+    description:
+      "Get details of a specific deployed site including its HTML content",
     input: {
       type: "object",
       properties: {
@@ -166,7 +167,9 @@ const AUTONOMOUS_CAPABILITIES = [
 
 function siteUrl(slug: string): string {
   const base =
-    process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "http://localhost:3100";
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.BETTER_AUTH_URL ||
+    "http://localhost:3100";
   return `${base}/sites/${slug}`;
 }
 
@@ -175,6 +178,7 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+
   emailAndPassword: {
     enabled: true,
   },
@@ -186,7 +190,9 @@ export const auth = betterAuth({
         "A deployment platform for HTML sites. AI agents can create, update, and manage static HTML deployments through capability-based authentication.",
       capabilities,
       defaultHostCapabilities: ({ mode }) =>
-        mode === "autonomous" ? AUTONOMOUS_CAPABILITIES : READ_ONLY_CAPABILITIES,
+        mode === "autonomous"
+          ? AUTONOMOUS_CAPABILITIES
+          : READ_ONLY_CAPABILITIES,
       modes: ["delegated", "autonomous"],
       approvalMethods: ["ciba", "device_authorization"],
       resolveApprovalMethod: ({ preferredMethod, supportedMethods }) => {
@@ -203,7 +209,10 @@ export const auth = betterAuth({
         const autonomousUserId = `autonomous_${hostId}`;
         const sites = await listSites(autonomousUserId);
         for (const s of sites) {
-          await db.update(schema.site).set({ userId }).where(eq(schema.site.id, s.id));
+          await db
+            .update(schema.site)
+            .set({ userId })
+            .where(eq(schema.site.id, s.id));
         }
       },
       onExecute: async ({ capability, arguments: args, agentSession }) => {
@@ -212,7 +221,9 @@ export const auth = betterAuth({
         switch (capability) {
           case "sites.list": {
             const sites = await listSites(userId);
-            const limited = args?.limit ? sites.slice(0, Number(args.limit)) : sites;
+            const limited = args?.limit
+              ? sites.slice(0, Number(args.limit))
+              : sites;
             return {
               sites: limited.map((s) => ({
                 id: s.id,
@@ -251,7 +262,9 @@ export const auth = betterAuth({
             }
             const html = String(args.html);
             if (html.length > MAX_HTML_SIZE) {
-              throw new Error(`HTML content exceeds ${MAX_HTML_SIZE / 1024 / 1024} MB limit`);
+              throw new Error(
+                `HTML content exceeds ${MAX_HTML_SIZE / 1024 / 1024} MB limit`,
+              );
             }
             const site = await createSite({
               name: String(args.name).slice(0, MAX_NAME_LENGTH),
@@ -274,18 +287,23 @@ export const auth = betterAuth({
             if (!args?.id) throw new Error("Missing required argument: id");
             const updateHtml = args.html ? String(args.html) : undefined;
             if (updateHtml && updateHtml.length > MAX_HTML_SIZE) {
-              throw new Error(`HTML content exceeds ${MAX_HTML_SIZE / 1024 / 1024} MB limit`);
+              throw new Error(
+                `HTML content exceeds ${MAX_HTML_SIZE / 1024 / 1024} MB limit`,
+              );
             }
             const updated = await updateSite({
               id: String(args.id),
               userId,
-              name: args.name ? String(args.name).slice(0, MAX_NAME_LENGTH) : undefined,
+              name: args.name
+                ? String(args.name).slice(0, MAX_NAME_LENGTH)
+                : undefined,
               html: updateHtml,
               description: args.description
                 ? String(args.description).slice(0, MAX_DESC_LENGTH)
                 : undefined,
             });
-            if (!updated) throw new Error("Site not found or not owned by user");
+            if (!updated)
+              throw new Error("Site not found or not owned by user");
             return {
               id: updated.id,
               name: updated.name,
@@ -298,7 +316,8 @@ export const auth = betterAuth({
           case "sites.delete": {
             if (!args?.id) throw new Error("Missing required argument: id");
             const success = await deleteSite(String(args.id), userId);
-            if (!success) throw new Error("Site not found or not owned by user");
+            if (!success)
+              throw new Error("Site not found or not owned by user");
             return { success: true, deletedId: String(args.id) };
           }
 

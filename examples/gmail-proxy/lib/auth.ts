@@ -37,7 +37,8 @@ const capabilities: Capability[] = [
         },
         maxResults: {
           type: "number",
-          description: "Maximum number of messages to return (default 10, max 50)",
+          description:
+            "Maximum number of messages to return (default 10, max 50)",
         },
         after: {
           type: "string",
@@ -73,7 +74,8 @@ const capabilities: Capability[] = [
       },
       q: {
         type: "string",
-        description: "Constrain search query (e.g. restrict to specific senders)",
+        description:
+          "Constrain search query (e.g. restrict to specific senders)",
         operators: ["eq"],
       },
       format: {
@@ -120,7 +122,8 @@ const capabilities: Capability[] = [
         body: { type: "string", description: "Email body (plain text)" },
         htmlBody: {
           type: "string",
-          description: "Email body (HTML). If provided, takes precedence over body",
+          description:
+            "Email body (HTML). If provided, takes precedence over body",
         },
         cc: { type: "string", description: "CC recipients, comma-separated" },
         bcc: { type: "string", description: "BCC recipients, comma-separated" },
@@ -195,11 +198,13 @@ const capabilities: Capability[] = [
       properties: {
         q: {
           type: "string",
-          description: "Gmail search query (e.g. 'from:user@example.com is:unread')",
+          description:
+            "Gmail search query (e.g. 'from:user@example.com is:unread')",
         },
         maxResults: {
           type: "number",
-          description: "Maximum number of threads to return (default 10, max 50)",
+          description:
+            "Maximum number of threads to return (default 10, max 50)",
         },
         pageToken: { type: "string", description: "Page token for pagination" },
         labelIds: {
@@ -420,7 +425,8 @@ function buildMimeMessage(args: {
   if (args.cc) lines.push(`Cc: ${sanitizeMimeHeader(args.cc)}`);
   if (args.bcc) lines.push(`Bcc: ${sanitizeMimeHeader(args.bcc)}`);
   lines.push(`Subject: ${sanitizeMimeHeader(args.subject)}`);
-  if (args.inReplyTo) lines.push(`In-Reply-To: ${sanitizeMimeHeader(args.inReplyTo)}`);
+  if (args.inReplyTo)
+    lines.push(`In-Reply-To: ${sanitizeMimeHeader(args.inReplyTo)}`);
   lines.push("MIME-Version: 1.0");
 
   if (args.htmlBody) {
@@ -441,7 +447,10 @@ function buildMimeMessage(args: {
     lines.push(args.body || "");
   }
 
-  return btoa(lines.join("\r\n")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(lines.join("\r\n"))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 async function getAccessToken(
@@ -472,10 +481,14 @@ async function getAccessToken(
   });
 
   if (!account?.accessToken) {
-    throw new Error("No Google access token found. User must sign in with Google first.");
+    throw new Error(
+      "No Google access token found. User must sign in with Google first.",
+    );
   }
 
-  const expiresAt = account.accessTokenExpiresAt ? new Date(account.accessTokenExpiresAt) : null;
+  const expiresAt = account.accessTokenExpiresAt
+    ? new Date(account.accessTokenExpiresAt)
+    : null;
   const isExpired = expiresAt && expiresAt.getTime() < Date.now() - 60_000;
 
   if (!isExpired) {
@@ -524,7 +537,11 @@ async function getAccessToken(
   return tokens.access_token;
 }
 
-async function gmailFetch(token: string, path: string, init?: RequestInit): Promise<unknown> {
+async function gmailFetch(
+  token: string,
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
   const res = await fetch(`${GMAIL_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -547,6 +564,11 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  user: {
+    deleteUser: {
+      enabled: true,
+    },
+  },
   plugins: [
     genericOAuth({
       config: [
@@ -554,7 +576,8 @@ export const auth = betterAuth({
           providerId: "google",
           clientId: GOOGLE_CLIENT_ID,
           clientSecret: GOOGLE_CLIENT_SECRET,
-          discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration",
+          discoveryUrl:
+            "https://accounts.google.com/.well-known/openid-configuration",
           scopes: GMAIL_SCOPES,
           pkce: true,
           prompt: "consent",
@@ -569,12 +592,15 @@ export const auth = betterAuth({
     agentAuth({
       allowDynamicHostRegistration: true,
       freshSessionWindow: async ({ ctx }) => {
-        const userId = (ctx as Record<string, any>).context?.session?.user?.id as
-          | string
-          | undefined;
+        const userId = (ctx as Record<string, any>).context?.session?.user
+          ?.id as string | undefined;
         if (!userId) return 300;
-        if ((await getSetting(userId, "freshSessionEnabled")) !== "true") return 0;
-        return parseInt((await getSetting(userId, "freshSessionWindow")) ?? "300", 10);
+        if ((await getSetting(userId, "freshSessionEnabled")) !== "true")
+          return 0;
+        return parseInt(
+          (await getSetting(userId, "freshSessionWindow")) ?? "300",
+          10,
+        );
       },
       capabilities,
       defaultHostCapabilities: READ_ONLY_CAPABILITIES,
@@ -583,7 +609,11 @@ export const auth = betterAuth({
         "Gmail is Google's email service with over 1.8 billion users. This proxy provides AI agents with secure access to read, send, and manage emails, threads, labels, and drafts through the Gmail API.",
       modes: ["delegated"],
       approvalMethods: ["ciba", "device_authorization"],
-      resolveApprovalMethod: async ({ preferredMethod, supportedMethods, userId }) => {
+      resolveApprovalMethod: async ({
+        preferredMethod,
+        supportedMethods,
+        userId,
+      }) => {
         const userPreferred = userId
           ? ((await getSetting(userId, "preferredApprovalMethod")) ?? "ciba")
           : "ciba";
@@ -591,34 +621,49 @@ export const auth = betterAuth({
         return supportedMethods.includes(method) ? method : "ciba";
       },
       onExecute: async ({ ctx, capability, arguments: args, agentSession }) => {
-        const token = await getAccessToken(ctx.context.adapter, agentSession.user.id);
+        const token = await getAccessToken(
+          ctx.context.adapter,
+          agentSession.user.id,
+        );
 
         switch (capability) {
           case "gmail.messages.list": {
-            const maxResults = Math.min(Math.max(1, Number(args?.maxResults ?? 10)), 50);
+            const maxResults = Math.min(
+              Math.max(1, Number(args?.maxResults ?? 10)),
+              50,
+            );
 
             const queryParts: string[] = [];
             if (args?.q) queryParts.push(String(args.q));
             if (args?.after) {
               const d = new Date(args.after as string);
               if (!isNaN(d.getTime()))
-                queryParts.push(`after:${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`);
+                queryParts.push(
+                  `after:${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`,
+                );
             }
             if (args?.before) {
               const d = new Date(args.before as string);
               if (!isNaN(d.getTime()))
-                queryParts.push(`before:${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`);
+                queryParts.push(
+                  `before:${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`,
+                );
             }
 
             const listParams = new URLSearchParams();
             if (queryParts.length) listParams.set("q", queryParts.join(" "));
             listParams.set("maxResults", String(maxResults));
-            if (args?.pageToken) listParams.set("pageToken", String(args.pageToken));
+            if (args?.pageToken)
+              listParams.set("pageToken", String(args.pageToken));
             if (args?.labelIds) {
-              for (const l of args.labelIds as string[]) listParams.append("labelIds", l);
+              for (const l of args.labelIds as string[])
+                listParams.append("labelIds", l);
             }
 
-            const listResult = (await gmailFetch(token, `/users/me/messages?${listParams}`)) as {
+            const listResult = (await gmailFetch(
+              token,
+              `/users/me/messages?${listParams}`,
+            )) as {
               messages?: { id: string; threadId: string }[];
               nextPageToken?: string;
               resultSizeEstimate?: number;
@@ -636,7 +681,10 @@ export const auth = betterAuth({
             const details = await Promise.all(
               listResult.messages.map((m) => {
                 const p = new URLSearchParams({ format });
-                return gmailFetch(token, `/users/me/messages/${m.id}?${p}`) as Promise<{
+                return gmailFetch(
+                  token,
+                  `/users/me/messages/${m.id}?${p}`,
+                ) as Promise<{
                   id: string;
                   threadId: string;
                   labelIds?: string[];
@@ -655,7 +703,8 @@ export const auth = betterAuth({
             const messages = details.map((msg) => {
               const headers = msg.payload?.headers ?? [];
               const hdr = (name: string) =>
-                headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+                headers.find((h) => h.name.toLowerCase() === name.toLowerCase())
+                  ?.value ?? null;
 
               return {
                 id: msg.id,
@@ -684,7 +733,10 @@ export const auth = betterAuth({
             const params = new URLSearchParams();
             if (args?.format) params.set("format", String(args.format));
             const qs = params.toString();
-            return gmailFetch(token, `/users/me/messages/${args!.id}${qs ? `?${qs}` : ""}`);
+            return gmailFetch(
+              token,
+              `/users/me/messages/${args!.id}${qs ? `?${qs}` : ""}`,
+            );
           }
 
           case "gmail.messages.send": {
@@ -727,14 +779,19 @@ export const auth = betterAuth({
             });
 
           case "gmail.threads.list": {
-            const maxResults = Math.min(Math.max(1, Number(args?.maxResults ?? 10)), 50);
+            const maxResults = Math.min(
+              Math.max(1, Number(args?.maxResults ?? 10)),
+              50,
+            );
 
             const params = new URLSearchParams();
             if (args?.q) params.set("q", String(args.q));
             params.set("maxResults", String(maxResults));
-            if (args?.pageToken) params.set("pageToken", String(args.pageToken));
+            if (args?.pageToken)
+              params.set("pageToken", String(args.pageToken));
             if (args?.labelIds) {
-              for (const l of args.labelIds as string[]) params.append("labelIds", l);
+              for (const l of args.labelIds as string[])
+                params.append("labelIds", l);
             }
             const qs = params.toString();
 
@@ -758,7 +815,10 @@ export const auth = betterAuth({
             const threadDetails = await Promise.all(
               listResult.threads.map(
                 (t) =>
-                  gmailFetch(token, `/users/me/threads/${t.id}?format=metadata`) as Promise<{
+                  gmailFetch(
+                    token,
+                    `/users/me/threads/${t.id}?format=metadata`,
+                  ) as Promise<{
                     id: string;
                     historyId?: string;
                     messages?: Array<{
@@ -780,7 +840,8 @@ export const auth = betterAuth({
               const lastMsg = thread.messages?.[thread.messages.length - 1];
               const headers = firstMsg?.payload?.headers ?? [];
               const hdr = (name: string) =>
-                headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+                headers.find((h) => h.name.toLowerCase() === name.toLowerCase())
+                  ?.value ?? null;
 
               return {
                 id: thread.id,
@@ -793,8 +854,9 @@ export const auth = betterAuth({
                 date: hdr("Date"),
                 labelIds: firstMsg?.labelIds ?? [],
                 lastMessageDate:
-                  lastMsg?.payload?.headers?.find((h) => h.name.toLowerCase() === "date")?.value ??
-                  null,
+                  lastMsg?.payload?.headers?.find(
+                    (h) => h.name.toLowerCase() === "date",
+                  )?.value ?? null,
               };
             });
 
@@ -809,7 +871,10 @@ export const auth = betterAuth({
             const params = new URLSearchParams();
             if (args?.format) params.set("format", String(args.format));
             const qs = params.toString();
-            return gmailFetch(token, `/users/me/threads/${args!.id}${qs ? `?${qs}` : ""}`);
+            return gmailFetch(
+              token,
+              `/users/me/threads/${args!.id}${qs ? `?${qs}` : ""}`,
+            );
           }
 
           case "gmail.threads.trash":
@@ -845,8 +910,10 @@ export const auth = betterAuth({
 
           case "gmail.drafts.list": {
             const params = new URLSearchParams();
-            if (args?.maxResults) params.set("maxResults", String(args.maxResults));
-            if (args?.pageToken) params.set("pageToken", String(args.pageToken));
+            if (args?.maxResults)
+              params.set("maxResults", String(args.maxResults));
+            if (args?.pageToken)
+              params.set("pageToken", String(args.pageToken));
             const qs = params.toString();
             return gmailFetch(token, `/users/me/drafts${qs ? `?${qs}` : ""}`);
           }
@@ -855,7 +922,10 @@ export const auth = betterAuth({
             const params = new URLSearchParams();
             if (args?.format) params.set("format", String(args.format));
             const qs = params.toString();
-            return gmailFetch(token, `/users/me/drafts/${args!.id}${qs ? `?${qs}` : ""}`);
+            return gmailFetch(
+              token,
+              `/users/me/drafts/${args!.id}${qs ? `?${qs}` : ""}`,
+            );
           }
 
           case "gmail.drafts.create": {

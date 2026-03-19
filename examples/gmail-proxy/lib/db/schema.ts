@@ -190,10 +190,10 @@ export const agentCapabilityGrant = pgTable(
       .references(() => agent.id, { onDelete: "cascade" }),
     capability: text("capability").notNull(),
     deniedBy: text("denied_by").references(() => user.id, {
-      onDelete: "cascade",
+      onDelete: "set null",
     }),
     grantedBy: text("granted_by").references(() => user.id, {
-      onDelete: "cascade",
+      onDelete: "set null",
     }),
     expiresAt: timestamp("expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
