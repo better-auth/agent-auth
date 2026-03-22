@@ -15,6 +15,14 @@ describe("MemoryJtiCache", () => {
     cache.destroy();
   });
 
+  it("does not schedule cleanup timers", () => {
+    const cache = new MemoryJtiCache();
+    expect(vi.getTimerCount()).toBe(0);
+    cache.add("abc", 60);
+    expect(vi.getTimerCount()).toBe(0);
+    cache.destroy();
+  });
+
   it("returns true after add", () => {
     const cache = new MemoryJtiCache();
     cache.add("abc", 60);
@@ -38,17 +46,16 @@ describe("MemoryJtiCache", () => {
     cache.destroy();
   });
 
-  it("evicts expired entries on interval", () => {
+  it("evicts expired entries lazily during later cache activity", () => {
     const cache = new MemoryJtiCache();
     cache.add("abc", 10);
-    vi.advanceTimersByTime(15_000);
-    // Trigger eviction (runs every 30s)
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(31_000);
+    cache.add("fresh", 60);
     expect(cache.has("abc")).toBe(false);
     cache.destroy();
   });
 
-  it("destroy clears all entries and stops interval", () => {
+  it("destroy clears all entries", () => {
     const cache = new MemoryJtiCache();
     cache.add("abc", 60);
     cache.destroy();
@@ -100,7 +107,7 @@ describe("JtiCacheProxy", () => {
     proxy.useSecondaryStorage(secondaryStorage);
 
     // Old memory cache entries are gone
-    expect(proxy.has("old-key")).resolves.toBe(false);
+    await expect(proxy.has("old-key")).resolves.toBe(false);
 
     // New entries go to secondary storage
     await proxy.add("new-key", 60);

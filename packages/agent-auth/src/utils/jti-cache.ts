@@ -1,5 +1,7 @@
 import type { SecondaryStorage } from "@better-auth/core/db";
 
+const EVICTION_INTERVAL_MS = 30_000;
+
 /**
  * Abstract JTI cache contract used throughout the plugin.
  * Both `has` and `add` may return promises when backed by
@@ -12,42 +14,41 @@ export interface JtiCacheStore {
 
 export class MemoryJtiCache implements JtiCacheStore {
   private seen = new Map<string, number>();
-  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
-
-  constructor() {
-    this.cleanupInterval = setInterval(() => this.evict(), 30_000);
-    if (typeof this.cleanupInterval === "object" && "unref" in this.cleanupInterval) {
-      this.cleanupInterval.unref();
-    }
-  }
+  private nextEvictionAt = 0;
 
   has(jti: string): boolean {
+    const now = Date.now();
     const expiry = this.seen.get(jti);
     if (expiry === undefined) return false;
-    if (Date.now() > expiry) {
+    if (now > expiry) {
       this.seen.delete(jti);
       return false;
     }
+    this.maybeEvict(now);
     return true;
   }
 
   add(jti: string, maxAgeSec: number): void {
-    this.seen.set(jti, Date.now() + maxAgeSec * 1000);
+    const now = Date.now();
+    this.maybeEvict(now);
+    this.seen.set(jti, now + maxAgeSec * 1000);
   }
 
-  private evict(): void {
-    const now = Date.now();
+  private maybeEvict(now: number): void {
+    if (now < this.nextEvictionAt) {
+      return;
+    }
+
+    this.nextEvictionAt = now + EVICTION_INTERVAL_MS;
+
     for (const [jti, expiry] of this.seen) {
       if (now > expiry) this.seen.delete(jti);
     }
   }
 
   destroy(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
     this.seen.clear();
+    this.nextEvictionAt = 0;
   }
 }
 
