@@ -3,6 +3,11 @@
   "version": "0.4.2",
   "description": "Agent Auth Protocol server plugin for Better Auth — agent identity, registration, and capability-based authorization",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/better-auth/agent-auth",
+    "directory": "packages/agent-auth"
+  },
   "files": [
     "dist"
   ],

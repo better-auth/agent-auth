@@ -3,6 +3,11 @@
   "version": "0.4.2",
   "description": "CLI and MCP server for the Agent Auth Protocol",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/better-auth/agent-auth",
+    "directory": "packages/cli"
+  },
   "bin": {
     "auth-agent": "./dist/index.js"
   },
