@@ -1,19 +1,18 @@
 {
   "name": "agent-auth-ba",
-  "version": "0.0.0",
+  "version": "0.4.1",
   "private": true,
   "license": "MIT",
   "scripts": {
     "build": "turbo build",
     "typecheck": "turbo typecheck",
-    "bump": "bumpp --recursive",
+    "bump": "bumpp packages/agent-auth/package.json packages/sdk/package.json packages/cli/package.json package.json",
     "test": "turbo test",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check ."
   },
   "dependencies": {
-    "bumpp": "^11.0.1",
-    "tinyglobby": "^0.2.15"
+    "bumpp": "^11.0.1"
   },
   "devDependencies": {
     "oxfmt": "^0.41.0",
@@ -22,12 +21,5 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "pnpm@10.6.2",
-  "bumpp": {
-    "files": [
-      "packages/agent-auth/package.json",
-      "packages/sdk/package.json",
-      "packages/cli/package.json"
-    ]
-  }
+  "packageManager": "pnpm@10.6.2"
 }

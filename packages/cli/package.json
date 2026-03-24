@@ -1,6 +1,6 @@
 {
   "name": "@auth/agent-cli",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "CLI and MCP server for the Agent Auth Protocol",
   "license": "MIT",
   "bin": {
