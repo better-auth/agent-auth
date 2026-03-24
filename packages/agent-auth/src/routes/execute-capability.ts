@@ -59,8 +59,21 @@ export function executeCapability(opts: ResolvedAgentAuthOptions) {
 
       const { capability: capabilityName, arguments: args } = ctx.body;
 
-      const allCapabilities = opts.capabilities ?? [];
-      const capabilityDef = allCapabilities.find((c) => c.name === capabilityName);
+      let allCapabilities = opts.capabilities ?? [];
+
+      // If the static list doesn't contain the capability and
+      // resolveCapabilities is configured, resolve dynamically.
+      let capabilityDef = allCapabilities.find((c) => c.name === capabilityName);
+      if (!capabilityDef && opts.resolveCapabilities) {
+        const resolved = await opts.resolveCapabilities({
+          capabilities: allCapabilities,
+          agentSession: agentSession ?? null,
+          hostSession: null,
+          query: null,
+        });
+        allCapabilities = resolved;
+        capabilityDef = resolved.find((c) => c.name === capabilityName);
+      }
       if (!capabilityDef) {
         throw agentError(
           "NOT_FOUND",

@@ -107,7 +107,19 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
         id: r.id ?? String(i),
       }));
 
-      const allCapabilities = opts.capabilities ?? [];
+      let allCapabilities = opts.capabilities ?? [];
+
+      // If the static list is empty and resolveCapabilities is configured,
+      // resolve dynamically so batch execute works with dynamic capabilities.
+      if (allCapabilities.length === 0 && opts.resolveCapabilities) {
+        allCapabilities = await opts.resolveCapabilities({
+          capabilities: allCapabilities,
+          agentSession: agentSession ?? null,
+          hostSession: null,
+          query: null,
+        });
+      }
+
       const capDefMap = new Map<string, Capability>();
       for (const cap of allCapabilities) {
         capDefMap.set(cap.name, cap);
