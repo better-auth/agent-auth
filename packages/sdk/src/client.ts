@@ -1404,10 +1404,7 @@ export class AgentAuthClient {
           signal,
         );
       } catch (err) {
-        if (
-          err instanceof AgentAuthSDKError &&
-          err.code !== "sse_failed"
-        ) {
+        if (err instanceof AgentAuthSDKError && err.code !== "sse_failed") {
           throw err;
         }
         if (signal.aborted) throw err;

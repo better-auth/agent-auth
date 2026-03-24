@@ -26,53 +26,46 @@ const [vercelSpec] = await Promise.all([
   ensureSettings(),
 ]);
 
-const { onExecute: openapiOnExecute, ...openapiRest } = createFromOpenAPI(
-  vercelSpec,
-  {
-    baseUrl: "https://api.vercel.com",
-    defaultHostCapabilities: (c, { mode }) => {
-      if (mode === "autonomous") {
-        return true;
-      }
-      return c.method === "GET";
-    },
-    approvalStrength: {
-      GET: "session",
-      HEAD: "session",
-      POST: "webauthn",
-      PUT: "webauthn",
-      PATCH: "webauthn",
-      DELETE: "webauthn",
-    },
-    async resolveHeaders({ agentSession, ctx }) {
-      if (agentSession.type === "autonomous") {
-        return { Authorization: `Bearer ${VERCEL_MASTER_API_KEY}` };
-      }
-
-      const account = await ctx.context.adapter.findOne<{
-        accessToken: string | null;
-      }>({
-        model: "account",
-        where: [
-          { field: "userId", value: agentSession.user.id },
-          { field: "providerId", value: "vercel-mcp" },
-        ],
-      });
-
-      if (!account?.accessToken) {
-        throw new Error(
-          "No Vercel access token found. User must sign in with Vercel first.",
-        );
-      }
-
-      return { Authorization: `Bearer ${account.accessToken}` };
-    },
+const { onExecute: openapiOnExecute, ...openapiRest } = createFromOpenAPI(vercelSpec, {
+  baseUrl: "https://api.vercel.com",
+  defaultHostCapabilities: (c, { mode }) => {
+    if (mode === "autonomous") {
+      return true;
+    }
+    return c.method === "GET";
   },
-);
+  approvalStrength: {
+    GET: "session",
+    HEAD: "session",
+    POST: "webauthn",
+    PUT: "webauthn",
+    PATCH: "webauthn",
+    DELETE: "webauthn",
+  },
+  async resolveHeaders({ agentSession, ctx }) {
+    if (agentSession.type === "autonomous") {
+      return { Authorization: `Bearer ${VERCEL_MASTER_API_KEY}` };
+    }
 
-function extractProjectId(
-  result: unknown,
-): { projectId: string; projectName?: string } | null {
+    const account = await ctx.context.adapter.findOne<{
+      accessToken: string | null;
+    }>({
+      model: "account",
+      where: [
+        { field: "userId", value: agentSession.user.id },
+        { field: "providerId", value: "vercel-mcp" },
+      ],
+    });
+
+    if (!account?.accessToken) {
+      throw new Error("No Vercel access token found. User must sign in with Vercel first.");
+    }
+
+    return { Authorization: `Bearer ${account.accessToken}` };
+  },
+});
+
+function extractProjectId(result: unknown): { projectId: string; projectName?: string } | null {
   if (!result || typeof result !== "object") return null;
   if ("__type" in (result as Record<string, unknown>)) return null;
   const data = result as Record<string, unknown>;
@@ -85,19 +78,14 @@ function extractProjectId(
   return null;
 }
 
-async function transferProjects(
-  hostId: string,
-  userAccessToken: string,
-): Promise<void> {
+async function transferProjects(hostId: string, userAccessToken: string): Promise<void> {
   const projects = await getUntransferredProjects(hostId);
   if (projects.length === 0) {
     console.log("[transfer] No untransferred projects for host", hostId);
     return;
   }
 
-  console.log(
-    `[transfer] Attempting to transfer ${projects.length} project(s) for host ${hostId}`,
-  );
+  console.log(`[transfer] Attempting to transfer ${projects.length} project(s) for host ${hostId}`);
 
   for (const project of projects) {
     try {
@@ -121,9 +109,7 @@ async function transferProjects(
       }
 
       const { code } = (await transferRes.json()) as { code: string };
-      console.log(
-        `[transfer] Got transfer code for ${project.projectId}: ${code}`,
-      );
+      console.log(`[transfer] Got transfer code for ${project.projectId}: ${code}`);
 
       const acceptUrl = `https://api.vercel.com/v1/projects/transfer-request/${code}`;
       console.log(`[transfer] PUT ${acceptUrl}`);
@@ -185,16 +171,13 @@ export const auth = betterAuth({
               params.set("code_verifier", codeVerifier);
             }
 
-            const response = await fetch(
-              "https://vercel.com/api/login/oauth/token",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/x-www-form-urlencoded",
-                },
-                body: params.toString(),
+            const response = await fetch("https://vercel.com/api/login/oauth/token", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
               },
-            );
+              body: params.toString(),
+            });
 
             if (!response.ok) {
               const err = await response.text();
@@ -214,20 +197,15 @@ export const auth = betterAuth({
             };
           },
           getUserInfo: async (tokens) => {
-            const response = await fetch(
-              "https://api.vercel.com/login/oauth/userinfo",
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${tokens.accessToken}`,
-                },
+            const response = await fetch("https://api.vercel.com/login/oauth/userinfo", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${tokens.accessToken}`,
               },
-            );
+            });
 
             if (!response.ok) {
-              throw new Error(
-                `Failed to fetch user info: ${await response.text()}`,
-              );
+              throw new Error(`Failed to fetch user info: ${await response.text()}`);
             }
 
             const data = await response.json();
@@ -255,10 +233,7 @@ export const auth = betterAuth({
       onExecute: async (context) => {
         const result = await openapiOnExecute!(context);
 
-        if (
-          context.agentSession.type === "autonomous" &&
-          context.agentSession.host?.id
-        ) {
+        if (context.agentSession.type === "autonomous" && context.agentSession.host?.id) {
           try {
             const extracted = extractProjectId(result);
             if (extracted) {
@@ -281,9 +256,7 @@ export const auth = betterAuth({
         email: "autonomous@vercel-proxy.local",
       }),
       onAutonomousAgentClaimed: async ({ ctx, hostId, userId }) => {
-        console.log(
-          `[claim] onAutonomousAgentClaimed fired — hostId=${hostId}, userId=${userId}`,
-        );
+        console.log(`[claim] onAutonomousAgentClaimed fired — hostId=${hostId}, userId=${userId}`);
         try {
           const account = await ctx.context.adapter.findOne<{
             accessToken: string | null;
@@ -299,10 +272,7 @@ export const auth = betterAuth({
             console.log("[claim] Found Vercel access token, starting transfer");
             await transferProjects(hostId, account.accessToken);
           } else {
-            console.warn(
-              "[claim] No Vercel access token found for user",
-              userId,
-            );
+            console.warn("[claim] No Vercel access token found for user", userId);
           }
         } catch (err) {
           console.error("[claim] Error in onAutonomousAgentClaimed:", err);
@@ -319,12 +289,9 @@ export const auth = betterAuth({
       modes: ["delegated"],
       approvalMethods: ["ciba", "device_authorization"],
       resolveApprovalMethod: ({ preferredMethod, supportedMethods }) => {
-        const serverPreferred =
-          getSetting("preferredApprovalMethod") ?? "device_authorization";
+        const serverPreferred = getSetting("preferredApprovalMethod") ?? "device_authorization";
         const method = preferredMethod ?? serverPreferred;
-        return supportedMethods.includes(method)
-          ? method
-          : "device_authorization";
+        return supportedMethods.includes(method) ? method : "device_authorization";
       },
       onEvent: (event) => {
         try {

@@ -53,9 +53,7 @@ export function buildRateLimits(overrides: AgentAuthOptions["rateLimit"]) {
         overrides?.["/agent/ciba/pending"]?.window ??
         DEFAULT_WINDOW,
       max:
-        overrides?.["/agent/status"]?.max ??
-        overrides?.["/agent/ciba/pending"]?.max ??
-        POLLING_MAX,
+        overrides?.["/agent/status"]?.max ?? overrides?.["/agent/ciba/pending"]?.max ?? POLLING_MAX,
     },
     {
       pathMatcher(path: string) {
