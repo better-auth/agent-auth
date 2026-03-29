@@ -1,6 +1,6 @@
 {
   "name": "@better-auth/agent-auth",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Agent Auth Protocol server plugin for Better Auth — agent identity, registration, and capability-based authorization",
   "license": "MIT",
   "repository": {
