@@ -390,7 +390,6 @@ export async function runJwtMiddleware(
         id: agent.id,
         name: agent.name,
         mode: agent.mode,
-        organizationId: agent.organizationId ?? null,
         capabilityGrants: effectiveGrants.map((g) => ({
           capability: g.capability,
           constraints: g.constraints ?? null,

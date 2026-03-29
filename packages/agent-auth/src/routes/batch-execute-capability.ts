@@ -162,7 +162,6 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
           hostId: agentSession.agent.hostId,
           userId: agentSession.host?.userId ?? null,
           capabilityName: capName,
-          organizationId: agentSession.agent.organizationId,
         });
         if (autoGranted) {
           dbGrantsMap.set(capName, [autoGranted]);
@@ -225,7 +224,6 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
               opts,
               {
                 type: "capability.executed",
-                orgId: agentSession.agent.organizationId ?? undefined,
                 capability: req.capability,
                 agentId: agentSession.agent.id,
                 hostId: agentSession.agent.hostId,
@@ -257,7 +255,6 @@ export function batchExecuteCapability(opts: ResolvedAgentAuthOptions) {
             opts,
             {
               type: "capability.executed",
-              orgId: agentSession.agent.organizationId ?? undefined,
               capability: req.capability,
               agentId: agentSession.agent.id,
               hostId: agentSession.agent.hostId,

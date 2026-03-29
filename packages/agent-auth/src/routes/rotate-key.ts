@@ -74,7 +74,6 @@ export function rotateKey(opts: ResolvedAgentAuthOptions) {
         opts,
         {
           type: "agent.key_rotated",
-          orgId: agent.organizationId ?? undefined,
           agentId,
           actorType: "system",
           actorId: hostSession.host.userId ?? undefined,

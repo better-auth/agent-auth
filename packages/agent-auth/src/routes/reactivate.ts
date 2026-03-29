@@ -176,7 +176,6 @@ export function reactivateAgent(opts: ResolvedAgentAuthOptions) {
         opts,
         {
           type: "agent.reactivated",
-          orgId: agent.organizationId ?? undefined,
           actorType: "agent",
           agentId: agent.id,
           hostId: agent.hostId ?? undefined,

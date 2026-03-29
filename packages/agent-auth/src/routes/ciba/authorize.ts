@@ -5,7 +5,7 @@ import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { hashToken } from "../../utils/approval";
 import { sanitizeDisplayText, DISPLAY_LIMITS } from "../../utils/sanitize";
-import type { Agent, ApprovalRequest, HostSession, ResolvedAgentAuthOptions } from "../../types";
+import type { ApprovalRequest, HostSession, ResolvedAgentAuthOptions } from "../../types";
 
 export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
   return createAuthEndpoint(
@@ -96,20 +96,10 @@ export function cibaAuthorize(opts: ResolvedAgentAuthOptions) {
         },
       });
 
-      let cibaOrgId: string | undefined;
-      if (agentId) {
-        const cibaAgent = await ctx.context.adapter.findOne<Agent>({
-          model: TABLE.agent,
-          where: [{ field: "id", value: agentId }],
-        });
-        cibaOrgId = cibaAgent?.organizationId ?? undefined;
-      }
-
       emit(
         opts,
         {
           type: "approval.created",
-          orgId: cibaOrgId,
           actorId: user.user.id,
           hostId: hostSession.host.id,
           targetId: request.id,

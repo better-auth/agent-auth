@@ -346,7 +346,6 @@ export function createAgentAuthBeforeHook(
             opts,
             {
               type: "agent.reactivated",
-              orgId: agent.organizationId ?? undefined,
               actorType: "system",
               agentId: agent.id,
               hostId: agent.hostId ?? undefined,
@@ -408,7 +407,6 @@ export function createAgentAuthBeforeHook(
             id: agent.id,
             name: agent.name,
             mode: agent.mode,
-            organizationId: agent.organizationId ?? null,
             capabilityGrants: effectiveGrants.map((g) => ({
               capability: g.capability,
               constraints: g.constraints ?? null,

@@ -114,7 +114,6 @@ export interface Agent {
   name: string;
   hostId: string;
   userId: string | null;
-  organizationId: string | null;
   publicKey: string;
   kid: string | null;
   jwksUrl: string | null;
@@ -242,7 +241,6 @@ export interface AgentSession {
     id: string;
     name: string;
     mode: AgentMode;
-    organizationId: string | null;
     capabilityGrants: Array<{
       capability: string;
       constraints: Constraints | null;
@@ -493,21 +491,6 @@ export interface AgentAuthOptions {
     agentId: string;
     agentMode: AgentMode;
   }) => AgentSessionUser | null | Promise<AgentSessionUser | null>;
-  /**
-   * Resolve the organization ID for a newly registered agent.
-   *
-   * Called during agent registration. When provided, the returned
-   * value is stored on the agent record and included as `orgId` in
-   * all events emitted for that agent.
-   *
-   * Return `null` (or omit this option) to leave the field unset.
-   */
-  resolveOrganizationId?: (context: {
-    userId: string | null;
-    hostId: string;
-    agentName: string;
-    mode: AgentMode;
-  }) => string | null | Promise<string | null>;
   /**
    * Called when an unclaimed host is linked to a real user (§3.4).
    */

@@ -105,7 +105,6 @@ export function revokeAgent(opts: ResolvedAgentAuthOptions) {
         opts,
         {
           type: "agent.revoked",
-          orgId: agent.organizationId ?? undefined,
           actorId:
             agentSession?.user.id ?? userSession?.user.id ?? hostSession?.host.userId ?? undefined,
           agentId: agent.id,

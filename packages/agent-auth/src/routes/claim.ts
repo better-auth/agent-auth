@@ -340,7 +340,6 @@ export function claimAgent(
         opts,
         {
           type: "approval.created",
-          orgId: targetAgent.organizationId ?? undefined,
           agentId: targetAgent.id,
           hostId: targetAgent.hostId,
           metadata: {

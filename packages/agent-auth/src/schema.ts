@@ -134,12 +134,6 @@ export const agentSchema = () =>
           input: false,
           index: true,
         },
-        organizationId: {
-          type: "string",
-          required: false,
-          input: false,
-          index: true,
-        },
         status: {
           type: "string",
           required: true,

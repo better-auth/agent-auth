@@ -130,7 +130,6 @@ export function revokeCapability(opts: ResolvedAgentAuthOptions) {
         opts,
         {
           type: "capability.revoked",
-          orgId: agent.organizationId ?? undefined,
           actorId: userSession?.user.id ?? hostSession?.host.userId ?? undefined,
           agentId,
           metadata: {
