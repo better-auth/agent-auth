@@ -131,7 +131,6 @@ export const agent = pgTable(
     hostId: text("host_id")
       .notNull()
       .references(() => agentHost.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id"),
     status: text("status").notNull().default("active"),
     mode: text("mode").notNull().default("delegated"),
     publicKey: text("public_key").notNull(),
