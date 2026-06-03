@@ -75,7 +75,15 @@ export function createAgentAuthBeforeHook(
       if (!auth) return false;
       const bearer = auth.replace(/^Bearer\s+/i, "");
       if (!bearer || bearer === auth) return false;
-      return bearer.split(".").length === 3;
+      if (bearer.split(".").length !== 3) return false;
+      // Only claim agent-auth's own tokens; let other plugins' JWTs pass through. (#9885)
+      let typ: string | undefined;
+      try {
+        typ = decodeProtectedHeader(bearer).typ;
+      } catch {
+        return false;
+      }
+      return typ === "host+jwt" || typ === "agent+jwt";
     },
     handler: createAuthMiddleware(async (ctx) => {
       const challenge = agentAuthChallenge(ctx.context.baseURL);
