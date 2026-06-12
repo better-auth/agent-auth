@@ -50,16 +50,18 @@ export function approveCapability(
     "/agent/approve-capability",
     {
       method: "POST",
-      body: z.object({
-        agent_id: z.string().optional(),
-        approval_id: z.string().optional(),
-        user_code: z.string().optional(),
-        action: z.enum(["approve", "deny"]),
-        capabilities: z.array(z.string()).optional(),
-        ttl: z.number().positive().optional(),
-        reason: z.string().optional(),
-        webauthn_response: z.record(z.string(), z.unknown()).optional(),
-      }),
+      body: z
+        .object({
+          agent_id: z.string().optional(),
+          approval_id: z.string().optional(),
+          user_code: z.string().optional(),
+          action: z.enum(["approve", "deny"]),
+          capabilities: z.array(z.string()).optional(),
+          ttl: z.number().positive().optional(),
+          reason: z.string().optional(),
+          webauthn_response: z.record(z.string(), z.unknown()).optional(),
+        })
+        .catchall(z.unknown()),
       use: [sessionMiddleware],
       metadata: {
         openapi: {
@@ -500,6 +502,25 @@ export function approveCapability(
             `Blocked capabilities: ${blocked.join(", ")}`,
           );
         }
+      }
+
+      if (opts.beforeApprove) {
+        const caps = pendingGrants
+          .filter((g) => approvedCapIds.has(g.capability))
+          .map((g) => ({
+            capability: g.capability,
+            constraints: (g.constraints ?? {}) as Record<string, unknown>,
+          }));
+
+        await opts.beforeApprove({
+          userId: session.user.id,
+          session,
+          capabilities: caps,
+          capability: caps[0]?.capability ?? "",
+          constraints: caps[0]?.constraints ?? {},
+          body: ctx.body as Record<string, unknown>,
+          request: ctx.request ?? new Request(ctx.context.baseURL),
+        });
       }
 
       const activeGrantsByCapability = new Map<string, AgentCapabilityGrant[]>();
