@@ -353,6 +353,30 @@ export interface DefaultHostCapabilitiesContext {
   hostName: string | null;
 }
 
+/** Context passed to the `beforeApprove` hook. */
+export interface BeforeApproveContext {
+  /** Better Auth user ID of the approving operator. */
+  userId: string;
+  /** Better Auth session for the current approval request. */
+  session: GenericEndpointContext["context"]["session"];
+  /**
+   * All capabilities being approved in this request, in grant order.
+   * Multi-capability approvals invoke the hook once with this full set.
+   */
+  capabilities: Array<{ capability: string; constraints: Record<string, unknown> }>;
+  /**
+   * Convenience accessor for the first capability.
+   * @deprecated use `capabilities`
+   */
+  capability: string;
+  /** Constraints for the first capability. */
+  constraints: Record<string, unknown>;
+  /** Parsed request body, including app-specific proof fields. */
+  body: Record<string, unknown>;
+  /** Original Fetch API request. */
+  request: Request;
+}
+
 export interface AgentAuthOptions {
   /**
    * Provider name for discovery (§6.1).
@@ -493,6 +517,13 @@ export interface AgentAuthOptions {
         ctx: GenericEndpointContext;
         capabilities: string[];
       }) => number | Promise<number>);
+  /**
+   * Called immediately before an agent capability approval is persisted.
+   *
+   * Return normally to continue approval. Throw an APIError (or any Error)
+   * to abort approval before any grant is created.
+   */
+  beforeApprove?: (ctx: BeforeApproveContext) => void | Promise<void>;
   /**
    * Whether to allow unknown hosts to register dynamically (§3.2).
    *
