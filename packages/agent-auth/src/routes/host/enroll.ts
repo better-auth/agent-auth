@@ -5,6 +5,7 @@ import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { hashToken } from "../../utils/approval";
 import { parseCapabilityIds } from "../../utils/capabilities";
+import { resolveHostKid } from "../../utils/crypto";
 import type { Agent, AgentHost, ResolvedAgentAuthOptions } from "../../types";
 import { claimAutonomousAgents, findHostByKey, validateKeyAlgorithm } from "../_helpers";
 
@@ -62,7 +63,7 @@ export function enrollHost(opts: ResolvedAgentAuthOptions) {
       }
 
       const now = new Date();
-      const kid = (publicKey.kid as string | undefined) ?? null;
+      const kid = await resolveHostKid(publicKey);
       const expiresAt =
         opts.agentSessionTTL > 0 ? new Date(now.getTime() + opts.agentSessionTTL * 1000) : null;
 

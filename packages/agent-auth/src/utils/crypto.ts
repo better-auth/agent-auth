@@ -1,4 +1,5 @@
 import {
+  calculateJwkThumbprint,
   exportJWK,
   generateKeyPair,
   jwtVerify,
@@ -137,4 +138,18 @@ export async function verifyJWT(opts: VerifyJWTOptions): Promise<Record<string, 
     if (err instanceof joseErrors.JOSEError) return null;
     throw err;
   }
+}
+
+/**
+ * Resolve the lookup key for a host JWK.
+ *
+ * `kid` is OPTIONAL in a JWK (RFC 7517 §4.5), so a spec-compliant client may
+ * omit it. Such a client still needs a stable identifier, and RFC 7638 §3.1
+ * blesses the JWK thumbprint for exactly that purpose — which is what the SDK
+ * sends as `iss`. Persisting the thumbprint when `kid` is absent keeps the
+ * stored lookup key aligned with how the host identifies itself.
+ */
+export async function resolveHostKid(publicKey: Record<string, unknown>): Promise<string> {
+  if (typeof publicKey.kid === "string") return publicKey.kid;
+  return calculateJwkThumbprint(publicKey as Parameters<typeof calculateJwkThumbprint>[0]);
 }

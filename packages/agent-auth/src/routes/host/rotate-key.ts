@@ -127,12 +127,11 @@ export function rotateHostKey(
 
       validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
 
-      const kid = (publicKey.kid as string | undefined) ?? null;
-
       // §8.7: Host ID is derived from JWK thumbprint — must update on rotation
       const newThumbprint = await calculateJwkThumbprint(
         publicKey as Parameters<typeof calculateJwkThumbprint>[0],
       );
+      const kid = (publicKey.kid as string | undefined) ?? newThumbprint;
       const oldHostId = host.id;
       const newHostId = newThumbprint;
 

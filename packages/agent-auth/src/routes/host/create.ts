@@ -5,6 +5,7 @@ import { TABLE, DEFAULTS } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { generateEnrollmentToken } from "../../utils/approval";
+import { resolveHostKid } from "../../utils/crypto";
 import type { AgentHost, ResolvedAgentAuthOptions } from "../../types";
 import {
   findHostByKey,
@@ -76,7 +77,7 @@ export function createHost(opts: ResolvedAgentAuthOptions) {
       await validateCapabilitiesExist(defaultCapabilityIds, opts);
 
       const now = new Date();
-      const kid = publicKey ? ((publicKey.kid as string | undefined) ?? null) : null;
+      const kid = publicKey ? await resolveHostKid(publicKey) : null;
       const expiresAt =
         !isEnrollmentFlow && opts.agentSessionTTL > 0
           ? new Date(now.getTime() + opts.agentSessionTTL * 1000)

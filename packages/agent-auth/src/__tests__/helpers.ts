@@ -3,7 +3,7 @@ import { exportJWK, generateKeyPair, importJWK, SignJWT, calculateJwkThumbprint 
 import { expect } from "vitest";
 import { agentAuth as _agentAuth } from "../index";
 import { agentAuthClient } from "../client";
-import type { AgentAuthOptions, AgentJWK } from "../types";
+import type { AgentAuthOptions, AgentHost, AgentJWK } from "../types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const agentAuth = (opts?: AgentAuthOptions): any => _agentAuth(opts);
@@ -192,7 +192,7 @@ export async function expectError(
  * Reduces boilerplate in test files.
  */
 export async function createTestContext(pluginOpts?: AgentAuthOptions) {
-  const t = await getTestInstance(
+  const { auth, signInWithTestUser } = await getTestInstance(
     {
       plugins: [agentAuth(pluginOpts)],
     },
@@ -200,18 +200,11 @@ export async function createTestContext(pluginOpts?: AgentAuthOptions) {
       clientOptions: { plugins: [agentAuthClientPlugin()] },
     },
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const auth = t.auth as any;
   const client = createTestClient((req: Request) => auth.handler(req));
 
-  const { headers } = await t.signInWithTestUser();
-  const sessionCookie = headers.get("set-cookie") ?? "";
-  const sessionRes = await client.api("/get-session", {
-    method: "GET",
-    headers: { cookie: sessionCookie },
-  });
-  const sessionBody = await json<Record<string, unknown>>(sessionRes);
-  const userId = (sessionBody as { user?: { id?: string } }).user?.id ?? "";
+  const { headers, user } = await signInWithTestUser();
+  const sessionCookie = headers.get("cookie") ?? "";
+  const userId = user.id;
 
   async function createHost(opts?: { capabilities?: string[]; name?: string }): Promise<{
     hostId: string;
@@ -227,8 +220,27 @@ export async function createTestContext(pluginOpts?: AgentAuthOptions) {
       },
       sessionCookie,
     );
-    const hostBody = await json<{ id: string }>(hostRes);
-    return { hostId: hostBody.id, hostKeypair };
+    const hostBody = await json<{ hostId: string }>(hostRes);
+    if (!hostRes.ok) {
+      throw new Error(`createHost failed: ${JSON.stringify(hostBody)}`);
+    }
+    return { hostId: hostBody.hostId, hostKeypair };
+  }
+
+  /**
+   * Read a persisted host row by id. Throws when the row is absent, so
+   * callers get a non-nullable `AgentHost` and never need a `!`.
+   */
+  async function getHost(hostId: string): Promise<AgentHost> {
+    const context = await auth.$context;
+    const host = await context.adapter.findOne<AgentHost>({
+      model: "agentHost",
+      where: [{ field: "id", value: hostId }],
+    });
+    if (!host) {
+      throw new Error(`no agentHost row persisted for id ${hostId}`);
+    }
+    return host;
   }
 
   async function registerAgent(opts: {
@@ -260,6 +272,7 @@ export async function createTestContext(pluginOpts?: AgentAuthOptions) {
     sessionCookie,
     userId,
     createHost,
+    getHost,
     registerAgent,
   };
 }
@@ -269,5 +282,5 @@ export async function createTestContext(pluginOpts?: AgentAuthOptions) {
  * how the system derives host IDs from keys.
  */
 export async function computeThumbprint(publicKey: AgentJWK): Promise<string> {
-  return calculateJwkThumbprint(publicKey as Parameters<typeof calculateJwkThumbprint>[0]);
+  return calculateJwkThumbprint(publicKey);
 }

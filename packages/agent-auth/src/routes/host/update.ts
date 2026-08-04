@@ -5,6 +5,7 @@ import { TABLE } from "../../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../../errors";
 import { emit } from "../../emit";
 import { parseCapabilityIds } from "../../utils/capabilities";
+import { resolveHostKid } from "../../utils/crypto";
 import type { AgentHost, ResolvedAgentAuthOptions } from "../../types";
 import {
   checkSharedOrg,
@@ -89,7 +90,7 @@ export function updateHost(opts: ResolvedAgentAuthOptions) {
         }
         validateKeyAlgorithm(publicKey, opts.allowedKeyAlgorithms);
         update.publicKey = JSON.stringify(publicKey);
-        update.kid = (publicKey.kid as string | undefined) ?? null;
+        update.kid = await resolveHostKid(publicKey);
       }
 
       if (jwksUrl !== undefined) {
