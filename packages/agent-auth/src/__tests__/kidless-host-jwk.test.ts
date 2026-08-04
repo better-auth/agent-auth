@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { getTestInstance } from "better-auth/test";
 import {
-  agentAuth,
-  agentAuthClientPlugin,
   generateTestKeypair,
   createHostJWT,
   signTestJWT,
   json,
-  createTestClient,
+  createTestContext,
   computeThumbprint,
   BASE,
 } from "./helpers";
-import type { AgentHost } from "../types";
+import type { AgentAuthOptions } from "../types";
 
 /**
  * Regression: hosts registering with a kid-less JWK must remain findable.
@@ -29,35 +26,20 @@ import type { AgentHost } from "../types";
  * Fix: derive and persist the thumbprint whenever `kid` is absent.
  */
 describe("dynamic host registration — kid-less JWK", () => {
-  async function setup() {
-    const t = await getTestInstance(
-      {
-        plugins: [
-          agentAuth({
-            providerName: "test-service",
-            allowDynamicHostRegistration: true,
-            modes: ["delegated", "autonomous"],
-            capabilities: [{ name: "ping", description: "ping" }],
-            resolveAutonomousUser: async ({ hostId }) => ({
-              id: `synthetic_${hostId}`,
-              name: "Autonomous User",
-              email: `auto_${hostId}@test.local`,
-            }),
-          }),
-        ],
-      },
-      {
-        clientOptions: { plugins: [agentAuthClientPlugin()] },
-      },
-    );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const auth = t.auth as any;
-    const client = createTestClient((req: Request) => auth.handler(req));
-    return { auth, client };
-  }
+  const DYNAMIC_REGISTRATION_OPTIONS: AgentAuthOptions = {
+    providerName: "test-service",
+    allowDynamicHostRegistration: true,
+    modes: ["delegated", "autonomous"],
+    capabilities: [{ name: "ping", description: "ping" }],
+    resolveAutonomousUser: async ({ hostId }) => ({
+      id: `synthetic_${hostId}`,
+      name: "Autonomous User",
+      email: `auto_${hostId}@test.local`,
+    }),
+  };
 
   it("stores the JWK thumbprint as kid and authenticates the host on subsequent requests", async () => {
-    const { auth, client } = await setup();
+    const { client, getHost } = await createTestContext(DYNAMIC_REGISTRATION_OPTIONS);
 
     const hostKeypair = await generateTestKeypair();
     const agentKeypair = await generateTestKeypair();
@@ -82,13 +64,8 @@ describe("dynamic host registration — kid-less JWK", () => {
     expect(registerRes.ok, JSON.stringify(registerBody)).toBe(true);
 
     // The stored row carries the derived thumbprint, not null.
-    const context = await auth.$context;
-    const host = await context.adapter.findOne<AgentHost>({
-      model: "agentHost",
-      where: [{ field: "id", value: registerBody.host_id }],
-    });
-    expect(host).not.toBeNull();
-    expect(host!.kid).toBe(thumbprint);
+    const host = await getHost(registerBody.host_id);
+    expect(host.kid).toBe(thumbprint);
 
     // A follow-up host JWT (iss = thumbprint) must resolve the host.
     // Before the fix this failed with AGENT_NOT_FOUND: the row's id is a
@@ -104,13 +81,13 @@ describe("dynamic host registration — kid-less JWK", () => {
       method: "GET",
       headers: { authorization: `Bearer ${followUpJWT}` },
     });
-    const statusBody = await json<Record<string, unknown>>(statusRes);
+    const statusBody = await json<{ error?: string }>(statusRes);
     expect(statusRes.ok, JSON.stringify(statusBody)).toBe(true);
     expect(statusBody.error).toBeUndefined();
   });
 
   it("keeps an explicit kid unchanged when the JWK carries one", async () => {
-    const { auth, client } = await setup();
+    const { client, getHost } = await createTestContext(DYNAMIC_REGISTRATION_OPTIONS);
 
     const hostKeypair = await generateTestKeypair();
     const agentKeypair = await generateTestKeypair();
@@ -132,13 +109,8 @@ describe("dynamic host registration — kid-less JWK", () => {
     const registerBody = await json<{ agent_id: string; host_id: string }>(registerRes);
     expect(registerRes.ok, JSON.stringify(registerBody)).toBe(true);
 
-    const context = await auth.$context;
-    const host = await context.adapter.findOne<AgentHost>({
-      model: "agentHost",
-      where: [{ field: "id", value: registerBody.host_id }],
-    });
-    expect(host).not.toBeNull();
-    expect(host!.kid).toBe(explicitKid);
+    const host = await getHost(registerBody.host_id);
+    expect(host.kid).toBe(explicitKid);
   });
 });
 
@@ -149,20 +121,9 @@ describe("dynamic host registration — kid-less JWK", () => {
  */
 describe("host provisioning — kid-less JWK", () => {
   it("derives the thumbprint on /host/create", async () => {
-    const t = await getTestInstance(
-      {
-        plugins: [agentAuth({ providerName: "test-service" })],
-      },
-      {
-        clientOptions: { plugins: [agentAuthClientPlugin()] },
-      },
-    );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const auth = t.auth as any;
-    const client = createTestClient((req: Request) => auth.handler(req));
-
-    const { headers } = await t.signInWithTestUser();
-    const sessionCookie = headers.get("cookie") ?? "";
+    const { client, sessionCookie, getHost } = await createTestContext({
+      providerName: "test-service",
+    });
 
     const hostKeypair = await generateTestKeypair();
     const thumbprint = await computeThumbprint(hostKeypair.publicKey);
@@ -175,30 +136,14 @@ describe("host provisioning — kid-less JWK", () => {
     expect(createRes.ok).toBe(true);
     const { hostId } = await json<{ hostId: string }>(createRes);
 
-    const context = await auth.$context;
-    const host = await context.adapter.findOne<AgentHost>({
-      model: "agentHost",
-      where: [{ field: "id", value: hostId }],
-    });
-    expect(host).not.toBeNull();
-    expect(host!.kid).toBe(thumbprint);
+    const host = await getHost(hostId);
+    expect(host.kid).toBe(thumbprint);
   });
 
   it("derives the thumbprint on /host/enroll", async () => {
-    const t = await getTestInstance(
-      {
-        plugins: [agentAuth({ providerName: "test-service" })],
-      },
-      {
-        clientOptions: { plugins: [agentAuthClientPlugin()] },
-      },
-    );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const auth = t.auth as any;
-    const client = createTestClient((req: Request) => auth.handler(req));
-
-    const { headers } = await t.signInWithTestUser();
-    const sessionCookie = headers.get("cookie") ?? "";
+    const { client, sessionCookie, getHost } = await createTestContext({
+      providerName: "test-service",
+    });
 
     const provisionRes = await client.authedPost(
       "/host/create",
@@ -223,12 +168,7 @@ describe("host provisioning — kid-less JWK", () => {
     const enrollBody = await json<Record<string, unknown>>(enrollRes);
     expect(enrollRes.ok, JSON.stringify(enrollBody)).toBe(true);
 
-    const context = await auth.$context;
-    const host = await context.adapter.findOne<AgentHost>({
-      model: "agentHost",
-      where: [{ field: "id", value: hostId }],
-    });
-    expect(host).not.toBeNull();
-    expect(host!.kid).toBe(thumbprint);
+    const host = await getHost(hostId);
+    expect(host.kid).toBe(thumbprint);
   });
 });
