@@ -153,7 +153,7 @@ export function createAgentAuthBeforeHook(
               (host.status === "pending" && ctx.path === "/agent/status"));
 
           if (!hostAllowed) {
-            throw agentError("UNAUTHORIZED", AGENT_AUTH_ERROR_CODES.AGENT_NOT_FOUND);
+            throw agentError("UNAUTHORIZED", AGENT_AUTH_ERROR_CODES.HOST_NOT_FOUND);
           }
 
           let hostPubKey: AgentJWK | null = null;
