@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "vitest";
 import { getTestInstance } from "better-auth/test";
 import {
   agentAuth,
   agentAuthClientPlugin,
   generateTestKeypair,
   signTestJWT,
-  json,
+  expectError,
   createTestClient,
   computeThumbprint,
   BASE,
@@ -20,8 +20,8 @@ import {
  * A genuine agent miss on an agent JWT keeps reporting `agent_not_found`.
  */
 describe("middleware — unknown host reports host_not_found", () => {
-  async function setup() {
-    const t = await getTestInstance(
+  async function createClient() {
+    const { auth } = await getTestInstance(
       {
         plugins: [
           agentAuth({
@@ -34,13 +34,11 @@ describe("middleware — unknown host reports host_not_found", () => {
         clientOptions: { plugins: [agentAuthClientPlugin()] },
       },
     );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const auth = t.auth as any;
-    return { client: createTestClient((req: Request) => auth.handler(req)) };
+    return createTestClient((req: Request) => auth.handler(req));
   }
 
   it("reports host_not_found when a host JWT names an unknown host", async () => {
-    const { client } = await setup();
+    const client = await createClient();
 
     const hostKeypair = await generateTestKeypair();
     const thumbprint = await computeThumbprint(hostKeypair.publicKey);
@@ -56,14 +54,12 @@ describe("middleware — unknown host reports host_not_found", () => {
     const res = await client.api("/agent/list", {
       headers: { authorization: `Bearer ${hostJWT}` },
     });
-    const body = await json<Record<string, unknown>>(res);
 
-    expect(res.ok).toBe(false);
-    expect(body.error).toBe("host_not_found");
+    await expectError(res, "host_not_found");
   });
 
   it("still reports agent_not_found when an agent JWT names an unknown agent", async () => {
-    const { client } = await setup();
+    const client = await createClient();
 
     const agentKeypair = await generateTestKeypair();
 
@@ -78,9 +74,7 @@ describe("middleware — unknown host reports host_not_found", () => {
     const res = await client.api("/agent/list", {
       headers: { authorization: `Bearer ${agentJWT}` },
     });
-    const body = await json<Record<string, unknown>>(res);
 
-    expect(res.ok).toBe(false);
-    expect(body.error).toBe("agent_not_found");
+    await expectError(res, "agent_not_found");
   });
 });
