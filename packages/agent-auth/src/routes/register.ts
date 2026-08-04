@@ -6,7 +6,7 @@ import { TABLE, CLOCK_SKEW_TOLERANCE_SEC } from "../constants";
 import { agentError, AGENT_AUTH_ERROR_CODES as ERR } from "../errors";
 import { emit } from "../emit";
 import { hasCapability, parseCapabilityIds } from "../utils/capabilities";
-import { verifyJWT } from "../utils/crypto";
+import { resolveHostKid, verifyJWT } from "../utils/crypto";
 import { sanitizeDisplayText, DISPLAY_LIMITS } from "../utils/sanitize";
 import type { JwksCacheStore } from "../utils/jwks-cache";
 import { MemoryJwksCache } from "../utils/jwks-cache";
@@ -420,7 +420,7 @@ export function register(
         } else {
           const isAutonomous = mode === "autonomous";
           const hostNow = new Date();
-          const hostKid = resolvedHostPubKey.kid ?? null;
+          const hostKid = await resolveHostKid(resolvedHostPubKey);
           const jwtHostName = typeof decoded.host_name === "string" ? decoded.host_name : null;
           const resolvedDynHostName = jwtHostName ?? bodyHostName ?? null;
           const dynCaps = await resolveDefaultHostCapabilities(opts, {
