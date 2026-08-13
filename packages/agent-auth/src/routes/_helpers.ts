@@ -329,6 +329,20 @@ export async function buildApprovalInfo(
   const expiresAt = new Date(now.getTime() + expiresIn * 1000);
   const capabilitiesStr = context.capabilities.join(" ") || null;
 
+  // Server-Defined Approval Profile (§10.10.3): a handler registered
+  // under the resolved method name takes over entirely, before either
+  // built-in branch runs.
+  const customHandler = opts.approvalMethodHandlers?.[method];
+  if (customHandler) {
+    return customHandler({
+      agentId: context.agentId,
+      hostId: context.hostId,
+      userId: context.userId,
+      capabilities: context.capabilities,
+      expiresAt,
+    });
+  }
+
   if (method === "ciba" && context.userId) {
     const user = await internalAdapter.findUserById(context.userId);
     if (user) {
