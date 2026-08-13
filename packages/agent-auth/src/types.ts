@@ -215,10 +215,10 @@ export interface AgentCapabilityGrant {
   updatedAt: Date;
 }
 
-/** Unified approval request for device authorization and CIBA flows. */
+/** Unified approval request for device authorization, CIBA, and server-defined extension methods (§7.4 / §10.10.3). */
 export interface ApprovalRequest {
   id: string;
-  method: "device_authorization" | "ciba";
+  method: "device_authorization" | "ciba" | (string & {});
   agentId: string | null;
   hostId: string | null;
   userId: string | null;
@@ -407,6 +407,39 @@ export interface AgentAuthOptions {
     preferredMethod?: string;
     supportedMethods: string[];
   }) => string | Promise<string>;
+  /**
+   * Handlers for the Server-Defined Approval Profile (§10.10.3), keyed
+   * by method name. §7.4 notes that custom approval methods "are
+   * defined, if at all, by extension profiles such as the Server-Defined
+   * Approval Profile (§10.10.3)" — this is that profile's server-side
+   * implementation surface.
+   *
+   * Consulted by `buildApprovalInfo` before the built-in `ciba`/
+   * `device_authorization` branches: if `resolveApprovalMethod`
+   * resolves to a method with a matching handler here, that handler
+   * builds the approval response instead of falling back to
+   * `device_authorization`. The handler's return value becomes the
+   * `approval` object in the API response.
+   *
+   * Per §7's approval-object schema, `method`, `expires_in`, and
+   * `interval` are required on every method's approval object,
+   * including server-defined ones — the handler is responsible for
+   * including them. §10.10.3 leaves any additional fields to the
+   * profile: "The approval object carries whatever additional fields
+   * the client needs to facilitate the custom flow."
+   *
+   * @default {} — no custom methods, unchanged behavior.
+   */
+  approvalMethodHandlers?: Record<
+    string,
+    (context: {
+      agentId: string;
+      hostId: string | null;
+      userId: string | null;
+      capabilities: string[];
+      expiresAt: Date;
+    }) => Promise<Record<string, unknown>>
+  >;
   /**
    * Server JWKS URI for clients to verify server-signed responses (§6.1).
    */
