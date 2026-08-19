@@ -121,7 +121,7 @@ export function createAgentAuthBeforeHook(
           : [];
         const expectedLocation =
           jwtCapabilities.length === 1
-            ? getCapabilityLocation(opts.capabilities, jwtCapabilities[0])
+            ? await getCapabilityLocation(opts, jwtCapabilities[0])
             : undefined;
         if (
           !verifyAudience(

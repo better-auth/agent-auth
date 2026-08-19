@@ -92,7 +92,7 @@ export function introspect(
 
       const jwtCaps = Array.isArray(payload.capabilities) ? (payload.capabilities as string[]) : [];
       const expectedLocation =
-        jwtCaps.length === 1 ? getCapabilityLocation(opts.capabilities, jwtCaps[0]) : undefined;
+        jwtCaps.length === 1 ? await getCapabilityLocation(opts, jwtCaps[0]) : undefined;
       if (
         payload.aud &&
         !verifyAudience(

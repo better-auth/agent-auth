@@ -754,20 +754,56 @@ describe("getCapabilityLocation", () => {
     { name: "admin", location: "https://admin.example.com/execute" },
   ];
 
-  it("returns location for a capability that has one", () => {
-    expect(getCapabilityLocation(capabilities, "read")).toBe("https://read.example.com/execute");
+  it("returns location for a capability that has one", async () => {
+    expect(await getCapabilityLocation({ capabilities }, "read")).toBe(
+      "https://read.example.com/execute",
+    );
   });
 
-  it("returns undefined for a capability without location", () => {
-    expect(getCapabilityLocation(capabilities, "write")).toBeUndefined();
+  it("returns undefined for a capability without location", async () => {
+    expect(await getCapabilityLocation({ capabilities }, "write")).toBeUndefined();
   });
 
-  it("returns undefined for a non-existent capability", () => {
-    expect(getCapabilityLocation(capabilities, "nonexistent")).toBeUndefined();
+  it("returns undefined for a non-existent capability when resolveCapabilities is not configured", async () => {
+    expect(await getCapabilityLocation({ capabilities }, "nonexistent")).toBeUndefined();
   });
 
-  it("returns undefined when capabilities is undefined", () => {
-    expect(getCapabilityLocation(undefined, "read")).toBeUndefined();
+  it("returns undefined when capabilities is undefined and resolveCapabilities is not configured", async () => {
+    expect(await getCapabilityLocation({ capabilities: undefined }, "read")).toBeUndefined();
+  });
+
+  it("falls back to resolveCapabilities when the capability isn't in the static list", async () => {
+    const resolveCapabilities = vi
+      .fn()
+      .mockResolvedValue([{ name: "dynamic", location: "https://dynamic.example.com/execute" }]);
+    expect(await getCapabilityLocation({ capabilities, resolveCapabilities }, "dynamic")).toBe(
+      "https://dynamic.example.com/execute",
+    );
+    expect(resolveCapabilities).toHaveBeenCalledWith({
+      capabilities,
+      query: null,
+      agentSession: null,
+      hostSession: null,
+    });
+  });
+
+  it("prefers the static list over resolveCapabilities when both define the same capability", async () => {
+    const resolveCapabilities = vi
+      .fn()
+      .mockResolvedValue([
+        { name: "read", location: "https://should-not-be-used.example.com/execute" },
+      ]);
+    expect(await getCapabilityLocation({ capabilities, resolveCapabilities }, "read")).toBe(
+      "https://read.example.com/execute",
+    );
+    expect(resolveCapabilities).not.toHaveBeenCalled();
+  });
+
+  it("returns undefined when resolveCapabilities doesn't resolve the capability either", async () => {
+    const resolveCapabilities = vi.fn().mockResolvedValue([]);
+    expect(
+      await getCapabilityLocation({ capabilities, resolveCapabilities }, "nonexistent"),
+    ).toBeUndefined();
   });
 });
 
