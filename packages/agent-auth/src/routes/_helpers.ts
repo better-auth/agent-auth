@@ -571,14 +571,28 @@ export function verifyAudience(
 /**
  * Look up the `location` URL for a specific capability (§2.15).
  * Returns `undefined` if the capability has no custom location.
+ *
+ * Checks the static `capabilities` list first; if the capability isn't
+ * there and `resolveCapabilities` is configured, falls back to resolving
+ * dynamically — same fallback `execute-capability.ts` uses for capability
+ * lookup, so a capability served only via `resolveCapabilities` still gets
+ * its `location` enforced by JWT audience verification instead of silently
+ * skipping it.
  */
-export function getCapabilityLocation(
-  capabilities: Array<{ name: string; location?: string }> | undefined,
+export async function getCapabilityLocation(
+  opts: Pick<ResolvedAgentAuthOptions, "capabilities" | "resolveCapabilities">,
   capabilityName: string,
-): string | undefined {
-  if (!capabilities) return undefined;
-  const cap = capabilities.find((c) => c.name === capabilityName);
-  return cap?.location;
+): Promise<string | undefined> {
+  const staticCap = opts.capabilities?.find((c) => c.name === capabilityName);
+  if (staticCap) return staticCap.location;
+  if (!opts.resolveCapabilities) return undefined;
+  const resolved = await opts.resolveCapabilities({
+    capabilities: opts.capabilities ?? [],
+    query: null,
+    agentSession: null,
+    hostSession: null,
+  });
+  return resolved.find((c) => c.name === capabilityName)?.location;
 }
 
 /**
